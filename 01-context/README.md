@@ -70,13 +70,6 @@ If two people define "client" differently, the system will have bugs.
 | [Term] | [Precise definition in the context of this system] | [if any] | [if applicable] |
 ```
 
-### `_template-project-profile.md`
-Project technical sheet for internal records.
-**Fill in:** when the project is formalized (official name, tech lead, dates, stakeholders).
-
-### `_template-scope-declaration.md`
-Formal scope declaration template for presentations or deliverables.
-
 ---
 
 ## Correlations with other sections
