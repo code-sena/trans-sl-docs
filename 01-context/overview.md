@@ -1,50 +1,131 @@
 # System Overview
 
-> **Instructions:** Replace this content with your project's description.
-> This is the first page someone new reads. They must be able to understand the system in 5 minutes.
-> Remove these instructions when the document is complete.
+## What is TraduceSeñas?
 
----
+TraduceSeñas is a mobile and web application that recognises Colombian Sign Language (LSC)
+through the device camera and converts it into written text or synthesised speech in real time.
+It is aimed at closing the communication gap between Deaf people and hearing people who do not
+know sign language, in everyday settings such as schools, shops, health centres and public services.
 
-## What is [System Name]?
+It also includes a learning module that displays the sign alphabet, so that a hearing user can
+start recognising and reproducing basic signs without a prior course.
 
-[2-3 sentences describing what the system is and what problem it solves.
-No technical jargon — it must be understandable by someone from the business side.]
+## Objectives
+
+**General.** Design and implement a mobile application that translates Colombian Sign Language
+into text or audio in real time, using computer vision and artificial intelligence, in order to
+reduce the communication barriers Deaf people face in everyday settings.
+
+**Specific.**
+
+1. Build a tool that recognises LSC signs and returns the translation immediately.
+2. Turn recognised signs into written or spoken words that any hearing person understands.
+3. Let Deaf and hearing people communicate in ordinary situations — a classroom, a shop, a
+   service counter — without an interpreter present.
+4. Validate the tool in real environments to confirm it is accurate and useful in daily life.
+5. Contribute to a more inclusive society in which capability does not decide who can communicate.
+
+> "Real time" means an end-to-end response of **5 seconds or less** from capture to displayed
+> result, per NFR1. See `glossary.md`.
 
 ## Problem it solves
 
-**Before the system:** [How the process was handled without the system. What pain the users had.]
+**Before the system:** a Deaf person who needs to communicate with someone who does not know LSC
+depends on a certified interpreter. In Colombia the number of interpreters is far below demand,
+and availability is especially scarce in rural areas, public institutions and unplanned everyday
+situations. The result is loss of autonomy and reduced participation in education, work and health.
 
-**With the system:** [How the process improves. What value it delivers.]
+**With the system:** any person with a compatible smartphone can point the camera at the signer and
+read what is being signed, without an interpreter present and without prior knowledge of LSC.
+The system does not replace a professional interpreter in formal or legal settings; it covers the
+everyday interactions that today have no coverage at all.
 
 ## Main users
 
 | Role | Description | What they do in the system |
 |------|-------------|--------------------------|
-| [Role 1] | [Who they are] | [Main actions] |
-| [Role 2] | [Who they are] | [Main actions] |
+| Deaf / hard-of-hearing user | Person who communicates in LSC | Signs in front of the camera so the system produces text or speech for the hearing party; consults their translation history |
+| Hearing user | Person who does not know LSC — teacher, student, shop assistant, public servant | Reads or listens to the translation; consults the sign alphabet to learn basic signs |
+| Administrator | Technical profile in charge of the platform | Monitors recognition accuracy, manages content updates, consults usage statistics, supports end users |
+
+> The MVP is designed around school environments (students and teachers) as the first validation
+> setting, and then extends to shops and public services.
+
+## Architecture
+
+TraduceSeñas is a **modular monolith organised in N layers** — presentation, business, data,
+external services and configuration — deployed as a single project, with the React Native client
+talking to the Node.js backend over a REST API.
+
+**It is deliberately not a microservices system.** A three-person team on a six-month schedule
+gains nothing from independent deployment units and pays for them in operational complexity.
+Migrating to microservices is recorded as a future recommendation, to be reconsidered only if
+usage or team size grows substantially.
+
+> ⚠ This repository was scaffolded from a microservices governance framework. Its `09-microservices/`
+> section and parts of its scaffolding assume an architecture this project rejected. Where the two
+> disagree, the decision above wins. **An ADR recording this decision does not yet exist and must
+> be written** — see the open decisions table in `scope.md`.
 
 ## Technology stack
 
 | Layer | Technology | Justification |
 |-------|-----------|---------------|
-| Frontend | [React / Angular / Vue] | [why] |
-| Backend | [Spring Boot / Node / Django] | [why] |
-| Database | [PostgreSQL / MongoDB] | [why] |
-| Message broker | [RabbitMQ / Kafka] | [why] |
-| Infrastructure | [Docker + K8s / AWS / etc.] | [why] |
+| Mobile frontend | React Native + TypeScript | Single codebase for Android and iOS; the team already knows JavaScript; good integration with camera and computer-vision libraries |
+| Web frontend | React | Shares language, tooling and a large part of the component logic with React Native |
+| Navigation | React Navigation | Standard routing for React Native, integrates with the screen structure |
+| Global state | React Context API | Session, language and theme are read across the whole app |
+| Server state | React Query | Caching and revalidation of history, lexicon and notifications without manual polling |
+| Local persistence | AsyncStorage | Session token and offline preferences |
+| Backend | Node.js + Express | Same language as the frontend; REST is enough for the traffic profile of the MVP |
+| Sign recognition | MediaPipe + OpenCV | Pre-trained hand and gesture detection models; drastically reduces model training time |
+| Database | MySQL | Reliable, free, widely supported and known by the team |
+| Real-time transport | HTTPS + WebSockets | HTTPS for standard client-server calls, WebSockets for the live recognition stream |
+| Push notifications | Firebase Cloud Messaging (FCM) | Avoids manual polling and battery drain |
 
 ## Current status
 
-- **Phase:** [In development / In production / Legacy]
-- **Current version:** [v0.1.0]
-- **Last release:** [date]
-- **Next milestone:** [description and date]
+- **Phase:** In development
+- **Current version:** not yet released
+- **Last release:** none
+- **Original planned schedule:** 14 two-week sprints, 2026-01-01 → 2026-07-31 (`Scrum.xlsx`). Kept as the baseline of record; not rewritten.
+- **Next milestone:** **Pending re-planning.** The original schedule closed on 2026-07-31 and no new baseline has been agreed yet. This field stays empty on purpose until the team re-plans.
 
 ## Project contacts
 
 | Role | Name | Contact |
 |------|------|---------|
-| Tech Lead | [Name] | [email/Slack] |
-| Product Owner | [Name] | [email/Slack] |
-| DevOps | [Name] | [email/Slack] |
+| Product Owner · Instructor of record | Jesús Ariel González Bonilla | Through the training programme |
+| Tech Lead · Scrum Master · Analyst-Developer | Juan Mauricio Suaza Solórzano | suazasolorzano@gmail.com |
+| Analyst-Developer | Luis Alejandro Duarte Aldana | aleosea777@gmail.com |
+| Analyst-Developer | Juan Camilo Fierro Esquivel | fierroesquiveljuancamilo@gmail.com |
+
+> The Product Owner is the instructor receiving this delivery: he reviews and accepts the
+> increment and the documentation at each sprint review. He does not write the requirements.
+>
+> **Juan Mauricio Suaza Solórzano holds three roles at once.** This is stated rather than left
+> implicit because it puts technical authority, process authority and delivery capacity in one
+> person, with nobody to escalate to when the schedule and the process disagree.
+
+Each of the three developers is costed at full-time dedication for six months —
+$3,000,000 COP/month for the lead and $2,500,000 COP/month for each analyst-developer,
+$48,000,000 COP in total. That figure is the "development and programming" line of the
+budget in `scope.md`.
+
+## Legal frame
+
+The system captures video of people and stores personal data, so it operates under
+**Ley 1581 de 2012** and **Decreto 1377 de 2013** (Colombian personal data protection).
+In practice this means: no video sample is stored for model training without the user's
+express, timestamped authorisation; that authorisation can be revoked; the user can request
+deletion of their account and associated data; and retained training samples must be
+detached from the user's identity. See NFR8 and `scope.md`.
+
+---
+
+## Correlations
+
+- Scope boundaries → `01-context/scope.md`
+- Term definitions → `01-context/glossary.md`
+- Product vision and roadmap → `03-product/vision.md`
+- Documentation language rule → `05-architecture/decisions/records/ADR-001-idioma-documentacion.md`

@@ -1,13 +1,14 @@
 # HU-[SERVICE]-[NNN]: [Story Title]
 
 > **ID convention:** `HU-[SERVICE_ABBREVIATION]-[NNN]`
-> Examples: HU-IAM-001, HU-SCHED-023, HU-REF-005
+> Examples: HU-IAM-001, HU-TRA-003, HU-LEX-006
+> Modules in this project: IAM · AUTHZ · PROF · LEX · TRA · NOTIF · AI · USG · GAM · AUD · CFG · NAV
 
 ---
 
 ## Story
 
-**As** [user role — e.g.: instructor, coordinator, learner, administrator]
+**As** [deaf or hard-of-hearing person / hearing learner / administrator / LSC linguist]
 **I want** [concrete action they want to perform]
 **So that** [benefit they receive / problem they solve]
 
@@ -27,7 +28,7 @@
 
 > [Implementation constraints, performance considerations, required integrations]
 
-**Responsible service(s):** [microservice name]
+**Responsible module(s):** [module in the monolith — matches a TableGroup in the data model]
 **Endpoint(s) implemented:** [method + path]
 **Events generated:** [if applicable]
 **Required permissions:** [minimum role to perform this action]
@@ -40,7 +41,8 @@
 > See: [`00-governance/definition-of-done.md`](../../00-governance/definition-of-done.md)
 
 **Additional checks specific to this HU (if applicable):**
-- [ ] [Additional check not covered by the general DoD — e.g.: DB migration executed in staging]
+- [ ] Accessibility checklist passed (NFR-001) — mandatory if this HU introduces a screen
+- [ ] [Additional check — e.g.: DB migration executed in staging]
 - [ ] [Remove this section if there are no additional checks]
 
 ---
