@@ -12,7 +12,18 @@
 > [`_stacks/python-fastapi.md`](../_stacks/python-fastapi.md) ·
 > [`_stacks/go.md`](../_stacks/go.md)
 
-**Version:** v1.0 · **Last updated:** 2026-08-31
+**Version:** v1.1 · **Last updated:** 2026-09-08
+
+> **What changed in v1.1.** Realigned with `traduce_senas_v8.dbml`. New entities for the tables the
+> model added: `Role` and `Permission` (Identity), `Sign`, `SignLocalization`, `Category` and
+> `MultimediaResource` (Learning & Lexicon), `NotificationType`, `Notification` and `UserDevice`
+> (Notifications), `PasswordPolicy`, and `Achievement` / `UserAchievement` marked ⏸ pending RF8.
+> `User` gains the progressive lockout attributes. Invariants go from 13 to 27.
+>
+> Four invariants are now marked ⚠️ **because the database contradicts them** — INV-005, INV-007,
+> INV-010 and the `User` lockout rule. They are left standing rather than quietly rewritten: each one
+> was a deliberate decision, and reversing it is the team's call. The conflicts are listed in
+> `domain-map.md` §6.
 
 ---
 
@@ -57,7 +68,7 @@ For example: when a translation is produced, Analytics is not written in the sam
 
 ### Business rules
 **Invariants** are the constraints the domain must always satisfy. They live in the aggregate root and
-are validated on every operation. In this project they are numbered INV-001 through INV-013.
+are validated on every operation. In this project they are numbered INV-001 through INV-027.
 
 ---
 
@@ -73,33 +84,57 @@ are validated on every operation. In this project they are numbered INV-001 thro
 | Attribute | Type | Description | Required | Rules |
 |-----------|------|-------------|----------|-------|
 | `id` | UUID | Unique identifier | Yes | Auto-generated on creation |
-| `name` | string | User's name | Yes | 2 to 80 characters |
+| `name` | string | User's full name | Yes | 2 to 80 characters |
+| `username` | string | Unique display handle | Yes | Unique across the system — **v1.1** |
+| `birthDate` | Date | Date of birth | No | ERF1.1 asks for age; the date is stored and the age computed — **v1.1** |
 | `email` | `Email` (VO) | Account email | Yes | Unique across the system (INV-001) |
 | `passwordHash` | `PasswordHash` (VO) | Password hash | No | Absent if only an external provider is used |
 | `providers` | `ExternalProviderLink[]` | Google/Facebook links | No | At most one per provider (INV-004) |
-| `role` | `UserRole` (VO) | `USER` or `ADMIN` | Yes | Defaults to `USER` |
+| `roles` | `Role[]` | Roles held | Yes | At least one; defaults to `USER` — **changed in v1.1: was a single `UserRole` VO** |
 | `status` | `AccountStatus` (VO) | Account status | Yes | See lifecycle |
+| `emailVerifiedAt` | DateTime | When the email was confirmed | No | Set on validating the code, or immediately on registering through a provider — **v1.1** |
 | `termsAcceptedAt` | DateTime | When terms were accepted | Yes | No registration without it (INV-002) |
+| `termsVersion` | string | Version of the document accepted | Yes | Provable consent requires knowing *what* was accepted (INV-002) — **v1.1** |
 | `failedLoginAttempts` | int | Consecutive failed attempts | Yes | Reset on a successful sign-in |
+| `lockoutLevel` | int | Lockouts accumulated in the current streak | Yes | Determines how long the next lockout lasts (INV-014) — **v1.1** |
+| `lockedUntil` | DateTime | End of the temporary lockout | No | Lifts on its own when the date passes — **v1.1** |
+| `lastFailedLoginAt` | DateTime | Last failed attempt | No | Allows resetting `lockoutLevel` after 24 h — **v1.1** |
+| `blockedAt` | DateTime | When the escalation was exhausted | No | Only when status is `BLOCKED` — **v1.1** |
 | `createdAt` | DateTime | Creation date | Yes | Immutable |
 | `updatedAt` | DateTime | Last modification | Yes | Set automatically |
+| `lastAccessAt` | DateTime | Last access | No | — **v1.1** |
+| `deletedAt` | DateTime | Deletion requested by the data subject | No | The row is kept anonymized (RNF8) — **v1.1** |
 
-**Lifecycle:**
+**Lifecycle — revised in v1.1:**
 
 ```
 [PENDING_VERIFICATION] ──(verifies email)──▶ [ACTIVE] ──(requests deletion)──▶ [DELETED]
-                                                │  ▲
-                              (5 failed         │  │ (lockout expires or
-                               attempts)        ▼  │  admin releases it)
-                                             [LOCKED]
+        │                                       │  ▲
+        │ (registers with Google/Facebook:      │  │ (lockedUntil passes,
+        │  goes straight to ACTIVE)             │  │  or an admin releases it)
+        └───────────────────────────────────────┤  │
+                                                ▼  │
+                                        [temporarily locked]
+                                          lockedUntil = now + 1 / 5 / 10 min
+                                                │
+                                    (escalation exhausted)
+                                                ▼
+                                           [BLOCKED]
+                                    only an admin restores it
 ```
 
 | State | Description | Allowed transitions |
 |-------|-------------|---------------------|
-| `PENDING_VERIFICATION` | Registered but email not confirmed | → `ACTIVE`, → `DELETED` |
-| `ACTIVE` | May use the application | → `LOCKED`, → `DELETED` |
-| `LOCKED` | Temporarily locked after unauthorized access attempts (RNF4) | → `ACTIVE`, → `DELETED` |
-| `DELETED` | Deletion requested by the data subject (RNF8) | Terminal state |
+| `PENDING_VERIFICATION` | Registered but email not confirmed. Persisted as `INACTIVE` | → `ACTIVE`, → `DELETED` |
+| `ACTIVE` | May use the application | → temporarily locked, → `BLOCKED`, → `DELETED` |
+| *temporarily locked* | **Not a state — a date.** `status` stays `ACTIVE` and `lockedUntil` holds a future timestamp. It lifts by itself | → `ACTIVE` (automatic), → `BLOCKED` |
+| `BLOCKED` | Lockout escalation exhausted (RNF4). Requires administrator intervention | → `ACTIVE`, → `DELETED` |
+| `DELETED` | Deletion requested by the data subject (RNF8). Persisted as `deletedAt` | Terminal state |
+
+> **Why a temporary lockout is a date and not a state (v1.1).** v1.0 modeled `LOCKED` as a fourth
+> state. The v8 model uses `locked_until`, which is better: a state has to be exited by somebody, and
+> nobody is going to run a job every minute to unlock accounts. A date in the future expires on its own.
+> The only real state is `BLOCKED`, which genuinely requires a human to lift it.
 
 **Invariants:**
 
@@ -124,6 +159,34 @@ INV-004: An external provider maps to a single account
     in two accounts
   - Violation: The link is rejected and signing in with the existing account is offered
   - Implementation: Unique index on (provider, externalId) plus validation in linkProvider()
+
+INV-014: Lockout escalates progressively and expires on its own      [NEW in v1.1]
+  - Rule: Each accumulated lockout level lengthens the next wait (1, 5, 10 minutes). The lockout is a
+    future date, not a state, and it lifts without intervention. Only when the escalation is exhausted
+    does the account become BLOCKED, and only an administrator restores it. The level resets to zero
+    after 24 hours with no failed attempts
+  - Violation: Either a legitimate user is locked out forever over a typo, or an attacker gets
+    unlimited attempts
+  - Implementation: user.registerFailedLogin() computes lockedUntil from lockoutLevel;
+    a successful sign-in resets failedLoginAttempts; lastFailedLoginAt drives the 24-hour reset
+  - ⚠️ Supersedes the "five failures → LOCKED" rule of v1.0. See domain-map.md §6, ALIGN-06
+
+INV-015: Verification and recovery codes are single-use and expire    [NEW in v1.1]
+  - Rule: A code is stored only as a hash, has an expiry date, is marked used the first time it is
+    validated, and counts its failed attempts. A used code is never valid again
+  - Violation: A leaked or reused code grants access to an account that is not the holder's
+  - Implementation: user_tokens with token_type, token_hash, expires_at, used_at, attempts
+
+INV-016: Permissions are granted through roles, never directly       [NEW in v1.1]
+  - Rule: A user holds roles; a role holds permissions. There is no path from a user to a permission
+    that does not pass through a role
+  - Violation: Individual exceptions accumulate until nobody can say who can do what
+  - Implementation: user_roles and role_permissions; there is no user_permissions table, deliberately
+
+INV-017: A role in use cannot be deleted                             [NEW in v1.1]
+  - Rule: A role assigned to at least one user is not deletable
+  - Violation: Users left with no permissions and no trace of why
+  - Implementation: ON DELETE RESTRICT on user_roles.role_id
 ```
 
 **Code example:**
@@ -153,15 +216,63 @@ class User {
     return user;
   }
 
+  // Revised in v1.1: progressive escalation instead of "5 failures → LOCKED"
   registerFailedLogin(): void {
     this.failedLoginAttempts += 1;
-    if (this.failedLoginAttempts >= 5) {
-      this.status = AccountStatus.LOCKED;           // RNF4
-      this.addEvent(new AccountLocked(this.id));
+    this.lastFailedLoginAt = new Date();
+
+    if (this.failedLoginAttempts < FAILURES_PER_LEVEL) return;
+
+    this.lockoutLevel += 1;
+    this.failedLoginAttempts = 0;
+
+    const waitMinutes = LOCKOUT_LADDER[this.lockoutLevel - 1];   // 1, 5, 10
+    if (waitMinutes === undefined) {                             // ladder exhausted
+      this.status = AccountStatus.BLOCKED;                       // RNF4 — only an admin restores it
+      this.blockedAt = new Date();
+      this.addEvent(new AccountBlocked(this.id, this.lockoutLevel));
+      return;
+    }
+
+    this.lockedUntil = addMinutes(new Date(), waitMinutes);      // INV-014 — expires on its own
+    this.addEvent(new AccountLocked(this.id, this.lockoutLevel, this.lockedUntil));
+  }
+
+  // A streak that goes cold stops counting: 24 h with no failures resets the ladder
+  resetLockoutIfStale(now: Date): void {
+    if (this.lastFailedLoginAt && hoursBetween(this.lastFailedLoginAt, now) >= 24) {
+      this.lockoutLevel = 0;
+      this.failedLoginAttempts = 0;
     }
   }
 }
 ```
+
+---
+
+### Entity: `Role` / `Permission` — **new in v1.1**
+
+**Context:** Identity & Access
+**Description:** Access control. In v1.0 the role was a value object on `User` holding `USER` or
+`ADMIN`; the v8 model turned it into two entities with their association tables.
+
+| Entity | Attributes | Rules |
+|--------|-----------|-------|
+| `Role` | `id`, `name` (unique), `description` | Not deletable while assigned (INV-017) |
+| `Permission` | `id`, `name` (unique, e.g. `stats.read`), `description` | Granted only through a role (INV-016) |
+
+**Roles foreseen in the project:**
+
+| Role | What it can do |
+|------|----------------|
+| `USER` | Translate, consult the lexicon and the alphabet, manage their own profile and history |
+| `ADMIN` | Everything a `USER` can, plus managing content, accounts, models and reading statistics |
+| `LINGUIST` | Capture and validate gesture samples. **Does not administer users** |
+
+> **Why `LINGUIST` is what forced this change.** With two roles, an enum was enough. The linguist is a
+> third profile that needs a capability (`samples.validate`) without any of the others — and adding a
+> value to an enum for every new capability is how an enum becomes a permission system by accident.
+> Better to have the permission system on purpose. Reversal recorded in `domain-map.md` §5.
 
 ---
 
@@ -203,21 +314,27 @@ mode on until they turn it off. It is the container of every translation produce
 **Invariants:**
 
 ```
-INV-005: Every translation belongs to a session and to a user
+INV-005: Every translation belongs to a session and to a user     ⚠️ CONTRADICTED BY THE MODEL
   - Rule: No Translation exists outside a TranslationSession
   - Violation: DomainException when trying to create one standalone
   - Implementation: Translation's constructor is private; only session.addTranslation() creates one
+  - ⚠️ v1.1: the v8 model has no translation_sessions table. `translations` hangs directly off
+    user_id, so this invariant cannot be enforced at the persistence layer. Either the table is
+    added or the invariant is rewritten. See domain-map.md §6, ALIGN-01
 
 INV-006: Confidence within range
   - Rule: Confidence is always between 0.0 and 1.0
   - Violation: DomainException in the VO constructor
   - Implementation: Validation in Confidence.constructor()
 
-INV-007: Confidence below the threshold is not a confirmed translation
+INV-007: Confidence below the threshold is not a confirmed translation   ⚠️ NO THRESHOLD IN THE MODEL
   - Rule: If confidence < the configured threshold, the result is not presented as a confirmed
     translation nor stored in the history; RecognitionFailed is emitted instead
   - Violation: The user would be shown an incorrect translation as if it were correct
   - Implementation: session.addTranslation() compares against the threshold before appending
+  - ⚠️ v1.1: ai_models stores `accuracy` but has no confidence_threshold column, so there is
+    nowhere to read the threshold from. Blocking: this invariant cannot be implemented as written.
+    See domain-map.md §6, ALIGN-03
 
 INV-008: No sample is stored without a valid consent grant
   - Rule: No video fragment or landmark sequence is persisted unless the user has a ConsentGrant
@@ -342,34 +459,124 @@ INV-012: Only the administrator sees statistics, and always aggregated
 | `storageRef` | string | File reference | Yes | — |
 
 ```
-INV-010: Kept samples are dissociated from identity
+INV-010: Kept samples are dissociated from identity        ⚠️ CONTRADICTED BY THE MODEL
   - Rule: A TrainingSample cannot carry a userId nor any data allowing re-identification of the subject
   - Violation: Direct breach of the RNF8 acceptance criterion
   - Implementation: The entity has no userId attribute. Anonymization happens at sample creation time,
     not afterwards
+  - ⚠️ v1.1: gesture_samples stores performed_by (the performer's name as text), recorded_by
+    and validated_by. Samples are identified, deliberately. The v8 design is defensible — consent
+    stays provable per person and a withdrawn authorization can actually be honored, which
+    anonymization makes impossible — but it is the opposite rule. One of the two has to go.
+    See domain-map.md §6, ALIGN-02
 ```
 
 ---
 
-### Entity: `AlphabetLetter`
+### Entity: `Sign` — **replaces `AlphabetLetter` in v1.1**
 
-**Context:** Learning
-**Description:** A letter of the LSC fingerspelling alphabet with its verified visual resource.
+**Context:** Learning & Lexicon
+**Description:** A catalog entry in LSC: a letter, a word or a phrase. **The alphabet is the subset
+where `signType` is `LETTER`.**
 
 | Attribute | Type | Description | Required | Rules |
 |-----------|------|-------------|----------|-------|
-| `letter` | `LetterCode` (VO) | Letter (A–Z, Ñ) | Yes | It is the identifier; unique |
-| `resource` | `VisualResource` (VO) | 2D image or animation | Yes | Exactly one per letter |
-| `description` | string | Text description of the hand configuration | Yes | Accessible to screen readers |
-| `verifiedBy` | string | Interpreter who verified it | Yes | — |
-| `verifiedAt` | DateTime | Verification date | Yes | — |
+| `id` | UUID | Identifier | Yes | Auto-generated |
+| `code` | `SignCode` (VO) | Stable, language-independent identifier (`GREETING_HELLO`) | Yes | Unique. **It is the same value the Core calls `Gloss`** (INV-018) |
+| `signType` | `SignType` (VO) | `LETTER`, `WORD` or `PHRASE` | Yes | Defaults to `WORD` |
+| `letter` | `LetterCode` (VO) | Letter represented | No | Present if and only if `signType` is `LETTER` (INV-013) |
+| `signLanguage` | `SignLanguage` (VO) | `LSC` | Yes | The content's sign language, not the interface language |
+| `category` | `Category` | Thematic grouping | Yes | — |
+| `status` | `ContentStatus` (VO) | `DRAFT`, `ACTIVE` or `INACTIVE` | Yes | Only `ACTIVE` is visible to end users (INV-019) |
+| `localizations` | `SignLocalization[]` | Written form per interface language | Yes | At most one per language |
+| `resources` | `MultimediaResource[]` | Images, videos, animations | No | Ordered, no two at the same position (INV-020) |
+| `createdBy` / `updatedBy` | UUID | Who created it, who last edited it | No | Null if that account was deleted |
+| `createdAt` / `updatedAt` | DateTime | Dates | Yes | — |
 
 ```
-INV-013: The alphabet is complete and verified
-  - Rule: Exactly 27 letters exist (A–Z plus Ñ), each with a single verified visual resource
+INV-013: The alphabet is complete and verified      [revised in v1.1]
+  - Rule: Exactly 27 signs of type LETTER exist (A–Z plus Ñ) per sign language, each with at least
+    one verified visual resource, and no letter is repeated within the same sign language
   - Violation: The alphabet module is not released incomplete
-  - Implementation: Catalog integrity test at startup plus validation when loading content
+  - Implementation: Unique index (sign_language, letter) plus a catalog integrity test at startup
+
+INV-018: The sign code is the recognizer's vocabulary            [NEW in v1.1]
+  - Rule: sign.code is the class the AI model predicts. A code is never renamed once published, and
+    a sign is not published ACTIVE unless the active model recognizes its code
+  - Violation: The catalog promises a sign the recognizer cannot produce, and it fails silently —
+    the user signs correctly and nothing happens
+  - Implementation: Publication validates the code against ai_models.sign_count / the model's
+    vocabulary. This is the Published Language between Lexicon and the Core
+
+INV-019: Only ACTIVE content reaches the end user                [NEW in v1.1]
+  - Rule: Signs in DRAFT or INACTIVE never appear in any end-user query
+  - Violation: Unfinished or withdrawn material shown as if it were verified
+  - Implementation: Every catalog query filters by status = ACTIVE
+
+INV-020: Resource order is unambiguous                            [NEW in v1.1]
+  - Rule: Two resources of the same sign cannot share a position
+  - Violation: Playback order depends on chance, and the explanation of the sign stops making sense
+  - Implementation: Unique index (sign_id, position); position >= 1
 ```
+
+> **Why `AlphabetLetter` disappeared.** It did not disappear — it became a `Sign` with
+> `signType = LETTER`. Keeping a separate entity for letters would have meant two models for one table,
+> two names for one code, and a decision to make every time somebody asks whether a fingerspelled word
+> is a letter or a word. To the recognizer a letter and a word are the same thing: a class it predicts.
+
+---
+
+### Entity: `SignLocalization` — **new in v1.1**
+
+**Context:** Learning & Lexicon · **inside the `Sign` aggregate**
+**Description:** The written form of a sign in one interface language.
+
+| Attribute | Type | Description | Required | Rules |
+|-----------|------|-------------|----------|-------|
+| `id` | UUID | Identifier | Yes | — |
+| `uiLanguage` | `AppLanguage` (VO) | Interface language | Yes | At most one localization per sign and language |
+| `name` | string | Displayed text (`Hola` / `Hello`) | Yes | — |
+| `meaning` | string | Meaning | No | — |
+| `description` | string | Description of the hand configuration | No | Accessible to screen readers |
+
+---
+
+### Entity: `Category` — **new in v1.1**
+
+**Context:** Learning & Lexicon
+**Description:** Thematic grouping of signs (Greetings, Family, Numbers).
+
+| Attribute | Type | Description | Required | Rules |
+|-----------|------|-------------|----------|-------|
+| `id` | UUID | Identifier | Yes | — |
+| `name` | string | Category name | Yes | Unique |
+| `description` | string | Description | No | — |
+
+```
+INV-021: A category with signs is not deletable                   [NEW in v1.1]
+  - Rule: A category assigned to at least one sign cannot be deleted
+  - Violation: Orphaned signs with no place in the catalog
+  - Implementation: ON DELETE RESTRICT on sign_lexicon.category_id
+```
+
+---
+
+### Entity: `MultimediaResource` — **new in v1.1**
+
+**Context:** Learning & Lexicon · **inside the `Sign` aggregate**
+
+| Attribute | Type | Description | Required | Rules |
+|-----------|------|-------------|----------|-------|
+| `id` | UUID | Identifier | Yes | — |
+| `resourceType` | `ResourceType` (VO) | `IMAGE`, `VIDEO` or `ANIMATION` | Yes | — |
+| `uri` | string | Storage reference | Yes | — |
+| `mimeType` | string | MIME type | No | — |
+| `position` | int | Playback order | Yes | ≥ 1, unique per sign (INV-020) |
+| `description` | string | Text description | No | Accessible to screen readers (NFR-001) |
+
+> **The resource is playable without sound, always.** A video that explains a sign through narration is
+> useless to the users of this application. The description exists so a screen reader can convey what
+> the video shows.
 
 ---
 
@@ -383,10 +590,155 @@ promises continuous vocabulary updates: the system must know which version produ
 |-----------|------|-------------|----------|
 | `id` | UUID | Identifier | Yes |
 | `version` | `ModelVersion` (VO) | Semantic version | Yes |
-| `confidenceThreshold` | `Confidence` (VO) | Minimum acceptable confidence (INV-007) | Yes |
+| `confidenceThreshold` | `Confidence` (VO) | Minimum acceptable confidence (INV-007) | Yes ⚠️ **not in the model — ALIGN-03** |
 | `supportedGlosses` | `Gloss[]` | Covered vocabulary | Yes |
+| `signLanguage` | `SignLanguage` (VO) | Sign language it was trained for — **v1.1** | Yes |
+| `trainedBy` | UUID | Administrator who ran the training — **v1.1** | Yes |
+| `trainedAt` | DateTime | Training date — **v1.1** | Yes |
+| `sampleCount` | int | Samples used — **v1.1** | Yes |
+| `signCount` | int | Distinct signs it recognizes — **v1.1** | Yes |
+| `accuracy` | decimal | Accuracy on the test set, 0 to 1 — **v1.1** | No |
+| `storageReference` | string | Path to the published artifact — **v1.1** | Yes |
 | `isActive` | boolean | Whether it is the production version | Yes |
 | `releasedAt` | DateTime | Release date | Yes |
+
+```
+INV-022: Exactly one model is active                              [NEW in v1.1]
+  - Rule: At no point are two models active at once. Activating one deactivates the previous one in
+    the same operation. A model that produced translations is never deleted
+  - Violation: Two devices translating with different versions and results nobody can compare;
+    or history pointing at a model that no longer exists
+  - Implementation: Partial unique index on is_active = true; ON DELETE RESTRICT on
+    translations.model_id
+```
+
+---
+
+### Entity: `NotificationType` — **new in v1.1**
+
+**Context:** Notifications
+**Description:** Kind of alert that exists in the application. The administrator activates or withdraws
+a type for every user at once.
+
+| Attribute | Type | Description | Required | Rules |
+|-----------|------|-------------|----------|-------|
+| `id` | UUID | Identifier | Yes | — |
+| `code` | string | Stable code (`ACHIEVEMENT_UNLOCKED`, `ACCOUNT_SECURITY`) | Yes | Unique |
+| `name` | string | Descriptive name | Yes | — |
+| `isActive` | boolean | Administrator control | Yes | Defaults to true |
+
+> **There is no per-user, per-type preference, deliberately.** RF4 says the user can turn notifications
+> on or off — one switch, which is `UserProfile.notificationsEnabled`. Per-type granularity is an
+> administrator control, not a user one. Adding a preferences matrix would be building something the
+> requirement does not ask for.
+
+---
+
+### Entity: `Notification` — **new in v1.1**
+
+**Context:** Notifications
+
+| Attribute | Type | Description | Required | Rules |
+|-----------|------|-------------|----------|-------|
+| `id` | UUID | Identifier | Yes | — |
+| `userId` | `UserId` (VO) | Recipient | Yes | — |
+| `type` | `NotificationType` | Alert type | Yes | — |
+| `channel` | `NotificationChannel` (VO) | `PUSH`, `IN_APP` or `EMAIL` | Yes | **All three visual** (INV-023) |
+| `device` | `UserDevice` | Target device | No | Required if and only if the channel is `PUSH` (INV-024) |
+| `title` / `body` | string | Content | Yes | — |
+| `referenceType` | `ReferenceEntity` (VO) | Type of record that caused the alert | No | No foreign key |
+| `referenceId` | UUID | The record itself | No | Resolved by the application layer |
+| `status` | `DeliveryStatus` (VO) | `PENDING`, `SENT`, `FAILED`, `READ`, `CANCELLED` | Yes | See lifecycle |
+| `scheduledAt` | DateTime | Scheduled delivery moment | No | RF4 |
+| `sentAt` / `readAt` | DateTime | Delivery and reading | No | — |
+
+**Lifecycle:**
+
+```
+[PENDING] ──(delivered)──▶ [SENT] ──(user opens it)──▶ [READ]
+     │                        
+     ├──(provider rejects it)──▶ [FAILED]
+     └──(type withdrawn / user opts out)──▶ [CANCELLED]
+```
+
+```
+INV-023: No alert depends on sound                                [NEW in v1.1] ⭐
+  - Rule: Every delivery channel is visual. No audio-only channel exists, and none can be added
+  - Violation: The users of this application are deaf and hard-of-hearing people. An alert they
+    cannot perceive is not a degraded alert — it is information the system failed to deliver
+  - Implementation: The notification_channel enum admits only PUSH, IN_APP and EMAIL. Encoding it
+    as a constraint rather than a guideline is what makes it impossible to violate by accident
+
+INV-024: A push has a device                                      [NEW in v1.1]
+  - Rule: A notification on the PUSH channel requires a target device; on other channels it must
+    not carry one
+  - Violation: A delivery with nowhere to go, stuck PENDING forever
+  - Implementation: CHECK constraint (channel = 'PUSH') = (device_id IS NOT NULL)
+
+INV-025: A disabled switch suppresses every delivery              [NEW in v1.1]
+  - Rule: A user with notificationsEnabled = false receives no new notification through any channel.
+    Ones already received stay visible in their history
+  - Violation: The one control RF4 grants the user does not work
+  - Implementation: Checked before creating the notification, not before delivering it
+```
+
+---
+
+### Entity: `UserDevice` — **new in v1.1**
+
+**Context:** Notifications
+
+| Attribute | Type | Description | Required | Rules |
+|-----------|------|-------------|----------|-------|
+| `id` | UUID | Identifier | Yes | — |
+| `userId` | `UserId` (VO) | Owner | Yes | — |
+| `pushToken` | string | Provider token | Yes | Unique. **Treated as a credential** |
+| `platform` | `DevicePlatform` (VO) | `ANDROID`, `IOS` or `WEB` | Yes | — |
+| `isActive` | boolean | Whether it can receive deliveries | Yes | Deactivated when the provider rejects its token |
+| `registeredAt` / `revokedAt` | DateTime | Registration and revocation | — | — |
+
+---
+
+### Entity: `PasswordPolicy` — **new in v1.1**
+
+**Context:** cross-cutting technical service, consumed by Identity & Access
+
+| Attribute | Type | Description | Required | Rules |
+|-----------|------|-------------|----------|-------|
+| `id` | UUID | Identifier | Yes | — |
+| `minLength` / `maxLength` | int | Length bounds | Yes | `minLength <= maxLength` |
+| `requiresUppercase` / `requiresLowercase` / `requiresNumbers` / `requiresSymbols` | boolean | Required character classes | Yes | — |
+| `isActive` | boolean | Whether it is the policy in force | Yes | Exactly one active (INV-026) |
+| `createdAt` / `updatedAt` | DateTime | Dates | Yes | — |
+
+```
+INV-026: Exactly one password policy is in force                  [NEW in v1.1]
+  - Rule: Only one policy has isActive = true. Superseded policies are preserved as history, never
+    overwritten — knowing which rules were in force when an account was created is auditable
+  - Violation: Two contradictory policies, and validation depending on which row is read first
+  - Implementation: Partial unique index on is_active = true
+```
+
+---
+
+### Entity: `Achievement` / `UserAchievement` ⏸ — **new in v1.1, pending RF8**
+
+**Context:** Gamification
+
+| Entity | Attributes |
+|--------|-----------|
+| `Achievement` | `id`, `name` (unique), `description`, `targetCount` (> 0), `createdAt` |
+| `UserAchievement` | `id`, `userId`, `achievementId`, `achievedAt` — unique per (user, achievement) |
+
+```
+INV-027: An achievement unlocks once per user                     [NEW in v1.1] ⏸
+  - Rule: A user unlocks a given achievement exactly once, however much they keep using the app
+  - Violation: Repeated notifications for the same achievement; a meaningless reward
+  - Implementation: Unique index (user_id, achievement_id)
+```
+
+> ⏸ **Provisional.** These two entities exist only if RF8 is approved and added to the SRS. Until then
+> nothing here is built. See `04-requirements/traceability-matrix.md` § 6, GAP-01.
 
 ---
 
@@ -397,20 +749,38 @@ promises continuous vocabulary updates: the system must know which version produ
 | `UserId` | Shared (Shared Kernel) | Valid UUID |
 | `Email` | Identity | Format `text@domain.ext`; normalized to lowercase |
 | `PasswordHash` | Identity | Only built from plain text through hashing; never exposed |
-| `UserRole` | Identity | `USER` \| `ADMIN` |
-| `AccountStatus` | Identity | `PENDING_VERIFICATION` \| `ACTIVE` \| `LOCKED` \| `DELETED` |
-| `Gloss` | Translation | Not empty, uppercase, unaccented; must exist in the active model's vocabulary |
+| `AccountStatus` | Identity | `PENDING_VERIFICATION` \| `ACTIVE` \| `BLOCKED` \| `DELETED` — ⚠️ **ALIGN-05: the model calls them `INACTIVE` / `ACTIVE` / `BLOCKED` + `deleted_at`** |
+| `TokenType` | Identity | `EMAIL_VERIFICATION` \| `PASSWORD_RESET` — **v1.1** |
+| `AuthProvider` | Identity | `GOOGLE` \| `FACEBOOK` — **v1.1** |
+| `Gloss` | Translation | Not empty, uppercase, unaccented; must exist in the active model's vocabulary. **Same value as `SignCode`** |
 | `Confidence` | Translation | `0.0 ≤ value ≤ 1.0` (INV-006) |
 | `TranslatedText` | Translation | Not empty |
-| `OutputMode` | Translation | `TEXT` \| `AUDIO` \| `BOTH` |
-| `SessionStatus` | Translation | `STARTED` \| `ACTIVE` \| `ENDED` \| `INTERRUPTED` |
+| `OutputMode` | Translation | `TEXT` \| `AUDIO` \| `BOTH` — ⚠️ **ALIGN-07: the model has no `BOTH`** |
+| `SessionStatus` | Translation | `STARTED` \| `ACTIVE` \| `ENDED` \| `INTERRUPTED` — ⚠️ **ALIGN-01: no table stores it** |
 | `ModelVersion` | Translation | Semantic version `major.minor.patch` |
+| `SignCode` | Lexicon | Stable, language-independent identifier. Never renamed once published (INV-018) — **v1.1** |
+| `SignType` | Lexicon | `LETTER` \| `WORD` \| `PHRASE` — **v1.1** |
+| `SignLanguage` | Lexicon | `LSC` (Colombian Sign Language, ISO 639-3 `csn`) — **content language, not interface language** — **v1.1** |
+| `LetterCode` | Lexicon | One character, A–Z plus Ñ. Only when the type is `LETTER` — **v1.1** |
+| `ContentStatus` | Lexicon | `DRAFT` \| `ACTIVE` \| `INACTIVE` — **v1.1** |
+| `ResourceType` | Lexicon | `IMAGE` \| `VIDEO` \| `ANIMATION` — **v1.1** |
 | `ConsentStatus` | Consent | `GRANTED` \| `REVOKED` |
 | `PolicyVersion` | Consent | Identifier of the data-processing policy version |
-| `AnonymousSubjectId` | Consent | Non-reversible pseudonym |
+| `AnonymousSubjectId` | Consent | Non-reversible pseudonym — ⚠️ **ALIGN-02: the model identifies the performer instead** |
+| `SampleType` | Consent | `LANDMARKS` \| `VIDEO` \| `IMAGE`. `LANDMARKS` is the main one: coordinates, not video — **v1.1** |
 | `Theme` | Profile | `LIGHT` \| `DARK` |
-| `AppLanguage` | Profile | `es-CO` \| `en-US` — **interface language, not sign language** |
+| `AppLanguage` | Profile / Lexicon | `es-CO` \| `en-US` — **interface language, not sign language** — ⚠️ **ALIGN-08: the model calls them `ES` / `EN`** |
+| `NotificationChannel` | Notifications | `PUSH` \| `IN_APP` \| `EMAIL`. **All visual; no audio-only value exists** (INV-023) — **v1.1** |
+| `DeliveryStatus` | Notifications | `PENDING` \| `SENT` \| `FAILED` \| `READ` \| `CANCELLED` — **v1.1** |
+| `DevicePlatform` | Notifications | `ANDROID` \| `IOS` \| `WEB` — **v1.1** |
+| `ReferenceEntity` | Notifications / Analytics | Type of record a `referenceId` points at, with no foreign key — **v1.1** |
+| `UsageSection` | Analytics | Application section a user entered — **v1.1** |
+| `UsageEventType` | Analytics | Kind of recorded fact: translation started, completed, failed, audio played, search performed… — **v1.1** |
+| `ErrorType` | Cross-cutting | `VALIDATION` \| `AUTH` \| `PERMISSION` \| `NOT_FOUND` \| `MODEL_INFERENCE` \| `EXTERNAL_SERVICE` \| `DATABASE` \| `UNEXPECTED` — **v1.1** |
 | `DateRange` | Analytics | Start date ≤ end date |
+
+> **`UserRole` disappeared as a value object in v1.1.** It became the `Role` entity. A value object
+> cannot hold permissions, and that is exactly what the role has to do now.
 
 **Code example:**
 
@@ -465,23 +835,44 @@ aggregate.
 
 ## Summary table of tactical building blocks
 
-| Name | Type | Bounded Context | Aggregate Root? |
-|------|------|-----------------|-----------------|
-| `User` | Entity | Identity & Access | Yes |
-| `ExternalProviderLink` | Entity | Identity & Access | No — inside `User` |
-| `PasswordResetRequest` | Entity | Identity & Access | Yes |
-| `TranslationSession` | Entity | Recognition & Translation | **Yes** |
-| `Translation` | Entity | Recognition & Translation | No — inside the session |
-| `RecognitionModel` | Entity | Recognition & Translation | Yes |
-| `ConsentGrant` | Entity | Consent & Personal Data | Yes |
-| `TrainingSample` | Entity | Consent & Personal Data | Yes |
-| `DataDeletionRequest` | Entity | Consent & Personal Data | Yes |
-| `UserProfile` | Entity | Profile & Preferences | Yes |
-| `AlphabetLetter` | Entity | Learning | Yes |
-| `UsageReport` | **Read model** | Usage Analytics | N/A — not an aggregate |
-| `Email`, `Confidence`, `Gloss`, `OutputMode`, `Theme`, `DateRange`… | Value Objects | Various / shared | N/A |
-| `SignRecognitionService` | Domain Service | Recognition & Translation | N/A |
-| `ConsentPolicyService` | Domain Service | Consent & Personal Data | N/A |
+| Name | Type | Bounded Context | Aggregate Root? | Table(s) in the v8 model |
+|------|------|-----------------|-----------------|--------------------------|
+| `User` | Entity | Identity & Access | Yes | `users` |
+| `ExternalProviderLink` | Entity | Identity & Access | No — inside `User` | `user_auth_providers` |
+| `LoginSession` | Entity | Identity & Access | Yes — **v1.1** | `user_sessions`, `refresh_tokens` |
+| `PasswordResetRequest` | Entity | Identity & Access | Yes | `user_tokens` — ⚠️ ALIGN-09: one table also covers email verification |
+| `Role` | Entity | Identity & Access | Yes — **v1.1** | `roles`, `user_roles` |
+| `Permission` | Entity | Identity & Access | Yes — **v1.1** | `permissions`, `role_permissions` |
+| `TranslationSession` | Entity | Recognition & Translation | **Yes** | ⚠️ **none — ALIGN-01** |
+| `Translation` | Entity | Recognition & Translation | No — inside the session | `translations`, `translation_signs` |
+| `RecognitionModel` | Entity | Recognition & Translation | Yes | `ai_models` |
+| `ConsentGrant` | Entity | Consent & Personal Data | Yes | ⚠️ no table of its own — fields on `users` and `gesture_samples` |
+| `TrainingSample` | Entity | Consent & Personal Data | Yes | `gesture_samples` (MongoDB) — ⚠️ ALIGN-02 |
+| `DataDeletionRequest` | Entity | Consent & Personal Data | Yes | ⚠️ **none** — only `users.deleted_at` |
+| `UserProfile` | Entity | Profile & Preferences | Yes | `user_preferences` |
+| `Sign` | Entity | Learning & Lexicon | Yes — **v1.1, replaces `AlphabetLetter`** | `sign_lexicon` |
+| `SignLocalization` | Entity | Learning & Lexicon | No — inside `Sign` — **v1.1** | `sign_localizations` |
+| `Category` | Entity | Learning & Lexicon | Yes — **v1.1** | `categories` |
+| `MultimediaResource` | Entity | Learning & Lexicon | No — inside `Sign` — **v1.1** | `multimedia_resources` |
+| `NotificationType` | Entity | Notifications | Yes — **v1.1** | `notification_types` |
+| `Notification` | Entity | Notifications | Yes — **v1.1** | `notifications` |
+| `UserDevice` | Entity | Notifications | Yes — **v1.1** | `user_devices` |
+| `Achievement` ⏸ | Entity | Gamification | Yes — **v1.1** | `achievements` |
+| `UserAchievement` ⏸ | Entity | Gamification | No — inside `Achievement` — **v1.1** | `user_achievements` |
+| `UsageEvent` | Entity | Usage Analytics | Yes — **v1.1** | `usage_events` |
+| `UsageReport` | **Read model** | Usage Analytics | N/A — not an aggregate | none, by design |
+| `PasswordPolicy` | Entity | Cross-cutting | Yes — **v1.1** | `password_policies` |
+| `AuditEntry` | Entity | Cross-cutting | Yes — **v1.1** | `audit_logs` |
+| `ErrorEntry` | Entity | Cross-cutting | Yes — **v1.1** | `error_logs` |
+| `Email`, `Confidence`, `Gloss`, `OutputMode`, `Theme`, `DateRange`… | Value Objects | Various / shared | N/A | enums and columns |
+| `SignRecognitionService` | Domain Service | Recognition & Translation | N/A | — |
+| `ConsentPolicyService` | Domain Service | Consent & Personal Data | N/A | — |
+
+> **The table column is the point of this table (v1.1).** An entity with no table is a promise nobody
+> can keep, and a table with no entity is code with no justification. Three rows carry a ⚠️:
+> `TranslationSession` (the Core aggregate root, with no table), `ConsentGrant` (an aggregate with a
+> lifecycle, flattened into columns on two other tables) and `DataDeletionRequest` (an entity reduced to
+> a timestamp). All three are listed in `domain-map.md` §6.
 
 > `UsageReport` **is not an entity**: it is a projection rebuilt from events. Treating it as an aggregate
 > would create two sources of truth for the same data.

@@ -3,12 +3,23 @@
 > A domain event is a fact that occurred in the business. Events are the backbone of communication
 > between bounded contexts. The name is ALWAYS in past tense and in the ubiquitous language of the domain.
 
-**Version:** v1.0 · **Last updated:** 2026-08-31
+**Version:** v1.1 · **Last updated:** 2026-09-08
+
+> **What changed in v1.1.** Realigned with `traduce_senas_v8.dbml`. Twenty-two events added for the domains
+> the model introduced: the notification lifecycle, device registration, sign and model publication,
+> sample capture and validation, role assignment and the password policy. The catalog goes from 18 to
+> 40 events. `AlphabetLetterViewed` is generalized into `SignViewed`, since the alphabet turned out to
+> be a subset of the sign catalog.
 
 > **Channel in this project:** *in-process*. The backend is a modular monolith on Node/Express, so
 > events are published through an internal `EventEmitter` and recorded in a `domain_events` table for
 > traceability. **There is no message broker.** The sections marked `[IF DISTRIBUTED]` describe what
 > would have to be solved the day a context is extracted into its own service; they do not apply today.
+>
+> ⚠️ **v1.1: there is no `domain_events` table in the v8 model.** Either it is added, or the claim of
+> event traceability is dropped. An in-process `EventEmitter` with no persistence is a legitimate
+> choice — but then a failed event leaves no trace, and "which events preceded this bug" has no answer.
+> See `domain-map.md` §6, ALIGN-04.
 
 ---
 
@@ -125,10 +136,38 @@ the system managed to do it.
 **Consumers:** mail service (security notice to the account holder)
 **Payload:** `{ userId, changedAt, source: "RESET" | "PROFILE" }`
 
-#### `AccountLocked`
-**Aggregate:** `User` · **Trigger:** five consecutive failed access attempts (RNF4)
+#### `AccountLocked` — **revised in v1.1**
+**Aggregate:** `User` · **Trigger:** a lockout level is reached after consecutive failed attempts (RNF4, INV-014)
 **Consumers:** Notifications (alerts the holder), Usage Analytics
-**Payload:** `{ userId, lockedAt, failedAttempts, unlockAt }`
+**Payload:** `{ userId, lockedAt, lockoutLevel, lockedUntil }`
+> The lockout is temporary and lifts on its own: `lockedUntil` is a date, not a flag. v1.0 carried
+> `failedAttempts` and `unlockAt` on the assumption of a single fixed lockout at five failures.
+
+#### `AccountBlocked` — **new in v1.1**
+**Aggregate:** `User` · **Trigger:** the lockout escalation is exhausted (RNF4, INV-014)
+**Consumers:** Notifications (alerts the holder), Usage Analytics, security audit
+**Payload:** `{ userId, blockedAt, lockoutLevel }`
+> Different from `AccountLocked`: this one **does not lift on its own**. Only an administrator restores
+> the account. Distinguishing the two events is what lets Analytics tell "a user who mistyped their
+> password" from "an account under attack".
+
+#### `EmailVerified` — **new in v1.1**
+**Aggregate:** `User` · **Trigger:** the user validates the 6-digit code sent at registration
+**Consumers:** Identity (activates the account), Usage Analytics
+**Payload:** `{ userId, verifiedAt }`
+
+#### `RoleAssigned` / `RoleRevoked` — **new in v1.1**
+**Aggregate:** `Role` · **Trigger:** an administrator grants or removes a role from a user (INV-016)
+**Consumers:** change audit — **always**
+**Payload:** `{ userId, roleId, roleName, assignedBy, assignedAt }`
+> A permission change is exactly the kind of fact you need recorded when something later goes wrong.
+> This event always ends up in `audit_logs`.
+
+#### `AccountDeleted` — **new in v1.1**
+**Aggregate:** `User` · **Trigger:** the user's account deletion completes (RNF8)
+**Consumers:** Usage Analytics, Audit — both keep their records with the identity detached
+**Payload:** `{ userId, deletedAt }`
+> The event carries no personal data: by the time it is emitted, there is none left to carry.
 
 ---
 
@@ -291,12 +330,139 @@ version comes from.
 
 ---
 
-### Context: Learning
+### Context: Learning & Lexicon
 
-#### `AlphabetLetterViewed`
-**Aggregate:** `AlphabetLetter` · **Trigger:** the user consults a letter of the alphabet (ERF7.1)
+#### `SignViewed` — **generalizes `AlphabetLetterViewed` in v1.1**
+**Aggregate:** `Sign` · **Trigger:** the user consults a sign in the catalog, letter or word (ERF7.1)
 **Consumers:** Usage Analytics — feeds the "most visited sections" metric of RF6
-**Payload:** `{ letter: "Ñ", userId, viewedAt }`
+**Payload:** `{ signId, signCode: "GREETING_HELLO", signType: "WORD", userId, viewedAt }`
+> `AlphabetLetterViewed` is now this event with `signType: "LETTER"`. Two events for the same fact
+> would have meant two counters to add up every time somebody asks how much the catalog is used.
+
+#### `LexiconSearchPerformed` — **new in v1.1**
+**Aggregate:** — (query, not an aggregate) · **Trigger:** the user searches the catalog (RF7)
+**Consumers:** Usage Analytics
+**Payload:** `{ userId, query, resultCount, searchedAt }`
+> **Searches with zero results are the most valuable metric this system produces.** They are a list,
+> written by the users themselves, of the signs they expect to find and the catalog does not have.
+> That list is what should decide the vocabulary of the next model version.
+
+#### `SignPublished` — **new in v1.1**
+**Aggregate:** `Sign` · **Trigger:** an administrator moves a sign from `DRAFT` to `ACTIVE` (INV-018, INV-019)
+**Consumers:** change audit, mobile app (catalog cache invalidation)
+**Payload:** `{ signId, signCode, signType, categoryId, publishedBy, publishedAt }`
+> Publishing must verify that the active model recognizes the code (INV-018). Publishing a sign the
+> recognizer does not know produces the worst kind of failure: the user signs correctly, and nothing
+> happens.
+
+#### `SignWithdrawn` — **new in v1.1**
+**Aggregate:** `Sign` · **Trigger:** an administrator moves a sign to `INACTIVE`
+**Consumers:** change audit, mobile app
+**Payload:** `{ signId, signCode, withdrawnBy, withdrawnAt, reason }`
+
+---
+
+### Context: Notifications — **new in v1.1**
+
+#### `DeviceRegistered`
+**Aggregate:** `UserDevice` · **Trigger:** the user signs in on a device and grants the notification permission (RF4)
+**Consumers:** Notifications
+**Payload:** `{ deviceId, userId, platform, registeredAt }`
+> The push token never travels in the payload. It is a credential.
+
+#### `DeviceRevoked`
+**Aggregate:** `UserDevice` · **Trigger:** the provider rejects the token, or the user signs out
+**Consumers:** Notifications — stops attempting delivery to that device
+**Payload:** `{ deviceId, userId, revokedAt, reason: "TOKEN_REJECTED" | "SIGNED_OUT" }`
+
+#### `NotificationScheduled`
+**Aggregate:** `Notification` · **Trigger:** a notification is created for future delivery (RF4)
+**Consumers:** the delivery scheduler
+**Payload:** `{ notificationId, userId, typeCode, channel, scheduledAt }`
+
+#### `NotificationDelivered`
+**Aggregate:** `Notification` · **Trigger:** the notification reaches the user through its channel (RF4)
+**Consumers:** Usage Analytics
+**Payload:** `{ notificationId, userId, typeCode, channel, sentAt }`
+
+#### `NotificationDeliveryFailed`
+**Aggregate:** `Notification` · **Trigger:** the channel provider rejects or fails the delivery
+**Consumers:** Notifications (may revoke the device), error log
+**Payload:** `{ notificationId, userId, channel, reason, failedAt }`
+> **Why this event has to exist.** Without it there is no way to tell "not sent yet" from "tried and
+> could not". Those are opposite situations: the first resolves itself, the second means something is
+> broken and nobody finds out.
+
+#### `NotificationRead`
+**Aggregate:** `Notification` · **Trigger:** the user opens the notification (RF4)
+**Consumers:** Usage Analytics — `NOTIFICATION_OPENED`
+**Payload:** `{ notificationId, userId, readAt }`
+
+#### `NotificationTypeWithdrawn`
+**Aggregate:** `NotificationType` · **Trigger:** an administrator deactivates a type for every user
+**Consumers:** Notifications — stops generating notifications of that type
+**Payload:** `{ notificationTypeId, code, withdrawnBy, withdrawnAt }`
+
+---
+
+### Context: Recognition & Translation — model lifecycle
+
+#### `RecognitionModelTrained` — **new in v1.1**
+**Aggregate:** `RecognitionModel` · **Trigger:** a training run finishes and is registered (RF3)
+**Consumers:** change audit
+**Payload:** `{ modelId, version, trainedBy, trainedAt, sampleCount, signCount, accuracy }`
+
+#### `RecognitionModelPublished` — **new in v1.1**
+**Aggregate:** `RecognitionModel` · **Trigger:** an administrator activates a model version (INV-022)
+**Consumers:** mobile app (downloads the artifact), Usage Analytics, change audit
+**Payload:** `{ modelId, version, previousModelId, accuracy, storageReference, publishedAt }`
+> Carries `previousModelId` on purpose: activating one model deactivates another, and the event says
+> which. That is what makes a rollback a decision instead of an investigation.
+
+---
+
+### Context: Consent & Personal Data — capture lifecycle
+
+#### `GestureSampleCaptured` — **new in v1.1**
+**Aggregate:** `TrainingSample` · **Trigger:** a sample is recorded within a capture session (RF3, RNF8)
+**Consumers:** compliance audit
+**Payload:** `{ sampleId, captureSessionId, signCode, sampleType, recordedBy, consentGrantedAt, consentTermsVersion, capturedAt }`
+> `consentGrantedAt` and `consentTermsVersion` travel with the event because that is what makes the
+> authorization provable. A sample event with no consent evidence is a compliance defect, not a
+> missing field.
+
+#### `GestureSampleValidated` — **new in v1.1**
+**Aggregate:** `TrainingSample` · **Trigger:** a linguist approves a sample (INV-008)
+**Consumers:** the training pipeline — only validated samples enter it
+**Payload:** `{ sampleId, validatedBy, validatedAt }`
+
+#### `CaptureSessionDiscarded` — **new in v1.1**
+**Aggregate:** `TrainingSample` · **Trigger:** an entire recording batch is discarded, or a collaborator withdraws their authorization (RNF8)
+**Consumers:** compliance audit, the training pipeline
+**Payload:** `{ captureSessionId, sampleCount, reason, discardedBy, discardedAt }`
+> This is the event that makes a withdrawn authorization actually enforceable: the capture session is
+> the unit that gets removed, not the individual sample.
+
+---
+
+### Cross-cutting: configuration
+
+#### `PasswordPolicyChanged` — **new in v1.1**
+**Aggregate:** `PasswordPolicy` · **Trigger:** an administrator activates a new policy (INV-026)
+**Consumers:** change audit, Identity & Access
+**Payload:** `{ policyId, previousPolicyId, changedBy, changedAt }`
+> Existing passwords are not invalidated. The policy applies to the next password created or changed.
+
+---
+
+### Context: Gamification ⏸ — pending RF8
+
+#### `AchievementUnlocked` ⏸ — **new in v1.1**
+**Aggregate:** `UserAchievement` · **Trigger:** the user reaches an achievement's target count (INV-027)
+**Consumers:** Notifications (in-app visual alert), Usage Analytics
+**Payload:** `{ userAchievementId, userId, achievementId, achievementName, achievedAt }`
+> Notifications consumes it through `reference_type: ACHIEVEMENT` and `reference_id`, **with no foreign
+> key**. That is what keeps Notifications working if RF8 is rejected and this context disappears.
 
 ---
 
@@ -381,12 +547,21 @@ A **policy** describes what happens automatically when an event arrives: the log
 |---------------|--------|-----------------|----------------|
 | `TranslationProduced` | Whenever a translation is produced, append it to the user's history | `AppendToHistory` | Recognition & Translation |
 | `TranslationProduced` | If a valid consent grant exists, keep the anonymized sample | `StoreTrainingSample` | Consent & Personal Data |
-| `RecognitionFailed` | Show an on-screen alert without blocking navigation (RF4) | `ShowNotification` | Notifications (cross-cutting) |
+| `RecognitionFailed` | Show an on-screen alert without blocking navigation (RF4) | `ShowNotification` | Notifications |
 | `ConsentRevoked` | Stop keeping samples while translation stays operational | `DisableSampleStorage` | Recognition & Translation |
 | `AccountDeletionRequested` | Each context deletes the subject's data and reports completion | `PurgeUserData` | All |
 | `AccountLocked` | Notify the holder of the lockout after unauthorized attempts (RNF4) | `SendSecurityAlert` | Identity & Access |
 | `UserRegistered` | Create the profile with `LIGHT` theme and `es-CO` language | `CreateDefaultProfile` | Profile & Preferences |
-| `TranslationSessionInterrupted` | Show an understandable error message and keep what was translated (RNF7) | `ShowNotification` | Notifications (cross-cutting) |
+| `TranslationSessionInterrupted` | Show an understandable error message and keep what was translated (RNF7) | `ShowNotification` | Notifications |
+| **v1.1 —** `AccountBlocked` | Notify the holder and record it for security review | `SendSecurityAlert` | Identity & Access |
+| **v1.1 —** `NotificationDeliveryFailed` | If the provider rejected the token, deactivate the device so no further delivery is attempted | `RevokeDevice` | Notifications |
+| **v1.1 —** `DeviceRevoked` | Cancel the pending push notifications targeting that device | `CancelPendingPush` | Notifications |
+| **v1.1 —** `RecognitionModelPublished` | Deactivate the previously active model — never two at once (INV-022) | `DeactivatePreviousModel` | Recognition & Translation |
+| **v1.1 —** `ConsentRevoked` | Discard every capture session of that collaborator | `DiscardCaptureSessions` | Consent & Personal Data |
+| **v1.1 —** `GestureSampleValidated` | Make the sample eligible for the next training run | `AddToTrainingSet` | Consent & Personal Data |
+| **v1.1 —** `AchievementUnlocked` ⏸ | Emit an in-app visual alert referencing the achievement | `ShowNotification` | Notifications |
+| **v1.1 —** `TranslationProduced` | Advance the user's progress towards the achievements that count translations | `AdvanceAchievementProgress` | Gamification ⏸ |
+| **v1.1 —** `SignPublished` | Invalidate the catalog cache on the devices | `InvalidateCatalogCache` | Learning & Lexicon |
 
 ---
 
@@ -449,7 +624,44 @@ alert when the DLQ has more than 0 messages.
 | `TrainingSampleAnonymized` | Consent & Personal Data | — (audit) | v1 |
 | `AccountDeletionRequested` | Consent & Personal Data | All | v1 |
 | `PreferencesChanged` | Profile & Preferences | Mobile app, Analytics | v1 |
-| `AlphabetLetterViewed` | Learning | Analytics | v1 |
+| `EmailVerified` | Identity & Access | Identity, Analytics | v1 — **new** |
+| `AccountBlocked` | Identity & Access | Notifications, Analytics, Audit | v1 — **new** |
+| `RoleAssigned` / `RoleRevoked` | Identity & Access | Audit | v1 — **new** |
+| `AccountDeleted` | Identity & Access | Analytics, Audit | v1 — **new** |
+| `SignViewed` | Learning & Lexicon | Analytics | v1 — **generalizes `AlphabetLetterViewed`** |
+| `LexiconSearchPerformed` | Learning & Lexicon | Analytics | v1 — **new** |
+| `SignPublished` | Learning & Lexicon | Audit, mobile app | v1 — **new** |
+| `SignWithdrawn` | Learning & Lexicon | Audit, mobile app | v1 — **new** |
+| `DeviceRegistered` | Notifications | Notifications | v1 — **new** |
+| `DeviceRevoked` | Notifications | Notifications | v1 — **new** |
+| `NotificationScheduled` | Notifications | Scheduler | v1 — **new** |
+| `NotificationDelivered` | Notifications | Analytics | v1 — **new** |
+| `NotificationDeliveryFailed` | Notifications | Notifications, error log | v1 — **new** |
+| `NotificationRead` | Notifications | Analytics | v1 — **new** |
+| `NotificationTypeWithdrawn` | Notifications | Notifications | v1 — **new** |
+| `RecognitionModelTrained` | Recognition & Translation | Audit | v1 — **new** |
+| `RecognitionModelPublished` | Recognition & Translation | Mobile app, Analytics, Audit | v1 — **new** |
+| `GestureSampleCaptured` | Consent & Personal Data | Compliance audit | v1 — **new** |
+| `GestureSampleValidated` | Consent & Personal Data | Training pipeline | v1 — **new** |
+| `CaptureSessionDiscarded` | Consent & Personal Data | Compliance audit, training pipeline | v1 — **new** |
+| `PasswordPolicyChanged` | Cross-cutting | Audit, Identity | v1 — **new** |
+| `AchievementUnlocked` ⏸ | Gamification | Notifications, Analytics | v1 — **new, pending RF8** |
 
-**18 events.** Every payload in this catalog feeds the contracts in `07-api/contracts/` and the
-consolidated catalog in `09-microservices/event-catalog.md`.
+**40 events** (39 active, 1 blocked pending RF8). Every payload in this catalog feeds the contracts in
+`07-api/contracts/` and the consolidated catalog in `09-microservices/event-catalog.md`.
+
+### Events per context
+
+| Context | Events | v1.0 | v1.1 |
+|---------|--------|------|------|
+| Identity & Access | 11 | 6 | +5 |
+| Recognition & Translation | 8 | 6 | +2 |
+| Consent & Personal Data | 7 | 4 | +3 |
+| Notifications | 7 | 0 | +7 |
+| Learning & Lexicon | 4 | 1 | +3 |
+| Profile & Preferences | 1 | 1 | — |
+| Cross-cutting | 1 | 0 | +1 |
+| Gamification ⏸ | 1 | 0 | +1 |
+
+> The per-context column sums to 40. `RoleAssigned` / `RoleRevoked` share one section but count as two
+> events, which is why the summary table above has one row fewer than the total.

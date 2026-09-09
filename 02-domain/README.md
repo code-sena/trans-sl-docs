@@ -4,7 +4,7 @@
 > understanding the problem the system solves before writing code. This section comes from
 > Domain-Driven Design (DDD).
 
-**Last updated:** 2026-08-31 · **Maintainers:** Juan Mauricio Suaza Solórzano, Luis Alejandro Duarte Aldana, Juan Camilo Fierro Esquivel
+**Version:** v1.1 · **Last updated:** 2026-09-08 · **Maintainers:** Juan Mauricio Suaza Solórzano, Luis Alejandro Duarte Aldana, Juan Camilo Fierro Esquivel
 **Primary source:** Software Requirements Specification (IEEE 830) of the Traduce Señas project.
 
 ---
@@ -65,7 +65,7 @@ outside.
 
 **Domain Event:** something that occurred in the business that other parts of the system must know.
 They are facts, stated in past tense.
-→ `TranslationProduced`, `ConsentRevoked`, `AlphabetLetterViewed`.
+→ `TranslationProduced`, `ConsentRevoked`, `SignViewed`.
 
 **Bounded Context:** area of the system where a particular model applies and a given term means exactly
 one thing.
@@ -77,19 +77,19 @@ an anonymous row in an aggregated metric.
 ## What is here
 
 ### `domain-map.md` ⭐
-Map of the six bounded contexts of Traduce Señas, their ubiquitous language, how they relate to each
-other, and the strategic classification (Core / Supporting / Generic). **It is the file the other two
-depend on:** the contexts defined there determine the backend modules, the tables in `06-data/` and the
-diagrams in `08-uml/`.
+Map of the **eight** bounded contexts of Traduce Señas, their ubiquitous language, how they relate to
+each other, and the strategic classification (Core / Supporting / Generic). **It is the file the other
+two depend on:** the contexts defined there determine the backend modules, the tables in `06-data/` and
+the diagrams in `08-uml/`. Its §6 lists where the model and the database still disagree.
 
 ### `entities-and-rules.md` ⭐
 Catalog of entities, value objects and aggregates per context, with the lifecycles of the entities that
-change state and **the 13 system invariants** (INV-001 to INV-013), each one with its origin in the SRS
-and the point where it is enforced.
+change state and **the 27 system invariants** (INV-001 to INV-027), each one with its origin in the SRS
+and the point where it is enforced. Its summary table now names the table that persists each entity.
 
 ### `domain-events.md` ⭐
-Catalog of the 18 domain events: what triggers them, what data they carry, who consumes them and which
-policies run automatically when they occur.
+Catalog of the **40** domain events: what triggers them, what data they carry, who consumes them and
+which policies run automatically when they occur.
 
 ---
 
@@ -100,16 +100,55 @@ policies run automatically when they occur.
 | RF1 User management | Identity & Access | `User` | `UserRegistered` |
 | RF2 Site navigation | — | — | — *(not domain: it is UI)* |
 | RF3 Sign language translation | **Recognition & Translation** | `TranslationSession` | `TranslationProduced` |
-| RF4 Visual notifications | Cross-cutting | — | consumes `RecognitionFailed` |
+| RF4 Visual notifications | **Notifications** *(a context since v1.1)* | `Notification` | `NotificationDelivered` |
 | RF5 Profile management | Profile & Preferences | `UserProfile` | `PreferencesChanged` |
 | ERF5.5 Recent translations | Recognition & Translation | `TranslationSession` | `TranslationDeleted` |
 | RF6 Usage statistics | Usage Analytics | `UsageReport` *(read model)* | consumes all |
-| RF7 Sign language alphabet | Learning | `AlphabetLetter` | `AlphabetLetterViewed` |
-| RNF4 Security | Identity & Access | `User` | `AccountLocked` |
+| RF7 Sign language alphabet | **Learning & Lexicon** | `Sign` *(type `LETTER`)* | `SignViewed` |
+| RF8 Gamification ⏸ | **Gamification** *(provisional)* | `Achievement` | `AchievementUnlocked` |
+| RNF4 Security | Identity & Access | `User` | `AccountLocked` / `AccountBlocked` |
 | RNF8 Data protection (Law 1581) | Consent & Personal Data | `ConsentGrant` | `ConsentGranted` / `ConsentRevoked` |
+| — Access control | Identity & Access | `Role`, `Permission` | `RoleAssigned` |
+| — Change audit | Cross-cutting *(not a context)* | `AuditEntry` | consumes all |
+| — Error handling | Cross-cutting *(not a context)* | `ErrorEntry` | — |
+| — Password policy | Cross-cutting *(not a context)* | `PasswordPolicy` | `PasswordPolicyChanged` |
 
 > The fact that **RF2 produces no domain** is not a gap in the SRS: it is a user interface requirement.
 > It is documented in `12-ux-ui/`, not here. Making that distinction is part of the work of this section.
+> Note that it still *produces persistence*: each section entry is recorded as a usage event, because
+> RF6 needs it. Producing no domain and producing no data are different things.
+
+---
+
+## What changed in v1.1 (2026-09-08)
+
+The persistence model (`traduce_senas_v8.dbml`) grew to eleven table groups while these three documents
+still described six contexts. This revision brings them back in sync.
+
+| Change | Where |
+|--------|-------|
+| **Notifications promoted** from a cross-cutting service to a Supporting bounded context | `domain-map.md` §2, §5 |
+| **Learning renamed to Learning & Lexicon** — the alphabet is the subset of the sign catalog where the type is `LETTER` | `domain-map.md` §2 · `entities-and-rules.md` |
+| **`Role` and `Permission` become entities** — the role was a value object holding `USER` or `ADMIN` | `entities-and-rules.md` |
+| **Gamification** appears as a provisional context, ⏸ pending RF8 | all three |
+| **Audit, error log and password policy** documented as cross-cutting services that are deliberately *not* contexts | `domain-map.md` §2.9 |
+| Invariants 13 → 27, events 18 → 40 | `entities-and-rules.md`, `domain-events.md` |
+| **New §6: where the map and the database disagree** — nine open items | `domain-map.md` §6 |
+
+**Two v1.0 decisions were reversed**, and both are recorded with their reason rather than quietly
+edited: Notifications as a non-context, and `ADMIN` as a role value on `User`. Neither original
+argument was wrong — their premises expired when the model grew.
+
+**Four invariants are marked ⚠️ because the database contradicts them** (INV-005, INV-007, INV-010 and
+the lockout rule). They are left standing rather than rewritten: each was a deliberate decision and
+reversing it belongs to the team, not to a documentation pass. The most consequential are:
+
+- **The Core aggregate root has no table.** `TranslationSession` is the centre of the domain model and
+  there is no `translation_sessions` table in the database.
+- **`TrainingSample` identity.** INV-010 says a sample never carries a user reference; `gesture_samples`
+  stores the performer's name on purpose, so a withdrawn authorization can actually be honored. Both
+  designs are defensible and they are incompatible.
+- **INV-007 has no threshold to read.** `ai_models` stores accuracy but no confidence threshold.
 
 ---
 
