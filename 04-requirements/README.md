@@ -10,7 +10,7 @@
 ## ⚠️ Read this first
 
 This section was **filled in from the data model**, not from the SRS. The v8
-DBML (`traduce_senas_v8.dbml`) is the most complete artifact the project has:
+DBML (`traduce_senas.dbml`, model v9) is the most complete artifact the project has:
 it carries explicit references to RF1–RF7 and to the ERFs, and it encodes design
 decisions that no other document records.
 

@@ -4,7 +4,7 @@
 > understanding the problem the system solves before writing code. This section comes from
 > Domain-Driven Design (DDD).
 
-**Version:** v1.1 · **Last updated:** 2026-09-08 · **Maintainers:** Juan Mauricio Suaza Solórzano, Luis Alejandro Duarte Aldana, Juan Camilo Fierro Esquivel
+**Version:** v1.2 · **Last updated:** 2026-09-10 · **Maintainers:** Juan Mauricio Suaza Solórzano, Luis Alejandro Duarte Aldana, Juan Camilo Fierro Esquivel
 **Primary source:** Software Requirements Specification (IEEE 830) of the Traduce Señas project.
 
 ---
@@ -111,7 +111,7 @@ which policies run automatically when they occur.
 | — Access control | Identity & Access | `Role`, `Permission` | `RoleAssigned` |
 | — Change audit | Cross-cutting *(not a context)* | `AuditEntry` | consumes all |
 | — Error handling | Cross-cutting *(not a context)* | `ErrorEntry` | — |
-| — Password policy | Cross-cutting *(not a context)* | `PasswordPolicy` | `PasswordPolicyChanged` |
+| — Password policy | **Identity & Access** *(moved in v1.2)* | `PasswordPolicy` | `PasswordPolicyChanged` |
 
 > The fact that **RF2 produces no domain** is not a gap in the SRS: it is a user interface requirement.
 > It is documented in `12-ux-ui/`, not here. Making that distinction is part of the work of this section.
@@ -120,9 +120,23 @@ which policies run automatically when they occur.
 
 ---
 
+## What changed in v1.2 (2026-09-10)
+
+One reversal, and it is a small one with a clear test behind it: **the password policy is part of
+Identity & Access, not a cross-cutting technical service.** §2.9 of `domain-map.md` defines a
+cross-cutting service as one that "serves every context equally". Any context writes to `audit_logs`;
+exactly one reads `password_policies`. Being *consumed by* one context is the opposite of being
+cross-cutting — and not being a bounded context of its own does not make something cross-cutting, it
+makes it part of the context that depends on it.
+
+Persistence follows: `identity.password_policies` in model v9, and the `Configuration` table group is
+dissolved. Full reasoning in `domain-map.md` §5 and in `06-data/domains/01-identity.md`.
+
+---
+
 ## What changed in v1.1 (2026-09-08)
 
-The persistence model (`traduce_senas_v8.dbml`) grew to eleven table groups while these three documents
+The persistence model (then `traduce_senas_v8.dbml`) grew to eleven table groups while these three documents
 still described six contexts. This revision brings them back in sync.
 
 | Change | Where |

@@ -5,7 +5,10 @@
 
 **Version:** v1.1 · **Last updated:** 2026-09-08
 
-> **What changed in v1.1.** Realigned with `traduce_senas_v8.dbml`. Twenty-two events added for the domains
+> **What changed in v1.2.** `PasswordPolicyChanged` is an Identity & Access event, not a cross-cutting
+> one: `PasswordPolicy` moved into that context. See `domain-map.md` §5.
+>
+> **What changed in v1.1.** Realigned with the v8 persistence model. Twenty-two events added for the domains
 > the model introduced: the notification lifecycle, device registration, sign and model publication,
 > sample capture and validation, role assignment and the password policy. The catalog goes from 18 to
 > 40 events. `AlphabetLetterViewed` is generalized into `SignViewed`, since the alphabet turned out to
@@ -445,11 +448,11 @@ version comes from.
 
 ---
 
-### Cross-cutting: configuration
+### Identity & Access: password policy
 
-#### `PasswordPolicyChanged` — **new in v1.1**
-**Aggregate:** `PasswordPolicy` · **Trigger:** an administrator activates a new policy (INV-026)
-**Consumers:** change audit, Identity & Access
+#### `PasswordPolicyChanged` — **new in v1.1** · **context corrected in v1.2**
+**Aggregate:** `PasswordPolicy` *(Identity & Access)* · **Trigger:** an administrator activates a new policy (INV-026)
+**Consumers:** change audit
 **Payload:** `{ policyId, previousPolicyId, changedBy, changedAt }`
 > Existing passwords are not invalidated. The policy applies to the next password created or changed.
 
@@ -644,7 +647,7 @@ alert when the DLQ has more than 0 messages.
 | `GestureSampleCaptured` | Consent & Personal Data | Compliance audit | v1 — **new** |
 | `GestureSampleValidated` | Consent & Personal Data | Training pipeline | v1 — **new** |
 | `CaptureSessionDiscarded` | Consent & Personal Data | Compliance audit, training pipeline | v1 — **new** |
-| `PasswordPolicyChanged` | Cross-cutting | Audit, Identity | v1 — **new** |
+| `PasswordPolicyChanged` | Identity & Access | Audit | v1 — **new** |
 | `AchievementUnlocked` ⏸ | Gamification | Notifications, Analytics | v1 — **new, pending RF8** |
 
 **40 events** (39 active, 1 blocked pending RF8). Every payload in this catalog feeds the contracts in

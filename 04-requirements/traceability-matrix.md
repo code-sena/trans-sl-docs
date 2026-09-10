@@ -246,7 +246,7 @@ and does each table have a requirement justifying it?
 | `user_achievements` | FR-802, FR-803, FR-805 | ⚠️ **GAP-01: depends on RF8** |
 | `audit_logs` | FR-901, FR-902 | ✅ Justified |
 | `error_logs` | FR-903, FR-904 | ✅ Justified |
-| `password_policies` | FR-905 … FR-907 | ✅ Justified |
+| `password_policies` | FR-905 … FR-907 | ✅ Justified — **Identity domain since model v9** (DATA-12) |
 
 **Result:** 26 of 28 tables justified. 1 duplicate (GAP-02), 2 conditional on RF8 (GAP-01).
 
@@ -432,6 +432,6 @@ well built:
 - User stories → `user-stories.md`
 - Functional requirements → `functional.md`
 - Non-functional requirements → `non-functional.md`
-- Data model → `06-data/` (`traduce_senas_v8.dbml`)
+- Data model → `06-data/` (`traduce_senas.dbml`, model v9) · per-domain detail in `06-data/domains/`
 - Testing strategy → `11-quality/testing-strategy.md`
 - DoD that determines when an HU is Done → `00-governance/definition-of-done.md`
