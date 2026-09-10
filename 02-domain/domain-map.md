@@ -3,9 +3,16 @@
 > The domain map is the central DDD artifact. It defines the system's boundaries and how they relate to
 > each other. This map was built from the project SRS (IEEE 830) and from a team Event Storming session.
 
-**Version:** v1.1 · **Last updated:** 2026-09-08
+**Version:** v1.2 · **Last updated:** 2026-09-10
 
-> **What changed in v1.1.** The persistence model (`traduce_senas_v8.dbml`) grew from the six contexts
+> **What changed in v1.2.** One reversal: **the password policy is no longer a cross-cutting technical
+> service — it belongs to Identity & Access.** §2.9 defines a cross-cutting service as one that "serves
+> every context equally"; `password_policies` never met that definition, and the test is spelled out in
+> §5. The persistence model moves with it (`identity.password_policies`, model v9), and the file of
+> record is now `traduce_senas.dbml` — the version lives in its header so a version bump stops
+> invalidating every pointer to it.
+>
+> **What changed in v1.1.** The persistence model (then `traduce_senas_v8.dbml`) grew from the six contexts
 > of v1.0 to eleven table groups. This revision brings the map back in sync with it: **Notifications is
 > promoted from a cross-cutting service to a Supporting context**, **Learning expands into Learning &
 > Lexicon** because the alphabet turned out to be a subset of a general sign catalog, **Authorization
@@ -91,9 +98,12 @@ given term means exactly one thing. Each context has its own Ubiquitous Language
 | 7 | Notifications | Supporting | **New in v1.1** (was a cross-cutting service) |
 | 8 | Gamification | Supporting | ⏸ **Provisional** — pending the RF8 decision |
 
-Plus one set of **cross-cutting technical services** that are deliberately *not* contexts: audit trail,
-error log and password policy. They have tables in the model but no ubiquitous language and no business
+Plus one set of **cross-cutting technical services** that are deliberately *not* contexts: the audit
+trail and the error log. They have tables in the model but no ubiquitous language and no business
 vocabulary of their own — they serve every context equally. See §2.9.
+
+> **The password policy used to be listed here and no longer is (v1.2).** It failed the very test this
+> paragraph states: it does not serve every context equally, it serves exactly one. See §2.9 and §5.
 
 ---
 
@@ -136,8 +146,8 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Responsibility** | Account lifecycle: registration, native and external-provider authentication, password recovery, security lockout and roles |
 | **Owner** | Luis Alejandro Duarte Aldana *(proposed assignment)* |
 | **Module(s)** | `backend/src/modules/identity`, `mobile/src/features/auth` |
-| **Persistence** | `identity` schema — `users`, `user_auth_providers`, `user_sessions`, `refresh_tokens`, `user_tokens`, `roles`, `permissions`, `user_roles`, `role_permissions` |
-| **SRS requirements** | RF1, ERF1.1, ERF1.2, ERF1.3, RNF4 |
+| **Persistence** | `identity` schema — `users`, `user_auth_providers`, `user_sessions`, `refresh_tokens`, `user_tokens`, `password_policies` *(v1.2)*, `roles`, `permissions`, `user_roles`, `role_permissions` |
+| **SRS requirements** | RF1, ERF1.1, ERF1.2, ERF1.3, ERF5.3, RNF4 |
 
 | Term | Meaning HERE | Different in another context? |
 |------|--------------|-------------------------------|
@@ -353,7 +363,7 @@ Three sets of tables in the v8 model belong to no bounded context, on purpose:
 |---------|--------|-------------------------|
 | **Change audit** | `audit_logs` | It records *that* something changed in any entity of any context, storing the values before and after. It has no vocabulary of its own — it borrows every other context's. It is infrastructure for traceability, not a model of the business |
 | **Error log** | `error_logs` | Technical failures classified by type. A stack trace is not a business fact |
-| **Password policy** | `password_policies` | Configuration consumed by Identity & Access. It has exactly one rule ("only one policy is active"), which is not enough to constitute a language |
+| ~~**Password policy**~~ | ~~`password_policies`~~ | **Moved to Identity & Access in v1.2.** It was listed here because it *looked* like configuration — a statement about the shape of the data, not about who owns it. Reversal recorded in §5 |
 
 > **Why draw this line explicitly.** The easy mistake is the opposite one: promoting every table group
 > to a context because it has tables. A bounded context exists where a *term* means one specific thing;
@@ -403,7 +413,7 @@ Three sets of tables in the v8 model belong to no bounded context, on purpose:
                           │  (Supporting · RF8?)      │
                           └───────────────────────────┘
 
-Cross-cutting technical services (not contexts): audit_logs · error_logs · password_policies
+Cross-cutting technical services (not contexts): audit_logs · error_logs
 Shared Kernel: the `UserId` value object is shared by Identity, Consent, Profile, Translation,
                Notifications and Gamification.
 Published Language: `sign_lexicon.code` — the same value the Core calls `Gloss`. It is the contract
@@ -507,6 +517,18 @@ Published Language: `sign_lexicon.code` — the same value the Core calls `Gloss
 | **v1.1 —** Reference by type and id, with no FK, from Notifications | Foreign key from `notifications` to each referenced table | The FK would make Notifications depend on Gamification, and Gamification may not exist. The polymorphic reference is what keeps the provisional context removable |
 | **v1.1 —** Audit, errors and password policy as cross-cutting services | Promoting each one to a context | They have tables but no terms of their own. A bounded context exists where a word means one specific thing; none of these three has a word |
 
+### Decisions reversed in v1.2
+
+| v1.1 decision | v1.2 decision | What changed |
+|---------------|---------------|--------------|
+| **Password policy as a cross-cutting technical service** — "configuration consumed by Identity & Access; one rule is not enough to constitute a language" | **Password policy inside Identity & Access** | The first half of that sentence contained the answer: *consumed by Identity & Access* — by it, and by nothing else. §2.9 defines a cross-cutting service as one that serves **every** context equally, and applying that test settles it: any context writes to `audit_logs`; only one reads `password_policies`. The second half was answering a different question — whether it is a context of its own, which it is not. Not being a context does not make something cross-cutting; it makes it part of the context that depends on it. Its vocabulary is *password*, which is Identity's word |
+
+> **What the reversal costs.** The `Configuration` domain is dissolved and there is no generic bucket for
+> a future setting. That is intended: the two candidates anyone would reach for already have better
+> homes — the confidence threshold belongs on `ai_models` (ALIGN-03) and log retention is operations
+> configuration, not database rows. **A `config` grouping is a place to avoid deciding where something
+> belongs.**
+
 ### Decisions reversed in v1.1
 
 Two v1.0 decisions no longer hold. Both are recorded rather than quietly edited, because the original
@@ -537,7 +559,7 @@ reasoning was correct for the model that existed then:
 
 ## 6. Where the map and the database still disagree
 
-> **New section in v1.1.** Bringing the map in sync with `traduce_senas_v8.dbml` closed most of the
+> **New section in v1.1.** Bringing the map in sync with the persistence model closed most of the
 > distance, but not all of it. What follows is what is still inconsistent. These are not defects in
 > either artifact — they are decisions that were made in one place and never carried to the other.
 

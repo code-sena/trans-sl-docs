@@ -1,0 +1,920 @@
+// ============================================================
+// TRADUCE SEÑAS
+// Base de datos monolítica organizada por dominios
+// PostgreSQL — formato DBML (dbdiagram.io)
+// v9 — password_policies se traslada al dominio IDENTITY. El dominio
+//      Configuration desaparece: no era transversal (audit_logs y
+//      error_logs sí lo son — los escribe cualquier dominio), sino una
+//      tabla que consume un solo contexto, Identity & Access, en el
+//      registro y el cambio de contraseña. Un dominio de una tabla con
+//      un solo consumidor no es un dominio. Ver 06-data/domains/01-identity.md.
+//      El nombre del archivo ya no lleva la versión: la versión vive
+//      aquí, en la cabecera, y los documentos que apuntan al modelo no
+//      quedan obsoletos en cada cambio.
+//
+// v8 — organización de dominios alineada con el modelo FaceAttend:
+//      separación Identity / Authorization, dominio Audit (incluye
+//      Error_Log), Refs ubicados junto a cada dominio y TableGroups
+//      con color al final del archivo. gesture_samples se desconecta del
+//      monolito (sin FK): pasa a vivir en su propia base MongoDB.
+//      Notification se profundiza: notification_types (catálogo,
+//      is_active administrado por el admin — sin preferencia por
+//      usuario/tipo, el único control individual sigue siendo
+//      user_preferences.notifications_enabled), channel
+//      (push/email/in_app, ninguno exclusivo de audio — ERF de
+//      alertas visuales/accesibilidad), reference_type/reference_id
+//      en notifications para enlazar con el hecho que originó el
+//      aviso (ej. un logro), estado FAILED en notification_status,
+//      e índice idx_notifications_reference sobre (reference_type,
+//      reference_id).
+// ============================================================
+
+
+
+// ============================================================
+// ENUMS — restricciones de dominio
+// Evitan que un typo se convierta en dato corrupto silencioso
+// ============================================================
+
+Enum user_status {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+Enum auth_provider {
+  GOOGLE
+  FACEBOOK
+}
+
+Enum session_status {
+  ACTIVE
+  CLOSED
+  EXPIRED
+}
+
+Enum token_type {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+Enum content_status {
+  ACTIVE
+  INACTIVE
+  DRAFT
+}
+
+Enum sign_type {
+  LETTER
+  WORD
+  PHRASE
+}
+
+Enum output_mode {
+  TEXT
+  AUDIO
+}
+
+Enum resource_type {
+  IMAGE
+  VIDEO
+  ANIMATION
+}
+
+Enum sample_type {
+  VIDEO
+  LANDMARKS
+  IMAGE
+}
+
+Enum device_platform {
+  ANDROID
+  IOS
+  WEB
+}
+
+Enum notification_status {
+  PENDING
+  SENT
+  FAILED
+  READ
+  CANCELLED
+}
+
+Enum notification_channel {
+  PUSH
+  EMAIL
+  IN_APP
+}
+
+Enum audit_action {
+  INSERT
+  UPDATE
+  DELETE
+}
+
+Enum theme_option {
+  LIGHT
+  DARK
+}
+
+// ── Secciones de la aplicación (RF6 — secciones más visitadas) ──────────────
+Enum usage_section {
+  HOME            // Pantalla principal / dashboard
+  TRANSLATION     // RF3 — traducción en vivo con la cámara
+  ALPHABET        // RF7 — alfabeto en señas
+  LEXICON         // Catálogo de señas
+  HISTORY         // RF5 — historial de traducciones
+  PROFILE         // RF5 — perfil del usuario
+  SETTINGS        // ERF5.2 / ERF5.4 — tema e idioma
+  NOTIFICATIONS   // RF4
+  ACHIEVEMENTS    // Solo si se mantiene Gamification
+  ADMIN           // Panel de administración
+}
+
+// ── Qué hizo el usuario ────────────────────────────────────────────────────
+Enum usage_event_type {
+  SECTION_VIEW            // Entró a una sección
+  TRANSLATION_STARTED     // Activó la cámara para traducir
+  TRANSLATION_COMPLETED   // La traducción terminó con resultado
+  TRANSLATION_FAILED      // No se pudo reconocer nada
+  AUDIO_PLAYED            // ERF3.2 — reprodujo la salida en audio
+  SIGN_VIEWED             // Consultó una seña del léxico
+  SEARCH_PERFORMED        // Buscó en el catálogo
+  HISTORY_ENTRY_DELETED   // ERF5.5 — borró un registro del historial
+  PREFERENCE_CHANGED      // Cambió tema o idioma
+  NOTIFICATION_OPENED     // Abrió una notificación
+}
+
+// ── A qué registro apunta reference_id ─────────────────────────────────────
+// Compartido por usage_events y notifications: las dos tablas usan el mismo
+// patrón de referencia polimórfica sin FK.
+Enum reference_entity {
+  TRANSLATION
+  SIGN
+  CATEGORY
+  ACHIEVEMENT
+  NOTIFICATION
+  AI_MODEL
+  USER
+}
+
+// ── Categorías de falla técnica ────────────────────────────────────────────
+Enum error_type {
+  VALIDATION_ERROR         // Datos de entrada inválidos
+  AUTH_ERROR               // Credenciales, token expirado, cuenta bloqueada
+  PERMISSION_ERROR         // Autenticado pero sin permiso
+  NOT_FOUND                // Recurso inexistente
+  MODEL_INFERENCE_ERROR    // Falla del modelo de IA al procesar
+  EXTERNAL_SERVICE_ERROR   // Proveedor de push, correo, almacenamiento
+  DATABASE_ERROR           // Falla de la base de datos
+  UNEXPECTED_ERROR         // Todo lo demás — el cajón de sastre
+}
+
+// ── Idioma de la interfaz (ERF5.4) ─────────────────────────────────────────
+Enum ui_language {
+  ES   // Español — código i18n: 'es'
+  EN   // Inglés  — código i18n: 'en'
+}
+
+// ── Lengua de señas del contenido ──────────────────────────────────────────
+Enum sign_language {
+  LSC  // Lengua de Señas Colombiana — ISO 639-3: 'csn'
+}
+
+
+
+// ============================================================
+// IDENTITY
+// ============================================================
+//
+// Autenticación y ciclo de vida de la cuenta del usuario.
+// Authorization (roles/permisos) NO vive aquí: solo consume
+// user_id como referencia.
+// ============================================================
+
+Table users {
+  user_id uuid [pk, default: `gen_random_uuid()`]
+  username varchar(255) [not null, unique]
+  full_name varchar(255) [not null, note: 'ERF1.1 / ERF5.1']
+  birth_date date [note: 'ERF1.1 pide edad; se guarda fecha y se calcula']
+  email varchar(255) [not null, unique]
+  password_hash varchar(255) [note: 'NULL si solo entra por proveedor externo']
+  status user_status [not null, default: 'INACTIVE', note: 'Nace INACTIVE; el registro por Google/Facebook inserta ACTIVE explícitamente']
+
+  email_verified_at timestamptz [note: 'Cuándo se confirmó el correo. Se llena al validar el código, o al registrarse por proveedor externo']
+
+  failed_login_attempts integer [not null, default: 0, note: 'Fallos consecutivos hacia el próximo bloqueo']
+  lockout_level integer [not null, default: 0, note: 'Bloqueos acumulados en la racha actual: define la duración del siguiente (1, 5, 10 min)']
+  locked_until timestamptz [note: 'Bloqueo temporal. Se levanta solo al pasar la fecha']
+  last_failed_login_at timestamptz [note: 'Permite reiniciar lockout_level tras 24 h sin fallos']
+  blocked_at timestamptz [note: 'Cuándo se agotó la escalera y pasó a BLOCKED']
+
+  terms_accepted_at timestamptz [not null, note: 'ERF1.1 — cuándo hundió el botón. Obligatorio para crear la cuenta']
+  terms_version varchar(20) [not null, note: 'ERF1.1 — versión del documento aceptado, ej. 1.0']
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  last_access_at timestamptz
+  deleted_at timestamptz [note: 'Cuenta eliminada por el usuario; la fila se conserva anonimizada']
+ indexes {
+    status [name: 'idx_users_status']
+    locked_until [name: 'idx_users_locked']
+  }
+}
+
+// Reemplaza el campo users.auth_type
+// ERF1.2 habla de Gmail Y Facebook: un usuario puede vincular varios
+Table user_auth_providers {
+  auth_provider_id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  provider auth_provider [not null]
+  provider_user_id varchar(255) [not null]
+  email_provider varchar(255)
+  linked_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (provider, provider_user_id) [unique, name: 'uq_provider_identity']
+    (user_id, provider) [unique, name: 'uq_user_provider']
+  }
+}
+
+Table user_sessions {
+  session_id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [note: 'NULL cuando el usuario fue eliminado — la sesión se conserva para RF6']
+  started_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  ended_at timestamptz
+  duration_seconds integer [note: 'RF6 — se calcula al cerrar la sesión']
+  ip_address inet
+  status session_status [not null, default: 'ACTIVE']
+  last_activity_at timestamptz
+
+  indexes {
+    (user_id, started_at) [name: 'idx_sessions_user_started']
+    status [name: 'idx_sessions_status']
+  }
+}
+
+Table refresh_tokens {
+  refresh_token_id uuid [pk, default: `gen_random_uuid()`]
+  session_id uuid [not null]
+  token_hash varchar(255) [not null, unique]
+  issued_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  expires_at timestamptz [not null]
+  revoked_at timestamptz
+  replaced_by_token_id uuid
+
+  indexes {
+    session_id [name: 'idx_refresh_session']
+    expires_at [name: 'idx_refresh_expires']
+  }
+}
+Table user_tokens {
+  token_id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  token_type token_type [not null, note: 'EMAIL_VERIFICATION = código de 6 dígitos del registro. PASSWORD_RESET = token del enlace de recuperación']
+  token_hash varchar(255) [not null, note: 'Hash del código/token. Nunca el valor en claro']
+  expires_at timestamptz [not null]
+  used_at timestamptz [note: 'NULL = sin usar. Un token usado no se puede reutilizar']
+  attempts integer [not null, default: 0, note: 'Intentos fallidos de validación de este token']
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (user_id, token_type, created_at) [name: 'idx_user_tokens_lookup']
+  }
+}
+
+
+
+// Política de contraseñas — vive en Identity porque solo Identity la consume:
+// se lee al registrar (ERF1.1) y al cambiar la contraseña (ERF5.3). No tiene FK
+// hacia users: no es de un usuario, es la regla vigente para todos.
+// Se versiona conservando filas, nunca sobrescribiendo: saber qué reglas regían
+// cuando se creó una cuenta es auditable (INV-026).
+Table password_policies {
+  password_policy_id uuid [pk, default: `gen_random_uuid()`]
+
+  min_length integer [not null, default: 8]
+  max_length integer [not null, default: 20]
+
+  requires_uppercase boolean [not null, default: true]
+  requires_lowercase boolean [not null, default: true]
+  requires_numbers boolean [not null, default: true]
+  requires_symbols boolean [not null, default: true]
+
+  is_active boolean [not null, default: true, note: 'Permite tener varias políticas históricas y solo una vigente']
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Ref: user_auth_providers.user_id > users.user_id [delete: cascade]
+Ref: user_sessions.user_id > users.user_id [delete: set null]
+Ref: refresh_tokens.session_id > user_sessions.session_id [delete: cascade]
+Ref: refresh_tokens.replaced_by_token_id > refresh_tokens.refresh_token_id [delete: set null]
+Ref: user_tokens.user_id > users.user_id [delete: cascade]
+
+
+
+// ============================================================
+// AUTHORIZATION
+// ============================================================
+//
+// Roles y permisos. Depende de Identity solo a través de
+// user_id (referencia externa, no dueño de la identidad).
+// ============================================================
+
+Table roles {
+  role_id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(50) [not null, unique]
+  description varchar(255)
+}
+
+Table permissions {
+  permission_id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(100) [not null, unique]
+  description varchar(255)
+}
+
+Table user_roles {
+  user_id uuid [pk]
+  role_id uuid [pk]
+  assigned_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table role_permissions {
+  role_id uuid [pk]
+  permission_id uuid [pk]
+  assigned_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+
+Ref: user_roles.user_id > users.user_id [delete: cascade]
+Ref: user_roles.role_id > roles.role_id [delete: restrict]
+Ref: role_permissions.role_id > roles.role_id [delete: cascade]
+Ref: role_permissions.permission_id > permissions.permission_id [delete: cascade]
+
+
+
+// ============================================================
+// PROFILE
+// ============================================================
+
+Table user_preferences {
+  user_preference_id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null, unique]
+  ui_language ui_language [not null, default: 'ES', note: 'ERF5.4 — idioma de los textos de la interfaz']
+  theme theme_option [not null, default: 'LIGHT', note: 'ERF5.2']
+  notifications_enabled boolean [not null, default: true, note: 'RF4 — el admin puede activarlas/desactivarlas']
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+
+Ref: user_preferences.user_id - users.user_id [delete: cascade]
+
+
+
+// ============================================================
+// LEXICON
+// ============================================================
+
+Table categories {
+  category_id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(100) [not null, unique]
+  description varchar(255)
+}
+
+Table multimedia_resources {
+  resource_id uuid [pk, default: `gen_random_uuid()`]
+  sign_id uuid [not null]
+  resource_type resource_type [not null]
+  uri text [not null]
+  mime_type varchar(100)
+  position integer [not null, default: 1, note: 'Orden de reproducción cuando la seña tiene varios recursos']
+  description text
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (sign_id, position) [unique, name: 'uq_resource_order']
+  }
+}
+
+
+Ref: sign_lexicon.category_id > categories.category_id [delete: restrict]
+Ref: multimedia_resources.sign_id > sign_lexicon.sign_id [delete: cascade]
+
+
+// La seña: solo lo que NO depende de ningún idioma escrito
+Table sign_lexicon {
+  sign_id uuid [pk, default: `gen_random_uuid()`]
+  code varchar(50) [not null, unique, note: 'Identificador estable e independiente de idioma, ej. GREETING_HELLO. Es la clase que produce el modelo']
+  sign_type sign_type [not null, default: 'WORD']
+  letter varchar(1) [note: 'RF7 — solo cuando sign_type = LETTER']
+  sign_language sign_language [not null, default: 'LSC']
+  category_id uuid [not null]
+  status content_status [not null, default: 'ACTIVE']
+  created_by uuid [note: 'Quién creó la seña. NULL si esa cuenta fue eliminada']
+  updated_by uuid [note: 'Último que la editó']
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (sign_language, sign_type) [name: 'idx_lexicon_lang_type']
+    (sign_language, letter) [unique, name: 'uq_alphabet_letter']
+    category_id [name: 'idx_lexicon_category']
+    (status, sign_language) [name: 'idx_lexicon_status']
+  }
+}
+
+Table sign_localizations {
+  sign_localization_id uuid [pk, default: `gen_random_uuid()`]
+  sign_id uuid [not null]
+  ui_language ui_language [not null]
+  name varchar(150) [not null, note: 'El texto que se muestra: Hola / Hello']
+  meaning varchar(255)
+  description text
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]   
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]   
+
+  indexes {
+    (sign_id, ui_language) [unique, name: 'uq_sign_localization']
+    (ui_language, name) [name: 'idx_sign_localizations_name']
+  }
+}
+
+Ref: sign_localizations.sign_id > sign_lexicon.sign_id [delete: cascade]
+
+
+// ============================================================
+// TRANSLATION
+// ============================================================
+
+Table translations {
+  translation_id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  recognized_text text [not null]
+  confidence decimal(5,4)
+  output_mode output_mode [not null, default: 'TEXT', note: 'ERF3.2 — texto o audio']
+  model_id  uuid [note: 'Identificador del modelo de IA que produjo la traducción, para auditoría y trazabilidad']
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  deleted_at timestamptz [note: 'ERF5.5 — borrado lógico de registros individuales del historial']
+
+  indexes {
+    (user_id, created_at) [name: 'idx_translations_user_created']
+    deleted_at [name: 'idx_translations_deleted']
+  }
+}
+
+Table translation_signs {
+  translation_sign_id uuid [pk, default: `gen_random_uuid()`]
+  translation_id uuid [not null]
+  sign_id uuid [not null]
+  position integer [not null]
+  confidence decimal(5,4)
+
+  indexes {
+    (translation_id, position) [unique, name: 'uq_sign_order']
+    sign_id [name: 'idx_translation_signs_sign']
+  }
+}
+
+
+Table ai_models {
+  model_id uuid [pk, default: `gen_random_uuid()`]
+  version varchar(50) [not null, unique, note: 'Ej: 1.0.0, 1.1.0']
+  description varchar(255)
+
+  trained_at timestamptz [not null]
+  trained_by uuid [not null, note: 'Admin que ejecutó el entrenamiento']
+  sign_language sign_language [not null, default: 'LSC', note: 'Para qué lengua de señas fue entrenado este modelo']
+
+  sample_count integer [not null, note: 'Cuántas muestras se usaron para entrenar']
+  sign_count integer [not null, note: 'Cuántas señas distintas reconoce este modelo']
+  accuracy decimal(5,4) [note: 'Precisión sobre el conjunto de prueba, 0 a 1']
+
+  storage_reference text [not null, note: 'Ruta del archivo .tflite publicado']
+  is_active boolean [not null, default: false, note: 'El modelo que la app está usando actualmente']
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    is_active [name: 'idx_models_active']
+    trained_at [name: 'idx_models_trained']
+  }
+}
+
+
+
+Ref: ai_models.trained_by > users.user_id [delete: restrict]
+Ref: translations.model_id > ai_models.model_id [delete: restrict]
+
+
+
+Ref: translations.user_id > users.user_id [delete: cascade]
+Ref: translation_signs.translation_id > translations.translation_id [delete: cascade]
+Ref: translation_signs.sign_id > sign_lexicon.sign_id [delete: restrict]
+
+
+
+// ============================================================
+// NOTIFICATION
+// RF4 / ERF4.1
+// ============================================================
+//
+// ERF (accesibilidad, transversal a todo el proyecto): las alertas
+// deben ser visuales — la app es para usuarios sordos/hipoacúsicos,
+// no puede depender de sonido. Por eso NINGÚN valor de
+// notification_channel es "solo audio": PUSH y IN_APP son avisos
+// visuales por definición (banner / insignia en pantalla), y EMAIL
+// también es texto. IN_APP es el canal por defecto recomendado
+// para avisos que deben verse dentro del dashboard (ej. logros).
+//
+// notification_types: catálogo de los tipos de aviso que existen
+// en la app (pocos, con significado claro — no una lista enorme).
+// is_active lo administra el ADMIN a nivel de sistema (activa o
+// retira un tipo para todos los usuarios); no hay preferencia por
+// usuario — el único control individual es el interruptor maestro
+// user_preferences.notifications_enabled (cumple RF4 tal cual está
+// redactado: "el usuario puede activarlas/desactivarlas").
+//
+// notifications.reference_type/reference_id: a qué registro de
+// otro dominio se refiere el aviso (ej. un logro en Gamification,
+// una traducción en Translation) — referencia por ID, sin FK real,
+// igual que usage_events.reference_id. Esto es lo que permite que
+// un logro desbloqueado dispare una alerta visual en el dashboard
+// sin que Notification dependa de Gamification. Índice
+// idx_notifications_reference sobre (reference_type, reference_id)
+// para poder buscar "todas las notificaciones sobre este registro",
+// mismo patrón que audit_logs.idx_audit_aggregate.
+//
+// notification_status.FAILED: representa un envío que no llegó
+// (token vencido, sin conexión, proveedor caído) — sin este valor
+// no había forma de distinguir "todavía no se envió" de "se intentó
+// y no se pudo".
+// ============================================================
+
+Table notification_types {
+  notification_type_id uuid [pk, default: `gen_random_uuid()`]
+  code varchar(50) [not null, unique, note: 'Ej: LOGRO_DESBLOQUEADO, RECORDATORIO_PRACTICA, TRADUCCION_COMPLETADA, SEGURIDAD_CUENTA']
+  name varchar(100) [not null, note: 'Nombre descriptivo del tipo']
+  description varchar(255)
+  is_active boolean [not null, default: true, note: 'Control de administrador: activa/retira el tipo para todos los usuarios']
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table user_devices {
+  device_id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  push_token varchar(255) [not null, unique]
+  platform device_platform [not null]
+  is_active boolean [not null, default: true]
+  registered_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  revoked_at timestamptz
+
+  indexes {
+    (user_id, is_active) [name: 'idx_devices_user_active']
+  }
+}
+
+Table notifications {
+  notification_id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  notification_type_id uuid [not null]
+  device_id uuid [note: 'Solo aplica cuando channel = PUSH']
+  channel notification_channel [not null, default: 'PUSH']
+  title varchar(150) [not null]
+  body text [not null]
+  reference_type reference_entity [note: 'Tipo de entidad que originó el aviso, ej. ACHIEVEMENT']
+
+  reference_id uuid [note: 'Registro puntual al que apunta reference_type, sin FK real']
+  status notification_status [not null, default: 'PENDING']
+  scheduled_at timestamptz [note: 'RF4 — notificaciones programadas']
+  sent_at timestamptz
+  read_at timestamptz
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (user_id, created_at) [name: 'idx_notifications_user_created']
+    (status, scheduled_at) [name: 'idx_notifications_pending']
+    notification_type_id [name: 'idx_notifications_type']
+    (reference_type, reference_id) [name: 'idx_notifications_reference']
+  }
+}
+
+
+Ref: user_devices.user_id > users.user_id [delete: cascade]
+Ref: notifications.user_id > users.user_id [delete: cascade]
+Ref: notifications.notification_type_id > notification_types.notification_type_id [delete: restrict]
+Ref: notifications.device_id > user_devices.device_id [delete: set null]
+
+
+
+// ============================================================
+// AI
+// ============================================================
+//
+// gesture_samples queda DESCONECTADA del monolito: vive en su
+// propia base de datos MongoDB (colección independiente), para
+// poder extender su esquema libremente (nuevos tipos de muestra,
+// metadatos del modelo, etc.) sin acoplarse al esquema relacional.
+//
+// sign_id y user_id son identificadores públicos (referencias
+// externas); la consistencia se resuelve a nivel de aplicación,
+// NO hay FK real hacia sign_lexicon ni hacia users.
+//
+// ATENCIÓN: guarda muestras corporales asociadas a una persona.
+// Es dato sensible bajo la Ley 1581 de 2012 (habeas data, Colombia):
+// el consentimiento es obligatorio y debe ser demostrable.
+// ============================================================
+
+Table gesture_samples {
+  sample_id uuid [pk, default: `gen_random_uuid()`]
+  sign_id uuid [not null, note: 'Lexicon.sign_lexicon.sign_id — identificador público, sin FK']
+
+  capture_session_id uuid [not null, note: 'Agrupa todas las tomas de una misma tanda de grabación. Permite descartar la sesión completa']
+
+  recorded_by uuid [not null, note: 'Identity.users.user_id del admin/lingüista que operó la interfaz — sin FK']
+  performed_by varchar(150) [not null, note: 'Quién ejecutó físicamente la seña. Texto, porque puede ser un colaborador externo sin cuenta']
+
+  consent_granted_at timestamptz [not null, note: 'Autorización del colaborador que aparece en la muestra']
+  consent_terms_version varchar(20) [not null, note: 'Versión del documento de autorización que firmó']
+
+  sample_type sample_type [not null, default: 'LANDMARKS', note: 'LANDMARKS es el tipo principal: coordenadas, no video']
+  storage_reference text [not null]
+
+  is_validated boolean [not null, default: false, note: 'Solo las validadas alimentan el entrenamiento']
+  validated_by uuid [note: 'Quién dio el visto bueno — sin FK']
+  validated_at timestamptz
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    sign_id [name: 'idx_samples_sign']
+    capture_session_id [name: 'idx_samples_session']
+    (sign_id, is_validated) [name: 'idx_samples_trainable']
+  }
+}
+// sign_id  → Lexicon.sign_lexicon.sign_id
+// user_id  → Identity.users.user_id
+// Sin FK real: colección propia en MongoDB, fuera del monolito relacional.
+
+
+
+// ============================================================
+// USAGE
+// RF6 — estadísticas de uso
+// ============================================================
+
+Table usage_events {
+  usage_event_id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [note: 'NULL si el usuario fue eliminado — el evento se conserva para RF6']
+  session_id uuid [note: 'Un evento ocurre dentro de una sesión']
+  section usage_section [not null, note: 'RF6 — secciones más visitadas']
+  event_type usage_event_type [not null]
+  reference_type reference_entity [note: 'Tipo de entidad a la que apunta reference_id']
+  reference_id uuid
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (user_id, created_at) [name: 'idx_usage_user_created']
+    (section, created_at) [name: 'idx_usage_section']
+    session_id [name: 'idx_usage_session']
+    (event_type, created_at) [name: 'idx_usage_event_type']
+  }
+}
+
+Table usage_daily_stats {
+  stat_date date [pk, note: 'Día en zona horaria de Colombia']
+  section usage_section [pk]
+  event_type usage_event_type [pk]
+
+  event_count integer [not null, note: 'Cuántos eventos de este tipo hubo ese día en esa sección']
+  unique_users integer [not null, note: 'Cuántos usuarios distintos. Válido SOLO a esta granularidad — ver nota']
+
+  calculated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`, note: 'Cuándo se calculó esta fila']
+
+  indexes {
+    (stat_date, section) [name: 'idx_daily_stats_date_section']
+  }
+}
+
+Table session_daily_stats {
+  stat_date date [pk]
+  session_count integer [not null]
+  unique_users integer [not null]
+  total_duration_seconds bigint [not null]
+  avg_duration_seconds integer [not null]
+  calculated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Ref: usage_events.user_id > users.user_id [delete: set  null]
+Ref: usage_events.session_id > user_sessions.session_id [delete: set null]
+
+
+
+// ============================================================
+// GAMIFICATION
+// SIN RESPALDO EN EL SRS ACTUAL.
+// O agregas un RF8 al documento, o eliminas este bloque:
+// una tabla sin requisito rompe la trazabilidad igual que
+// un requisito sin tabla.
+// ============================================================
+
+Enum achievement_metric {
+  TRANSLATIONS_COMPLETED   // traducciones completadas
+  SIGNS_LEARNED            // señas distintas traducidas
+  ALPHABET_COMPLETED       // letras del alfabeto practicadas
+  SESSIONS_COMPLETED       // sesiones de uso
+}
+
+Table achievements {
+  achievement_id uuid [pk, default: `gen_random_uuid()`]
+  code varchar(50) [not null, unique, note: 'Identificador estable, ej. FIRST_TRANSLATION']
+  name varchar(100) [not null]
+  description text [not null, note: 'Cómo se consigue. Se muestra bloqueado y desbloqueado']
+
+  metric achievement_metric [not null, note: 'QUÉ se cuenta']
+  target_count integer [not null, note: 'CUÁNTO hace falta']
+
+  points integer [not null, default: 10, note: 'Puntos que otorga — el "gamerscore"']
+  icon_reference text [note: 'Ruta del ícono. Se muestra en gris cuando está bloqueado']
+  is_secret boolean [not null, default: false, note: 'Si es true, nombre y descripción se ocultan hasta desbloquearlo']
+  is_active boolean [not null, default: true]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table user_achievements {
+  user_achievement_id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  achievement_id uuid [not null]
+
+  current_count integer [not null, default: 0, note: 'Progreso actual hacia target_count']
+  achieved_at timestamptz [note: 'NULL = en progreso. Con fecha = desbloqueado']
+  notified_at timestamptz [note: 'Cuándo se avisó. Garantiza que la notificación salga una sola vez']
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (user_id, achievement_id) [unique, name: 'uq_user_achievement']
+    user_id [name: 'idx_user_achievements_unlocked']
+  }
+}
+
+Ref: user_achievements.user_id > users.user_id [delete: cascade]
+Ref: user_achievements.achievement_id > achievements.achievement_id [delete: restrict]
+
+
+
+// ============================================================
+// AUDIT
+// ============================================================
+//
+// audit_logs guarda el antes y el después de cada cambio, no
+// solo una descripción. error_logs guarda las fallas técnicas
+// de la aplicación (excepciones, servicios externos caídos, etc.).
+// En ambas, user_id sobrevive a la eliminación de la cuenta
+// mediante ON DELETE SET NULL: la traza no se pierde.
+// ============================================================
+
+Table audit_logs {
+  audit_log_id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [note: 'NULL si el usuario fue eliminado — la traza se conserva']
+  entity_type varchar(100) [not null, note: 'Tabla afectada']
+  entity_id uuid
+  action audit_action [not null]
+  old_values jsonb
+  new_values jsonb
+  ip_address inet
+  application varchar(100)
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (user_id, created_at) [name: 'idx_audit_user_created']
+    (entity_type, entity_id) [name: 'idx_audit_entity']
+  }
+}
+
+Table error_logs {
+  error_log_id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [note: 'NULL si el usuario fue eliminado, o si el error ocurrió sin sesión autenticada']
+  error_type error_type [not null, note: 'Ej: VALIDATION_ERROR, AUTH_ERROR, MODEL_INFERENCE_ERROR, EXTERNAL_SERVICE_ERROR']
+  message text [not null, note: 'Descripción/mensaje del error']
+  stack_trace text [null, note: 'Traza técnica para depuración']  
+  endpoint varchar(255) [null, note: 'Ruta, método o job donde ocurrió el error']
+  ip_address inet [null]
+  application varchar(100) [null]
+  occurred_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (user_id, occurred_at) [name: 'idx_errors_user_occurred']
+    error_type [name: 'idx_errors_type']
+    occurred_at [name: 'idx_errors_date']
+  }
+}
+
+
+Ref: audit_logs.user_id > users.user_id [delete: set null]
+Ref: error_logs.user_id > users.user_id [delete: set null]
+
+
+
+
+
+
+// ============================================================
+// TABLEGROUPS — agrupación visual por dominio (dbdiagram.io)
+// ============================================================
+
+TableGroup Identity [color: #3498DB] {
+  users
+  user_auth_providers
+  user_sessions
+  refresh_tokens
+  user_tokens
+  password_policies
+}
+
+TableGroup Authorization [color: #2980B9] {
+  roles
+  permissions
+  user_roles
+  role_permissions
+}
+
+TableGroup Profile [color: #16a085] {
+  user_preferences
+}
+
+TableGroup Lexicon [color: #f39c12] {
+  categories
+  sign_lexicon
+  sign_localizations
+  multimedia_resources
+}
+
+TableGroup Translation [color: #8e44ad] {
+  translations
+  translation_signs
+}
+
+TableGroup Notification [color: #d35400] {
+  notification_types
+  user_devices
+  notifications
+}
+
+TableGroup AI [color: #c0392b] {
+  gesture_samples
+  ai_models
+}
+
+TableGroup Usage [color: #27ae60] {
+  usage_events
+  usage_daily_stats
+  session_daily_stats
+}
+
+TableGroup Gamification [color: #f1c40f] {
+  achievements
+  user_achievements
+}
+
+TableGroup Audit [color: #95a5a6] {
+  audit_logs
+  error_logs
+}
+
+
+// ============================================================
+// RESTRICCIONES ADICIONALES (no expresables en DBML)
+// Se aplican en el DDL — ver migrations/002_constraints.sql
+// ============================================================
+// users:         failed_login_attempts >= 0, lockout_level >= 0
+// user_tokens:   expires_at > created_at
+// sign_lexicon:  letter obligatorio si y solo si sign_type = LETTER
+// translations:  confidence entre 0 y 1
+// notifications: device_id obligatorio si channel = PUSH
+// ai_models:     accuracy entre 0 y 1; solo un modelo con is_active
+// ...
+// ============================================================
+
+
+// ============================================================
+// TRAZABILIDAD CON EL SRS
+// ============================================================
+
+// RF1   Gestión de usuarios ....... users, user_auth_providers, user_sessions,
+//                                   refresh_tokens, user_tokens,
+//                                   password_policies
+// RF2   Navegación ................ sin tablas propias; cada entrada a una sección se
+//                                   registra como SECTION_VIEW en usage_events (insumo de RF6)
+// RF3   Traducción seña→texto/audio  translations, translation_signs, gesture_samples
+// RF4   Notificaciones ............ notifications, notification_types, user_devices, user_preferences
+// ERF   Alertas visuales (accesibilidad, todo el proyecto) ...... notification_channel (PUSH/IN_APP/EMAIL,
+//                                   ninguno exclusivo de audio), notifications.reference_type/reference_id
+// RF5   Gestión del perfil ........ users, user_preferences, translations
+// RF6   Estadísticas (admin) ...... usage_events, user_sessions, roles, permissions
+// RF7   Alfabeto en señas ......... sign_lexicon (sign_type=LETTER), multimedia_resources
+// —     Auditoría interna ......... audit_logs
+// —     Manejo de errores ......... error_logs
+// —     Política de contraseñas ... password_policies (dominio Identity desde v9)

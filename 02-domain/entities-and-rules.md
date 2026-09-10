@@ -12,9 +12,12 @@
 > [`_stacks/python-fastapi.md`](../_stacks/python-fastapi.md) ·
 > [`_stacks/go.md`](../_stacks/go.md)
 
-**Version:** v1.1 · **Last updated:** 2026-09-08
+**Version:** v1.2 · **Last updated:** 2026-09-10
 
-> **What changed in v1.1.** Realigned with `traduce_senas_v8.dbml`. New entities for the tables the
+> **What changed in v1.2.** `PasswordPolicy` moves from cross-cutting to **Identity & Access** — it is
+> read by that context and by no other. Reversal recorded in `domain-map.md` §5.
+>
+> **What changed in v1.1.** Realigned with the v8 persistence model. New entities for the tables the
 > model added: `Role` and `Permission` (Identity), `Sign`, `SignLocalization`, `Category` and
 > `MultimediaResource` (Learning & Lexicon), `NotificationType`, `Notification` and `UserDevice`
 > (Notifications), `PasswordPolicy`, and `Achievement` / `UserAchievement` marked ⏸ pending RF8.
@@ -699,9 +702,12 @@ INV-025: A disabled switch suppresses every delivery              [NEW in v1.1]
 
 ---
 
-### Entity: `PasswordPolicy` — **new in v1.1**
+### Entity: `PasswordPolicy` — **new in v1.1** · **moved to Identity & Access in v1.2**
 
-**Context:** cross-cutting technical service, consumed by Identity & Access
+**Context:** Identity & Access
+**Description:** The password rules in force, and the history of the rules in force before. It is not an
+aggregate of a user — it is the rule that applies to all of them, which is why it is its own entity and
+not a set of constants.
 
 | Attribute | Type | Description | Required | Rules |
 |-----------|------|-------------|----------|-------|
@@ -861,7 +867,7 @@ aggregate.
 | `UserAchievement` ⏸ | Entity | Gamification | No — inside `Achievement` — **v1.1** | `user_achievements` |
 | `UsageEvent` | Entity | Usage Analytics | Yes — **v1.1** | `usage_events` |
 | `UsageReport` | **Read model** | Usage Analytics | N/A — not an aggregate | none, by design |
-| `PasswordPolicy` | Entity | Cross-cutting | Yes — **v1.1** | `password_policies` |
+| `PasswordPolicy` | Entity | Identity & Access — **v1.2** | Yes | `identity.password_policies` |
 | `AuditEntry` | Entity | Cross-cutting | Yes — **v1.1** | `audit_logs` |
 | `ErrorEntry` | Entity | Cross-cutting | Yes — **v1.1** | `error_logs` |
 | `Email`, `Confidence`, `Gloss`, `OutputMode`, `Theme`, `DateRange`… | Value Objects | Various / shared | N/A | enums and columns |
