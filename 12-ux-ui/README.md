@@ -1,6 +1,6 @@
 # 12 — UX/UI
 
-> **Status:** 🟡 Living document — v0.3, 2026-09-15
+> **Status:** 🟡 Living document — v0.4, 2026-09-15
 > **What is this?** How Traduce Señas looks, how it is navigated and how each screen behaves,
 > designed before it is built.
 
@@ -28,8 +28,13 @@
 ├── navigation-map.md    ⭐ screens, requirement per screen, roles, flows, gaps
 ├── design-system.md        tokens for the four themes, type, components, accessibility checklist
 ├── mockup/
+│   ├── build-from-export.ps1  regenerates layout/ from the Claude Design export
+│   ├── verify-layout.ps1   checks links, roles, titles and dependencies without opening a browser
 │   └── layout/
-│       ├── _shared/        runtime, theme, header and footer, images, accessibility layer, session
+│       ├── _shared/        runtime, theme, header and footer, images, session,
+│       │   │               accessibility layer, narrow-screen layer
+│       │   ├── vendor/     React, Babel and Lucide, pinned by version
+│       │   └── fonts/      Nunito Sans, latin subset
 │       └── <screen>/       index.html — one folder per screen (17)
 └── mvp/                    empty until the backend exists
 ```
@@ -51,9 +56,10 @@
 
 ## How to use the mockups
 
-1. Open any `mockup/layout/<screen>/index.html` in a browser. No server is needed, but **internet is
-   needed**: the page loads React 18.3.1 and Babel from unpkg, the Lucide icons, and Nunito Sans from
-   Google Fonts. Offline the page stays blank, which is the price of keeping the export's own runtime.
+1. Open any `mockup/layout/<screen>/index.html` in a browser. **No server and no internet are needed.**
+   React, Babel, the Lucide icons and Nunito Sans live in `_shared/vendor/` and `_shared/fonts/`, each
+   pinned to a version. If a page cannot start, it says so in a red banner instead of showing half a
+   screen, and with JavaScript disabled it says that too.
 2. Header and footer are export components (`_shared/SiteHeader.dc.html`, `_shared/SiteFooter.dc.html`).
    The runtime would fetch them, which browsers block on local files, so every page carries them
    embedded as `data:` URIs in `window.__resources`.
@@ -71,6 +77,20 @@
    without going through the login. "Cerrar sesión" in Perfil ends the session.
 5. Theme and accent are kept in `localStorage` under `ts-prefs`: the moon button in the header switches
    light and dark, and the choice is remembered across pages.
+6. The pages fit narrow screens. `_shared/responsive.css` stacks the grids and wraps the navigation bar
+   at 1200, 900 and 640 pixels. Checked with no horizontal overflow on all 17 screens down to 500 px.
+
+### Rebuilding and checking
+
+```powershell
+powershell -ExecutionPolicy Bypass -File mockup\build-from-export.ps1 -Src <export folder>
+powershell -ExecutionPolicy Bypass -File mockup\verify-layout.ps1
+```
+
+The build script regenerates the 17 pages from the export and reapplies every change the repository
+adds: local runtime, accessibility, narrow screens, roles and the content fixes. The verification
+script checks titles, language, links, shared files, role guards, image alternative text and that no
+page asks the network for anything. It returns a non-zero exit code, so it can run in CI.
 
 ### Conventions for a new mockup
 
@@ -78,7 +98,8 @@
 |------|--------|
 | One folder per screen | Named after the user action, `kebab-case`, English (ADR-001): `translate-signs/` |
 | One file | `index.html`; everything shared (runtime, theme, images, header, footer) lives in `_shared/` |
-| Same runtime | A new screen is exported from Claude Design and organised like the rest, not hand-written |
+| Same runtime | A new screen is exported from Claude Design and added to `build-from-export.ps1`, not hand-written |
+| Nothing from the network | Every script, font and image comes from `_shared/`; `verify-layout.ps1` fails otherwise |
 | Tokens only | Colours and sizes from `design-system.md`; no new hex values |
 | Accessibility | `_shared/a11y.css` and `_shared/a11y.js` load on every page and must not be bypassed |
 | Role | The page declares who it is for with `__tsGuardRole`, using `user` or `admin` |
@@ -92,9 +113,10 @@
 | Item | State |
 |------|-------|
 | `navigation-map.md` | ✅ v0.3 — 21 screens (18 in the frontend, 3 new), 20 recorded gaps |
-| `design-system.md` | ✅ v0.3 — four themes, contrast-adjusted, brand identity (§ 10) |
-| `mockup/layout/` | ✅ 17 screens from the Claude Design export, accessible, role-aware, checked in light and dark mode |
+| `design-system.md` | ✅ v0.4 — four themes, contrast-adjusted, brand identity (§ 10) |
+| `mockup/layout/` | ✅ 17 screens from the Claude Design export, accessible, role-aware, offline, checked in light and dark mode and down to 500 px |
 | `mockup/layout/` — missing | ⏸ `view-notifications` and `view-achievements` have no mockup yet |
+| `mockup/verify-layout.ps1` | ✅ 17 pages, 0 problems |
 | `mvp/` | ⏸ Waiting for the backend |
 
 ### Decisions taken in this version
@@ -106,6 +128,7 @@
 | 2026-09-15 | Lexicon and linguist screens are not designed: the SRS v2.0 does not require them |
 | 2026-09-15 | **Roles in the navigation bar:** the administrator sees **only Estadísticas and Administración**; a regular user sees Traducción, Alfabeto and Historial and neither of those two (ERF6.1). Perfil is reachable by both |
 | 2026-09-15 | **The Claude Design export is the mockup set**, kept in the repository as `mockup/layout/` with an accessibility layer on top, instead of being copied by hand into self-contained pages |
+| 2026-09-15 | **Nothing is fetched from the network.** The runtime, the icons and the typeface are copied into `_shared/` and pinned by version, so a mockup opened later renders the same as today |
 
 ---
 
@@ -135,4 +158,5 @@
 |---------|------|--------|
 | v0.1 | 2026-09-15 | Scaffold template replaced with project content: mockup/MVP structure, 21 HTML mockups, navigation map and design system built from the SRS v2.0, the style manuals and `frontendTS` |
 | v0.2 | 2026-09-15 | Mockups polished with the visual identity of the Claude Design export: Nunito Sans, real logo and images, gradients, tinted tiles, stepper, colour KPI tiles |
+| v0.4 | 2026-09-15 | The mockups stop depending on the network and on a desktop screen: React, Babel, Lucide and Nunito Sans move into `_shared/` pinned by version, the images drop from 6169 KB to 241 KB, every page gets a title and a failure notice, `_shared/responsive.css` handles 1200, 900 and 640 pixels, and the build and verification scripts move into the repository |
 | v0.3 | 2026-09-15 | The hand-built mockups are replaced by the Claude Design export itself: 17 screens in `mockup/layout/` with `_shared/`, an accessibility layer (NFR-001) and a role-aware navigation bar. Four screens lose their mockup: `verify-code` and `set-new-password` are now steps inside `recover-password`; `view-notifications` and `view-achievements` are still to be drawn |

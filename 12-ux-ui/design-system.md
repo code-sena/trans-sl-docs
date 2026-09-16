@@ -1,6 +1,6 @@
 # Design System
 
-> **Status:** 🟡 Living document — v0.3, 2026-09-15
+> **Status:** 🟡 Living document — v0.4, 2026-09-15
 > **Sources:** the four theme style manuals (light, dark, purple, green) extracted from
 > `frontendTS/src/shared/constants/` on 2026-09-15 · SRS v2.0 § 3.1.1 and RNF9 · NFR-001
 > **Applied in:** every mockup in `mockup/layout/`
@@ -109,7 +109,7 @@ Rules: no justified text · no text below 14 px · the translation result is nev
 | Radius | 8 small · 12 buttons and fields · 18 cards · 22 sheets · 999 pills |
 | Shadow | Card `0 3px 10px` at 7% (light); in dark mode separate surfaces with borders, not shadows |
 | Touch target | **Minimum 48 × 48** for everything interactive; primary actions 56 high |
-| Breakpoints | Mobile < 768 · Tablet 768–1023 · Desktop ≥ 1024 (**Adjusted**: the code uses seven different values) |
+| Breakpoints | Mobile < 768 · Tablet 768–1023 · Desktop ≥ 1024 (**Adjusted**: the code uses seven different values). The mockups apply theirs at 640, 900 and 1200, where the export's fixed layout actually breaks (§ 10.6) |
 | Content width | 1200 pages · 820 long reading · 560 forms |
 | Grid | 4 columns mobile · 8 tablet · 12 desktop |
 
@@ -227,9 +227,9 @@ A screen is not done until every line passes in the four themes (NFR-001, SRS RN
 - [ ] Animations respect `prefers-reduced-motion`
 
 **Where the mockups stand.** The accessibility layer in § 10.5 covers contrast, focus, accessible names,
-`role="alert"`, `aria-current`, minimum text size and reduced motion. Two lines are not met yet: touch
-targets are raised to 44 px, not the 48 px this checklist asks for, and the screen-reader pass with
-TalkBack and VoiceOver belongs to the app, not to a web mockup.
+page titles, `role="alert"`, `aria-current`, minimum text size and reduced motion. Two lines are not met
+yet: touch targets are raised to 44 px, not the 48 px this checklist asks for, and the screen-reader pass
+with TalkBack and VoiceOver belongs to the app, not to a web mockup.
 
 ---
 
@@ -254,9 +254,9 @@ TalkBack and VoiceOver belongs to the app, not to a web mockup.
 > **Source:** the Claude Design export "TraduceSeña landing page" (2026-09-15). **The export is the
 > mockup set**: its pages were reorganised one folder per screen into `mockup/layout/`, with the shared
 > runtime, theme, images, header and footer in `_shared/`. The visual design below is the export's; the
-> repository adds an accessibility layer (§ 10.5), the role-aware navigation bar and the content fixes
-> in § 10.4. The export keeps its own runtime, so the pages need internet: React and Babel from unpkg,
-> Lucide icons, Nunito Sans from Google Fonts.
+> repository adds an accessibility layer (§ 10.5), a narrow-screen layer (§ 10.6), the role-aware
+> navigation bar and the content fixes in § 10.4. The export's runtime is kept, but every piece of it
+> now lives in the repository, so the pages open with no server and no internet.
 
 ### 10.1 What was adopted
 
@@ -326,7 +326,6 @@ photographs taken with the consent of the people shown.
 | Four languages in the selector | The SRS mentions Spanish and English (UX-08) |
 | Profile name locked for 30 days, avatar upload | Not required by the SRS |
 | Statistics subtitle speaks of "tu progreso" | The page is administrator-only (UX-20) |
-| `lucide@latest` and the `support.js` runtime from unpkg | Unpinned external code, and the pages do not work offline |
 
 ### 10.5 Accessibility layer
 
@@ -347,7 +346,37 @@ on top of the inline styles the export's runtime writes, so the design stays the
 | Error messages | Loose text | `role="alert"` |
 | Active navigation item | Colour only | `aria-current="page"` |
 | Document | — | `lang="es"` and a "Ir al contenido" skip link |
+| Page title | The 17 pages had no `<title>` | "Alfabeto \| TraduceSeña" and so on, one per screen (WCAG 2.4.2) |
+| Heading | The translator had no heading at all | An `h1` for screen readers, hidden visually with `.a11y-only` |
+| No JavaScript | Half a screen, with no explanation | A `noscript` notice, and a banner if the runtime does not start |
 | Motion | — | Respects `prefers-reduced-motion` |
+
+### 10.6 Narrow screens and offline
+
+ERF2.1 asks for PC, tablet and phone. The export is a fixed desktop layout, so `_shared/responsive.css`
+adds what it lacks, again without touching the structure.
+
+| Width | What changes |
+|-------|--------------|
+| ≤ 1200 px | The navigation bar wraps and the menu takes its own line, instead of pushing the buttons off screen |
+| ≤ 900 px | The login stacks, the footer goes from four columns to two, the indicator tiles from four to two and the alphabet from nine to five. Side margins drop to 24 px |
+| ≤ 640 px | Everything goes to one column, the alphabet to four, side margins to 16 px, and headings from 50 px down to 34 |
+
+Everything the page needs is in the repository, pinned by version, so a mockup opened next year renders
+the same as today.
+
+| In `_shared/` | Weight | Was |
+|---------------|-------:|-----|
+| `vendor/babel.min.js` | 3064 KB | unpkg, compiles the export's JSX in the browser |
+| `vendor/lucide.min.js` | 429 KB | `lucide@latest`, which could change without notice. Now 1.46.0 |
+| `vendor/react-dom.production.min.js` | 128 KB | unpkg |
+| `vendor/react.production.min.js` | 10 KB | unpkg |
+| `fonts/` | 268 KB | Nunito Sans from Google Fonts, five weights, latin subset |
+| `assets/` | 241 KB | 6169 KB of PNG. The three photographs are now 760 px JPEG; the logos stay PNG |
+
+One change was needed inside the export's runtime: it signed React and Babel with `integrity`, and a
+browser cannot validate that signature over `file://`, so it refused the local copy and left the page
+empty. The signature is now kept only while the address is `http` or `https`.
 
 ---
 
@@ -363,4 +392,5 @@ on top of the inline styles the export's runtime writes, so the design stays the
 |---------|------|--------|
 | v0.1 | 2026-09-15 | Template replaced with the real tokens of the four themes, type scale, components and patterns. Contrast failures of the current code corrected as **Adjusted** values |
 | v0.2 | 2026-09-15 | § 10 added: brand identity taken from the Claude Design export (Nunito Sans, logo, gradients, tinted palette, image plates, stepper), contrast-corrected, with the list of what was rejected |
+| v0.4 | 2026-09-15 | § 10.6 added: the runtime, the icons, the typeface and the images move into the repository pinned by version, the images drop to 241 KB, and the narrow-screen layer covers 1200, 900 and 640 px. § 10.5 gains page titles, the translator heading and the failure notices |
 | v0.3 | 2026-09-15 | The export became the mockup set in `mockup/layout/`. § 10 rewritten: it is no longer a visual reference; § 10.4 now separates what was corrected from what is still open; § 10.5 added with the accessibility layer; icons are Lucide and images are files in `_shared/assets/` |

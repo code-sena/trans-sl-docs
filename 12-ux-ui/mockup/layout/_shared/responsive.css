@@ -1,0 +1,110 @@
+/* ===== Capa para pantallas angostas (SRS ERF2.1: PC, tableta y telefono) =====
+   El export trae rejillas y margenes fijos de escritorio en estilos en linea.
+   Igual que a11y.css, esta capa actua sobre esos estilos sin tocar la estructura.
+   Cada regla lleva las dos escrituras: la del HTML original y la que serializa React. */
+
+/* ---- Portatil angosto: < 1200 px ----
+   La barra superior mide 1200 px mas 80 de margen: por debajo de eso se desbordaba
+   por la derecha, asi que el menu pasa a la linea siguiente. */
+@media (max-width: 1200px) {
+  /* 1200 es la barra publica; 1500 la de la aplicacion */
+  [style*="max-width:1200px"][style*="display:flex"],
+  [style*="max-width: 1200px"][style*="display: flex"],
+  [style*="max-width:1500px"][style*="display:flex"],
+  [style*="max-width: 1500px"][style*="display: flex"] {
+    flex-wrap: wrap !important;
+    gap: 16px !important;
+    row-gap: 10px !important;
+  }
+  /* El menu ocupa su propia linea en vez de empujar a los botones fuera de la pantalla */
+  nav[style*="flex:1"], nav[style*="flex: 1"] {
+    flex: 1 1 100% !important;
+    justify-content: flex-start !important;
+    flex-wrap: wrap !important;
+    row-gap: 8px !important;
+  }
+  /* Una celda de rejilla no puede ser mas angosta que su contenido si no se dice esto */
+  [style*="display:grid"] > *, [style*="display: grid"] > * { min-width: 0; }
+}
+
+/* ---- Tableta: < 900 px ---- */
+@media (max-width: 900px) {
+  /* Login: la tarjeta morada y el formulario se apilan */
+  [style*="grid-template-columns:1fr 420px"],
+  [style*="grid-template-columns: 1fr 420px"] { grid-template-columns: 1fr !important; }
+
+  /* Pie de pagina: cuatro columnas -> dos */
+  [style*="grid-template-columns:1.8fr 1fr 1fr 1.4fr"],
+  [style*="grid-template-columns: 1.8fr 1fr 1fr 1.4fr"] { grid-template-columns: 1fr 1fr !important; }
+
+  /* Tarjetas de indicadores: cuatro -> dos */
+  [style*="grid-template-columns:1.3fr 1fr 1fr 1fr"],
+  [style*="grid-template-columns: 1.3fr 1fr 1fr 1fr"],
+  [style*="grid-template-columns:repeat(4,1fr)"],
+  [style*="grid-template-columns: repeat(4, 1fr)"] { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Alfabeto: nueve columnas -> cinco */
+  [style*="grid-template-columns:repeat(9,1fr)"],
+  [style*="grid-template-columns: repeat(9, 1fr)"] { grid-template-columns: repeat(5, 1fr) !important; }
+
+  /* Margenes laterales de 40 px -> 24 px */
+  [style*="px 40px"] { padding-left: 24px !important; padding-right: 24px !important; }
+}
+
+/* ---- Telefono: < 640 px ---- */
+@media (max-width: 640px) {
+  /* Todo lo de dos columnas pasa a una */
+  [style*="grid-template-columns:1fr 1fr"],
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns:1.2fr 0.8fr"],
+  [style*="grid-template-columns: 1.2fr 0.8fr"],
+  [style*="grid-template-columns:1.1fr 0.9fr"],
+  [style*="grid-template-columns: 1.1fr 0.9fr"],
+  [style*="grid-template-columns:1.05fr 0.95fr"],
+  [style*="grid-template-columns: 1.05fr 0.95fr"],
+  [style*="grid-template-columns:1.8fr 1fr 1fr 1.4fr"],
+  [style*="grid-template-columns: 1.8fr 1fr 1fr 1.4fr"],
+  [style*="grid-template-columns:repeat(2,1fr)"],
+  [style*="grid-template-columns: repeat(2, 1fr)"] { grid-template-columns: 1fr !important; }
+
+  [style*="grid-template-columns:repeat(3,1fr)"],
+  [style*="grid-template-columns: repeat(3, 1fr)"],
+  [style*="grid-template-columns:repeat(4,1fr)"],
+  [style*="grid-template-columns: repeat(4, 1fr)"],
+  [style*="grid-template-columns:1.3fr 1fr 1fr 1fr"],
+  [style*="grid-template-columns: 1.3fr 1fr 1fr 1fr"] { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* El alfabeto se queda en cuatro: las fichas siguen sobre 44 px */
+  [style*="grid-template-columns:repeat(9,1fr)"],
+  [style*="grid-template-columns: repeat(9, 1fr)"] { grid-template-columns: repeat(4, 1fr) !important; }
+
+  /* Margenes laterales: 16 px */
+  [style*="px 40px"] { padding-left: 16px !important; padding-right: 16px !important; }
+  [style*="px 26px"] { padding-left: 16px !important; padding-right: 16px !important; }
+
+  /* Titulos: el hero de 50 px no cabe en un telefono */
+  [style*="font-size:56px"], [style*="font-size: 56px"],
+  [style*="font-size:52px"], [style*="font-size: 52px"],
+  [style*="font-size:50px"], [style*="font-size: 50px"] { font-size: 34px !important; }
+  [style*="font-size:48px"], [style*="font-size: 48px"],
+  [style*="font-size:46px"], [style*="font-size: 46px"],
+  [style*="font-size:44px"], [style*="font-size: 44px"] { font-size: 30px !important; }
+  [style*="font-size:42px"], [style*="font-size: 42px"],
+  [style*="font-size:40px"], [style*="font-size: 40px"] { font-size: 28px !important; }
+  [style*="font-size:38px"], [style*="font-size: 38px"],
+  [style*="font-size:36px"], [style*="font-size: 36px"],
+  [style*="font-size:34px"], [style*="font-size: 34px"],
+  [style*="font-size:32px"], [style*="font-size: 32px"] { font-size: 26px !important; }
+
+  /* Filas de tarjetas con separacion amplia: se apilan en vez de desbordarse */
+  [style*="display:flex"][style*="gap:26px"],
+  [style*="display: flex"][style*="gap: 26px"],
+  [style*="display:flex"][style*="gap:34px"],
+  [style*="display: flex"][style*="gap: 34px"],
+  [style*="display:flex"][style*="gap:32px"],
+  [style*="display: flex"][style*="gap: 32px"] { flex-wrap: wrap !important; }
+
+  /* Nada se sale por el lado */
+  html, body { overflow-x: hidden; }
+  img { max-width: 100%; height: auto; }
+}
