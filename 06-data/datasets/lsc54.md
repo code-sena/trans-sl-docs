@@ -87,6 +87,26 @@ same moment, so the active part of each sample is not aligned.
 dominant hand, and whether the video is mirrored with respect to our live camera, is **not settled** and
 has to be checked on the camera (step 3d).
 
+## Measured on the full `sample.json` (MD5 verified)
+
+70 samples, **Signer_1 only**, **5 signs**, all `Cordialidad`:
+
+| Sign | Samples (`rep`) | Frames min/mean/max | Real frames r/l (mean) | Moving hand r/l | Two-handed |
+|---|---|---|---|---|---|
+| Bienvenido | 20 | 45/48/55 | 25.5/26.3 | 0/20 | 20/20 |
+| Ayudar | 15 | 43/45.7/48 | 20.7/23.3 | 5/10 | 10/15 |
+| Bien | 15 | 40/41.3/44 | 1.3/17.3 | 5/10 | 0/15 |
+| Apoyar | 10 | 45/48/51 | 18.5/24 | 5/5 | 10/10 |
+| Baño | 10 | 54/64/74 | 2/55.5 | 0/10 | 0/10 |
+
+- Frames per sample: 40–74 (mean 48.4). None of them has 30.
+- Hand frames overall: `r_hand` 31 % real / 69 % pose filler; `l_hand` 57 % real / 43 % filler. No `null` hands.
+- In one-handed signs (`Bien`, `Baño`) the working hand is **`l_hand`**: that is the label to pick for the
+  dominant hand in this data, not `r_hand`.
+- 3 of the 5 signs are two-handed most of the time.
+- `Bienvenido` and `Baño` are not in the article's sign table: class names must be read from `datos.json`.
+- Real-hand ranges: x 0–1, y 0.07–1.09, z −0.97–0.03.
+
 ## Fit with the template engine
 
 Target format (`motionTemplateStore.ts`): `{ label, frames: number[16][63] }`, each frame being
