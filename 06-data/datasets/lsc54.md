@@ -130,3 +130,33 @@ wrist→middle-MCP 3D distance. Live, the web provider samples one hand every **
 "just converted": the converter must drop pose filler, trim, deduplicate augmentation and choose the
 hand, and the engine by design cannot separate signs that differ by trajectory or location. The 20
 words must be chosen by measuring separability with the same DTW, on real data, before touching the app.
+
+## First conversion run — two findings
+
+Measured on the 14 `rep_0` samples of `sample.json` (one signer, 5 signs), converted with
+`convert-lsc54-to-templates.ts` and compared with the app's own DTW. Nearest-neighbour,
+leaving each sample out:
+
+**1. The dominant hand must be chosen per class, not per sample.** `r_hand`/`l_hand` are assigned
+by the authors from pose proximity, and which one holds more real frames flips between samples of
+the same sign. Mixing them leaves mirrored sequences that DTW reads as different signs:
+
+| Hand choice | Nearest-neighbour hits | Mean DTW, same sign |
+|---|---|---|
+| Per sample (most real frames) | 11/14 | 4.67 |
+| **Per class, by majority** | **12/14** | **3.61** |
+
+**2. The app's acceptance threshold does not fit dataset templates.** DTW distances between two
+recordings of the same sign run **1.85–4.7** (mean 3.6), while `MAX_GESTURE_DISTANCE` is **1.1**
+and confidence ≥ 0.7 needs ≤ 0.857. **The app would reject every dataset template and never show a
+word**, even when the nearest one is correct.
+
+The ranking still carries signal — same sign 3.6 vs different sign 6.4 on average — so the issue is
+the absolute scale, not the features. The threshold was tuned for templates recorded in the app by
+the same person on the same camera; templates from other people on another camera sit much further
+away. This is the same knob as step 3f of the plan, but it turns out to be a blocker, not a polish
+item: it has to be re-tuned from the cross-signer measurement (`measure-lsc54-separability.ts`),
+choosing a value that accepts correct matches without letting wrong ones through.
+
+Both numbers come from a single signer, which is the optimistic case. Cross-signer distances are
+expected to be larger.
