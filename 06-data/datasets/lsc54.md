@@ -160,3 +160,35 @@ choosing a value that accepts correct matches without letting wrong ones through
 
 Both numbers come from a single signer, which is the optimistic case. Cross-signer distances are
 expected to be larger.
+
+
+## Second finding: one hand is not enough
+
+Tested on the five courtesy signs of `sample.json`, nearest-neighbour among the samples of one
+signer, comparing the current one-hand features (63 values) against both hands (126: dominant +
+other, zeros when the second hand is not detected).
+
+| Sign | Margin with one hand | Margin with two hands |
+|---|---|---|
+| baño | 0.29 | **1.63** |
+| bien | −0.66 (confused) | **+0.39** |
+| bienvenido | 3.08 | **3.71** |
+| apoyar | 1.87 | 1.47 |
+| ayudar | −0.14 (confused) | −1.36 (worse) |
+| **Separable** | **3 / 5** | **4 / 5** |
+
+Margin = distance to the nearest sample of another sign minus distance to the nearest sample of the
+same sign; negative means the engine picks the wrong sign. Most LSC-54 signs are two-handed, so the
+one-hand pipeline was discarding half of the evidence. `apoyar` and `ayudar` keep colliding because
+they are genuinely similar signs.
+
+Also measured and rejected: **more frames per template does not help.** Going from 16 to 24, 32 or
+48 frames moves the distances by less than 0.1 (`baño` 3.42 → 3.50, `bienvenido` 2.56 → 2.89). The
+16-frame resampling was not the bottleneck.
+
+Consequences, applied in both repos:
+
+- Templates are now `16 × 126`; the live provider runs `numHands: 2` and picks the primary hand by
+  MediaPipe's handedness label so the sequences never come out mirrored.
+- `MAX_GESTURE_DISTANCE` moves 2.5 → 4.0, since 126 features grow the distances by about 1.5x.
+- The app's template storage key moves to `v2`: 63-value templates cannot be compared with these.
