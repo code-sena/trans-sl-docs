@@ -179,12 +179,56 @@ answer to the collision the 7 gestures caused: `Thumb_Up` was mapped to *Bien*, 
 *ayudar* — both made with the thumb up in LSC — always came out as *Bien*. Once the model is in
 place, the generic gestures are gone.
 
-## 10. Risks recorded against this format
+## 10. Export: one model, two runtimes
+
+The trained `.keras` file cannot be shipped as-is. It is converted twice — TensorFlow.js for the
+browser, TFLite for the native app — and both conversions come from **the same SavedModel**, so
+there is one point where the two runtimes could diverge instead of two.
+
+### The GRU has to be unrolled first
+
+Trained on a GPU, Keras compiles the bidirectional GRU down to NVIDIA's cuDNN kernel. The exported
+graph then contains `CudnnRNNV3` and `ReverseSequence`, and the TensorFlow.js converter stops:
+
+    ValueError: Unsupported Ops in the model before optimization
+    ReverseSequence, CudnnRNNV3
+
+The fix is `unroll=True` on the GRU: the recurrent steps are written out one by one instead of
+being left as a loop. After the two pooling layers the sequence is 7 steps long, so unrolling costs
+almost nothing, and the result is built only from operations both runtimes support — it also
+removes the need for `SELECT_TF_OPS` on the TFLite side, which would have dragged a large part of
+TensorFlow into the mobile app.
+
+**Unrolling does not touch the weights.** The trained model is rebuilt with the same architecture
+and `set_weights`, so no retraining and no loss of accuracy. `export_model.py` verifies this rather
+than assuming it.
+
+### Equivalence gates
+
+`backend/src/domains/ia/training/extraction/export_model.py` runs the test split through each
+artefact and compares against the trained model. Two gates, both on real sequences — random noise
+does not exercise the same paths through the network:
+
+| Comparison | Requirement |
+|---|---|
+| unrolled vs. trained | identical top-1, difference ≤ 1e-6 |
+| TFLite vs. trained | identical top-1, difference ≤ 1e-4 |
+
+Neither artefact is published if a gate fails. Quantisation is left off for the same reason: it
+saves around 200 KB and costs the guarantee that web and mobile agree.
+
+### Where the files land
+
+`export/tfjs/` (`model.json`, the `.bin` shards, `glosas.json`) goes to `frontend/public/models/lsc/`.
+Expo serves `public/` at the site root, which is where `WORD_MODEL_URL` points. The `.tflite` is for
+the native app and is not served over the web.
+
+## 11. Risks recorded against this format
 
 - **The app has to change.** It runs HandLandmarker only; PoseLandmarker has to be added, at a cost
   in CPU per frame, and the sampling rate has to go from 8.3 to 15 fps.
-- **Parity between web and device.** Same model exported twice (TFJS and TFLite) is not the same
-  binary. The measured check is: run the same clip through both and require identical top-1 and a
-  difference under 1e-4 in the scores.
+- **Parity between web and device.** ~~Same model exported twice (TFJS and TFLite) is not the
+  same binary.~~ Addressed in section 10: both come from one SavedModel and the check is enforced
+  by `export_model.py` before anything is published.
 - **LSC-54 download is throttled** by its host to ~70 B/s after ~2 GB, so the remaining samples have
   to be pulled from Colab, not from a developer machine.
