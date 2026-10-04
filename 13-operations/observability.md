@@ -8,18 +8,20 @@
 
 ## Current Status: Production System
 
-**TraduceSeñas is a modular monolith deployed as a single Node.js process on a shared server.**
-- Single backend instance serving 500 concurrent users (target)
-- PostgreSQL + MongoDB databases on the same host
-- No container orchestration; manual deployment
+**TraduceSeñas is a microservices architecture (decision by product owner, 2026-10-04).**
+- 5 domain services + API Gateway, each with its own database
+- Services communicate synchronously via REST (through gateway) and asynchronously via RabbitMQ
+- Deployed on a shared server (no orchestration yet); manual deployment
+- PostgreSQL x5 + MongoDB on the same host
 
 **What exists today:**
-- Express error-handler middleware that logs to `console.error()` (unstructured)
+- Express error-handler middleware in each service logs to `console.error()` (unstructured)
 - HTTP status codes as the only public signal
-- Manual health check: `GET /health` (responds 200 if process is alive)
+- Manual health checks: `GET /health` and `GET /health/ready` per service
 - No metrics collection, no distributed tracing, no alert automation
 
-**Implication:** production availability depends on someone noticing a report in Slack before users stop using the app.
+**Implication:** production availability depends on someone noticing a report in Slack. Multi-service failures compound quickly.
+**Observability strategy:** logs + metrics per service, distributed tracing via correlation ID across services (RabbitMQ event headers, gateway request ID).
 
 ---
 
@@ -241,23 +243,30 @@ Required panels:
 
 ---
 
-## Phase 4: Distributed Traces (Post-MVP, Month 6+, Planned)
+## Phase 4: Distributed Traces (Month 5–6, Planned)
 
-Traces allow following a user's request across all services (not applicable until microservices extraction).
+Traces allow following a user's request across all 5 microservices.
 
-**Tool:** OpenTelemetry + Jaeger.
+**Tool:** OpenTelemetry + Jaeger (or Zipkin).
 
-For now: use `correlationId` header to link logs of a single request.
+**For now (MVP):** use `x-correlation-id` header to link logs and events across services:
 
 ```typescript
-// src/shared/http/correlation_middleware.ts
+// src/shared/http/correlation_middleware.ts (every service)
 app.use((req, res, next) => {
   const correlationId = req.headers['x-correlation-id'] || generateUUID();
   res.setHeader('x-correlation-id', correlationId);
   req.correlationId = correlationId;
   next();
 });
+
+// When publishing events to RabbitMQ:
+eventBroker.publish('iam.UserRegistered', { userId: '123', ... }, {
+  headers: { 'x-correlation-id': req.correlationId }
+});
 ```
+
+**Result:** a single user request creates logs across iam-service → profile-service (RabbitMQ event) all tagged with the same correlationId. Searchable in Kibana/Elasticsearch.
 
 ---
 
