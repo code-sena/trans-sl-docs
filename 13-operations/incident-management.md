@@ -177,16 +177,66 @@ Held within 2 business days after resolving the incident.
 
 | Channel | Purpose |
 |---------|---------|
-| Slack `#incidents` | Main channel for all incidents |
-| Slack `#war-room-[INC-XXX]` | Temporary channel created for P0/P1 incidents |
-| PagerDuty | Alerts and on-call rotation |
-| [Ticketing system] | Official record: INC-XXX |
-| Status Page | Public communication to users (if applicable) |
+| Slack `#incidents` | Main channel for all P0–P1 incidents |
+| Slack `#ops-general` | Operational notices, planned maintenance, lessons learned |
+| Email (team mailing list) | Incident notifications for asynchronous stakeholders |
+| Microsoft Teams (future) | Video war room if SMS alert is activated |
+
+---
+
+## Team structure (TraduceSeñas is a 3-person team)
+
+| Role | Name | Slack handle | On-call |
+|------|------|--------------|---------|
+| Tech Lead · Incident Commander | Juan Mauricio Suaza Solórzano | `@juan` | Primary (always) |
+| Analyst-Developer | Luis Alejandro Duarte Aldana | `@luis` | Secondary (backup) |
+| Analyst-Developer | Juan Camilo Fierro Esquivel | `@camilo` | Tertiary (backup) |
+| Product Owner · Instructor | Jesús Ariel González Bonilla | `@jesus` | Notify only (not technical responder) |
+
+**On-call rotation:** Primary responder at all times. If unreachable, escalate to secondary.
+No formal paging system exists; use Slack mentions + SMS (manual for now).
+
+---
+
+## Example incident: Backend PostgreSQL timeout (P1)
+
+```
+13:45 — Alert fires in Grafana:
+  "PostgreSQL connection timeout"
+  
+13:45 — @juan acknowledges in Slack #incidents:
+  "Investigating PostgreSQL timeout. Will update in 5 min."
+  
+13:47 — Diagnosis (Grafana):
+  - Connection pool at 100% (max is 30)
+  - Spike in login requests (5 RPS → 50 RPS)
+  - P95 latency jumped from 100ms → 2000ms
+  
+13:49 — Mitigation option #1 (preferred):
+  "Increase pool size in .env and redeploy"
+  vs option #2 (riskier):
+  "Kill idle connections and retry"
+  
+13:50 — Decision: Increase pool size (safe, reversible)
+  - Announce: "@everyone scaling DB pool 30→50"
+  - Wait for thumbs-up in thread
+  - Execute: update .env, docker restart
+  - Test: curl https://prod.traduce-senas.com/health/ready
+  
+13:52 — Metrics return to normal
+  - Report: "✅ RESOLVED — pool size increased to 50"
+  
+14:00 — Post-incident (same day):
+  - Root cause: login feature went viral in testing
+  - Action item: TD-XXX "Increase default pool size to 50 and add monitoring alert at 80%"
+  - Owner: @juan, Sprint 4
+```
 
 ---
 
 ## Correlations
 
 - Observability alerts → `13-operations/observability.md`
-- Service runbooks → `09-microservices/services/XX/runbook.md`
+- Technical runbooks (if microservices) → `09-microservices/services/XX/runbook.md`
 - SLOs and Error Budget → `13-operations/README.md`
+- Post-incident technical debt → `15-project-control/technical-backlog.md`
