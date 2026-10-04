@@ -114,6 +114,7 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Name** | `TranslationContext` |
 | **Responsibility** | Capture the video, recognize the sign, produce the translation as text or audio, and keep each user's history of what was translated |
 | **Owner** | Juan Mauricio Suaza Solórzano *(proposed assignment)* |
+| **Service** | `recognition-service` (extraction status: in progress; today the `translations` and `ia` domain modules) |
 | **Module(s)** | `backend/src/modules/translation`, `mobile/src/features/translation` |
 | **Persistence** | `translation` schema — `translations`, `translation_signs`, `ai_models` |
 | **SRS requirements** | RF3, ERF3.1, ERF3.2, ERF5.5, RNF1 |
@@ -145,6 +146,7 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Name** | `IdentityContext` |
 | **Responsibility** | Account lifecycle: registration, native and external-provider authentication, password recovery, security lockout and roles |
 | **Owner** | Luis Alejandro Duarte Aldana *(proposed assignment)* |
+| **Service** | `iam-service` (extraction status: pending; today the `auth` and `users` domain modules) |
 | **Module(s)** | `backend/src/modules/identity`, `mobile/src/features/auth` |
 | **Persistence** | `identity` schema — `users`, `user_auth_providers`, `user_sessions`, `refresh_tokens`, `user_tokens`, `password_policies` *(v1.2)*, `roles`, `permissions`, `user_roles`, `role_permissions` |
 | **SRS requirements** | RF1, ERF1.1, ERF1.2, ERF1.3, ERF5.3, RNF4 |
@@ -176,8 +178,9 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Name** | `ConsentContext` |
 | **Responsibility** | Granting, validity and revocation of the data-processing authorization; data deletion on request; anonymization of the samples kept for training |
 | **Owner** | Luis Alejandro Duarte Aldana *(proposed assignment)* |
+| **Service** | `iam-service` owns the consent records; the training samples are stored by `recognition-service` |
 | **Module(s)** | `backend/src/modules/consent` |
-| **Persistence** | `gesture_samples` — **its own MongoDB collection, outside the relational monolith**, with no foreign keys · consent evidence for the account itself lives in `users.terms_accepted_at` / `terms_version` |
+| **Persistence** | `gesture_samples` — **its own MongoDB collection, owned by recognition-service and separate from the PostgreSQL databases**, with no foreign keys · consent evidence for the account itself lives in `users.terms_accepted_at` / `terms_version` |
 | **SRS requirements** | RNF8 (Colombian Law 1581 of 2012, Decree 1377 of 2013) |
 
 | Term | Meaning HERE | Different in another context? |
@@ -216,6 +219,7 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Name** | `ProfileContext` |
 | **Responsibility** | Visible profile data and interface preferences: light/dark theme and language |
 | **Owner** | Juan Camilo Fierro Esquivel *(proposed assignment)* |
+| **Service** | `profile-service` (extraction status: pending) |
 | **Module(s)** | `backend/src/modules/profile`, `mobile/src/features/profile` |
 | **Persistence** | `profile` schema |
 | **SRS requirements** | RF5, ERF5.1, ERF5.2, ERF5.3, ERF5.4 |
@@ -240,6 +244,7 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Name** | `LexiconContext` |
 | **Responsibility** | Catalog of LSC signs — the fingerspelling alphabet, individual words and phrases — organized by category, with their visual resources and their written form in each interface language |
 | **Owner** | Juan Camilo Fierro Esquivel *(proposed assignment)* |
+| **Service** | `lexicon-service` (extraction status: pending; today the `lexicon` domain module) |
 | **Module(s)** | `backend/src/modules/lexicon`, `mobile/src/features/alphabet`, `mobile/src/features/lexicon` |
 | **Persistence** | `lexicon` schema — `sign_lexicon`, `sign_localizations`, `categories`, `multimedia_resources` + resources in file storage |
 | **SRS requirements** | RF7, ERF7.1 · ERF5.4 (localization) |
@@ -276,6 +281,7 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Name** | `AnalyticsContext` |
 | **Responsibility** | Build, from the events of the other contexts, the usage metrics the administrator consults |
 | **Owner** | Juan Mauricio Suaza Solórzano *(proposed assignment)* |
+| **Service** | `analytics-service` (extraction status: pending) |
 | **Module(s)** | `backend/src/modules/analytics` |
 | **Persistence** | `usage_events` (event log) + reads `user_sessions` from Identity — **read model**, not a source of truth |
 | **SRS requirements** | RF6, ERF6.1 |
@@ -305,6 +311,7 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Name** | `NotificationContext` |
 | **Responsibility** | Catalog of the alert types that exist, delivery of each alert through a visual channel, scheduling, delivery state, and registration of the devices that can receive a push |
 | **Owner** | *(to be assigned)* |
+| **Service** | `profile-service` (extraction status: pending) |
 | **Module(s)** | `backend/src/modules/notification`, `mobile/src/features/notifications` |
 | **Persistence** | `notification` schema — `notification_types`, `notifications`, `user_devices` |
 | **SRS requirements** | RF4, ERF4.1 · accessibility ERF (cross-cutting) |
@@ -338,6 +345,7 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Name** | `GamificationContext` |
 | **Responsibility** | Catalog of achievements, tracking of each user's progress towards them, and unlocking |
 | **Owner** | *(to be assigned)* |
+| **Service** | `profile-service` (extraction status: pending) |
 | **Module(s)** | `backend/src/modules/gamification` |
 | **Persistence** | `gamification` schema — `achievements`, `user_achievements` |
 | **SRS requirements** | **RF8 — proposed, not yet in the SRS** |
@@ -413,6 +421,13 @@ Three sets of tables in the v8 model belong to no bounded context, on purpose:
                           │  (Supporting · RF8?)      │
                           └───────────────────────────┘
 
+Hosting (services, 2026-10-04): iam-service = Identity & Access + Consent (+ audit) ·
+               recognition-service = Recognition & Translation (+ model training, MongoDB samples) ·
+               lexicon-service = Learning & Lexicon · analytics-service = Usage Analytics ·
+               profile-service = Profile + Notifications + Gamification · api-gateway = edge, no context.
+               Events travel over RabbitMQ; "may I store?" and permission checks use the JWT
+               (`sub`, `roles`) or a REST call to iam-service.
+
 Cross-cutting technical services (not contexts): audit_logs · error_logs
 Shared Kernel: the `UserId` value object is shared by Identity, Consent, Profile, Translation,
                Notifications and Gamification.
@@ -436,19 +451,19 @@ Published Language: `sign_lexicon.code` — the same value the Core calls `Gloss
 
 | Context A | Relationship | Context B | Channel | Contract |
 |-----------|--------------|-----------|---------|----------|
-| Identity & Access | U → D | Recognition & Translation | In-process call | `UserId` + authenticated session |
+| Identity & Access | U → D | Recognition & Translation | REST (via JWT claims / iam-service) | `UserId` + authenticated session |
 | Identity & Access | SK | Profile, Consent, Translation, Notifications, Gamification | — | `UserId` value object |
-| Identity & Access | U → D | every context with a restricted operation | In-process call | `hasPermission(userId, permission)` — **new in v1.1** |
-| Consent & Personal Data | U → D | Recognition & Translation | In-process call | `isConsentActive(userId)` |
+| Identity & Access | U → D | every context with a restricted operation | REST (via JWT claims / iam-service) | `hasPermission(userId, permission)` — **new in v1.1** |
+| Consent & Personal Data | U → D | Recognition & Translation | REST (via JWT claims / iam-service) | `isConsentActive(userId)` |
 | **Learning & Lexicon** | **PL** | **Recognition & Translation** | Shared catalog | **`sign_lexicon.code` = `Gloss`. The set of published codes is the recognizer's vocabulary — new in v1.1** |
-| Recognition & Translation | U → D | Usage Analytics | In-process event | `TranslationProduced`, `TranslationSessionStarted` |
-| Learning & Lexicon | U → D | Usage Analytics | In-process event | `SignViewed`, `LexiconSearchPerformed` |
-| Identity & Access | U → D | Usage Analytics | In-process event | `UserRegistered`, `UserSignedIn` |
-| Recognition & Translation | U → D | **Notifications** | In-process event | `RecognitionFailed`, `TranslationSessionInterrupted` — **new in v1.1** |
-| Identity & Access | U → D | **Notifications** | In-process event | `AccountLocked` — **new in v1.1** |
-| **Gamification** ⏸ | U → D | **Notifications** | In-process event | `AchievementUnlocked` + `reference_type`/`reference_id` — **new in v1.1** |
-| Usage Analytics | U → D | **Gamification** ⏸ | In-process event | Usage events feed progress towards a target — **new in v1.1** |
-| Notifications | U → D | Usage Analytics | In-process event | `NotificationOpened` — **new in v1.1** |
+| Recognition & Translation | U → D | Usage Analytics | Event (RabbitMQ) | `TranslationProduced`, `TranslationSessionStarted` |
+| Learning & Lexicon | U → D | Usage Analytics | Event (RabbitMQ) | `SignViewed`, `LexiconSearchPerformed` |
+| Identity & Access | U → D | Usage Analytics | Event (RabbitMQ) | `UserRegistered`, `UserSignedIn` |
+| Recognition & Translation | U → D | **Notifications** | Event (RabbitMQ) | `RecognitionFailed`, `TranslationSessionInterrupted` — **new in v1.1** |
+| Identity & Access | U → D | **Notifications** | Event (RabbitMQ) | `AccountLocked` — **new in v1.1** |
+| **Gamification** ⏸ | U → D | **Notifications** | Event (RabbitMQ) | `AchievementUnlocked` + `reference_type`/`reference_id` — **new in v1.1** |
+| Usage Analytics | U → D | **Gamification** ⏸ | Event (RabbitMQ) | Usage events feed progress towards a target — **new in v1.1** |
+| Notifications | U → D | Usage Analytics | Event (RabbitMQ) | `NotificationOpened` — **new in v1.1** |
 | Identity & Access | ACL | Google OAuth / Facebook Login | HTTPS (OAuth 2.0) | Adapter translating the external profile into `User` |
 | Recognition & Translation | ACL | Inference engine (computer vision) | HTTPS / device SDK | `SignRecognitionPort` adapter |
 | **Notifications** | **ACL** | **Push provider (FCM / APNs)** | HTTPS | **Adapter translating the provider's response into a delivery state; a rejected token deactivates the device — new in v1.1** |
@@ -511,7 +526,7 @@ Published Language: `sign_lexicon.code` — the same value the Core calls `Gloss
 | History inside *Recognition & Translation* | A separate "Translation History" context | History is the same model already produced; splitting it would duplicate `Translation` and force syncing two sources of truth for nothing |
 | Consent as its own context | An `acceptedTerms: boolean` field on `User` | The authorization has a lifecycle, a provable timestamp, a policy version and retroactive effects over data already stored (RNF8) |
 | Analytics reports as a read model | Analytics with its own master tables | Every report can be rebuilt from `usage_events`; not owning aggregates prevents metrics and reality from drifting apart |
-| Bounded contexts as modules of a monolith | Real microservices | Three developers, one mobile app and one Express backend. Boundaries are documented as logical so they can be extracted later without redoing the model |
+| Bounded contexts hosted by microservices (reverses the earlier "modules of a monolith" decision, see below) | Modular monolith | Product owner decision of 2026-10-04: each context lives in the service listed in the context map, with its own database |
 | **v1.1 —** Authorization inside Identity & Access | Authorization as its own context | It shares the ubiquitous language (`User`, `Role`) and answers the same question — who is this person and what may they do. A separate context would split one language across two boundaries |
 | **v1.1 —** Learning renamed to Learning & Lexicon | Keeping Learning for the alphabet and creating a second Lexicon context | A letter and a word are the same thing to the recognizer: both are a class it predicts. Two contexts would mean two models for one table and two names for one code |
 | **v1.1 —** Reference by type and id, with no FK, from Notifications | Foreign key from `notifications` to each referenced table | The FK would make Notifications depend on Gamification, and Gamification may not exist. The polymorphic reference is what keeps the provisional context removable |
@@ -521,6 +536,7 @@ Published Language: `sign_lexicon.code` — the same value the Core calls `Gloss
 
 | v1.1 decision | v1.2 decision | What changed |
 |---------------|---------------|--------------|
+| **2026-10-04 —** Bounded contexts as modules of a modular monolith, with in-process events | **Bounded contexts hosted by microservices** (iam, recognition, lexicon, analytics, profile + API Gateway), events over RabbitMQ | The product owner confirmed microservices. Each context keeps its boundary and now has a deployment of its own and a database per service; cross-service references are logical IDs, not foreign keys |
 | **Password policy as a cross-cutting technical service** — "configuration consumed by Identity & Access; one rule is not enough to constitute a language" | **Password policy inside Identity & Access** | The first half of that sentence contained the answer: *consumed by Identity & Access* — by it, and by nothing else. §2.9 defines a cross-cutting service as one that serves **every** context equally, and applying that test settles it: any context writes to `audit_logs`; only one reads `password_policies`. The second half was answering a different question — whether it is a context of its own, which it is not. Not being a context does not make something cross-cutting; it makes it part of the context that depends on it. Its vocabulary is *password*, which is Identity's word |
 
 > **What the reversal costs.** The `Configuration` domain is dissolved and there is no generic bucket for
@@ -568,7 +584,7 @@ reasoning was correct for the model that existed then:
 | **ALIGN-01** | The Core aggregate root has no table | `TranslationSession` is the aggregate root; `Translation` exists only inside it (INV-005), sharing `outputMode` and `modelVersion` | There is no `translation_sessions` table. `translations` hangs off `user_id`, each row with its own `output_mode` and `model_id` | **Decide which model is right.** Either add the table, or accept that the session is a runtime concept only and rewrite INV-005 and AGGR-INV-001…004, which currently describe something that cannot be persisted |
 | **ALIGN-02** | Sample identity | INV-010: a `TrainingSample` never carries a `userId` nor anything allowing re-identification | `gesture_samples` stores `performed_by` (the performer's name, as text), `recorded_by` and `validated_by` | **Decide which capture model is right.** They are incompatible. The v8 design is defensible — consent stays provable per person and a withdrawn authorization can be honored, which anonymization makes impossible — but then INV-010 must be rewritten, not left standing |
 | **ALIGN-03** | Confidence threshold | INV-007 compares each recognition against the model's `confidenceThreshold` | `ai_models` has `accuracy` but **no threshold column** | Add the column, or move the threshold to `password_policies`-style configuration. As it stands INV-007 has nowhere to read its threshold from and cannot be implemented |
-| **ALIGN-04** | The events table | `domain-events.md` states events are persisted in a `domain_events` table for traceability | There is no `domain_events` table in the model | Add it, or drop the claim. An in-process `EventEmitter` with no persistence is a valid choice — but then traceability of events is not a property the project has |
+| **ALIGN-04** | The events table | `domain-events.md` states events are persisted in a `domain_events` table for traceability | There is no `domain_events` table in the model | Add it (per service, as an outbox/inbox), or drop the claim. RabbitMQ alone does not persist history — without a table, traceability of events is not a property the project has |
 | **ALIGN-05** | Account states | `PENDING_VERIFICATION` / `ACTIVE` / `LOCKED` / `DELETED` | `user_status`: `ACTIVE` / `INACTIVE` / `BLOCKED`, plus `locked_until` and `deleted_at` | Unify the names. `INACTIVE` is `PENDING_VERIFICATION`; a temporary lockout is a date, not a state; `DELETED` is `deleted_at`. Four names for the same four situations is how two developers implement two different state machines |
 | **ALIGN-06** | Lockout rule | RNF4 and the `User` code example: five consecutive failures → `LOCKED` | Progressive escalation: `lockout_level` determines the wait (1, 5, 10 min); `BLOCKED` only when the escalation is exhausted; the level resets after 24 h | The model's rule is better and more detailed. Update the domain: the code example in `entities-and-rules.md` implements a rule the database no longer has |
 | **ALIGN-07** | Output mode | `OutputMode`: `TEXT` \| `AUDIO` \| `BOTH` | `output_mode`: `TEXT` \| `AUDIO`. There is no `BOTH` | Decide. If audio always accompanies visible text — which is what accessibility requires — then `BOTH` is the only sensible value and `AUDIO` alone should not exist |

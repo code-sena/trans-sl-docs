@@ -14,14 +14,15 @@
 > 40 events. `AlphabetLetterViewed` is generalized into `SignViewed`, since the alphabet turned out to
 > be a subset of the sign catalog.
 
-> **Channel in this project:** *in-process*. The backend is a modular monolith on Node/Express, so
-> events are published through an internal `EventEmitter` and recorded in a `domain_events` table for
-> traceability. **There is no message broker.** The sections marked `[IF DISTRIBUTED]` describe what
-> would have to be solved the day a context is extracted into its own service; they do not apply today.
+> **Channel in this project:** **RabbitMQ between services**. Traduce Señas is a microservices
+> architecture, so events are published to the topic exchange `traduce.events` with routing key
+> `<service>.<event>` (for example `iam.UserRegistered`, `recognition.TranslationCompleted`,
+> `lexicon.SignActivated`). The sections marked `[IF DISTRIBUTED]` now apply: schema evolution,
+> retries and the dead letter queue are part of the design.
 >
 > ⚠️ **v1.1: there is no `domain_events` table in the v8 model.** Either it is added, or the claim of
-> event traceability is dropped. An in-process `EventEmitter` with no persistence is a legitimate
-> choice — but then a failed event leaves no trace, and "which events preceded this bug" has no answer.
+> event traceability is dropped. With a broker, a failed event ends in the dead letter queue, but
+> "which events preceded this bug" still needs persistence in each service.
 > See `domain-map.md` §6, ALIGN-04.
 
 ---
@@ -72,7 +73,7 @@ the system managed to do it.
 | **Aggregate** | `User` |
 | **Trigger** | Successful registration with terms and conditions accepted (ERF1.1) |
 | **Consumers** | Profile & Preferences (creates the profile with default preferences), Usage Analytics, mail service (verification) |
-| **Channel (topic)** | `identity.user.registered` (in-process) |
+| **Channel (topic)** | `iam.UserRegistered` (RabbitMQ, exchange `traduce.events`) |
 | **Schema version** | `v1` |
 
 ```json
@@ -183,7 +184,7 @@ the system managed to do it.
 | **Aggregate** | `TranslationSession` |
 | **Trigger** | The user turns translation mode on and the camera is ready (ERF3.1) |
 | **Consumers** | Usage Analytics |
-| **Channel (topic)** | `translation.session.started` (in-process) |
+| **Channel (topic)** | `recognition.TranslationSessionStarted` (RabbitMQ, exchange `traduce.events`) |
 
 ```json
 {
@@ -208,7 +209,7 @@ the system managed to do it.
 | **Aggregate** | `TranslationSession` |
 | **Trigger** | A sign is recognized above the confidence threshold and delivered to the user (ERF3.2) |
 | **Consumers** | History (projection of the aggregate), Usage Analytics, Notifications |
-| **Channel (topic)** | `translation.produced` (in-process) |
+| **Channel (topic)** | `recognition.TranslationProduced` (RabbitMQ, exchange `traduce.events`) |
 
 ```json
 {
@@ -570,8 +571,8 @@ A **policy** describes what happens automatically when an event arrives: the log
 
 ## Idempotency
 
-Even with an in-process channel, **consumers must be idempotent**. The real case in this project is not
-a broker retry: it is the user tapping the translate button twice, or the app resending a request after
+With RabbitMQ, delivery is at-least-once, so **consumers must be idempotent**. Two real cases: a broker
+redelivery, and the user tapping the translate button twice or the app resending a request after
 a network drop. If that produces two identical history entries, the user sees a system bug.
 
 ```typescript
@@ -587,11 +588,10 @@ async function onTranslationProduced(event: TranslationProduced): Promise<void> 
 
 ---
 
-## `[IF DISTRIBUTED]` Schema evolution and resilience
+## Schema evolution and resilience (applies: `[IF DISTRIBUTED]` is now the case)
 
-> This section **does not apply to the current monolith**. It is documented for the day a context —
-> most likely Recognition & Translation, if inference moves to its own service — is extracted into a
-> separate deployment.
+> This section **applies**: each bounded context runs in its own service and events cross service
+> boundaries through RabbitMQ.
 
 **Compatible changes:** adding an optional field to the payload; adding a new event type; making a
 required field optional.
