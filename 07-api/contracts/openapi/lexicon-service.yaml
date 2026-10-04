@@ -798,7 +798,7 @@ components:
           nullable: true
         animated:
           type: boolean
-          description: True if the 3D model has an animation (letters with movement: G, H, J, N-tilde, S, Z).
+          description: 'True if the 3D model has an animation (letters with movement: G, H, J, N-tilde, S, Z).'
         displayOrder:
           type: integer
         status:
