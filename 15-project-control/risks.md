@@ -95,20 +95,20 @@ IMPACT
 
 ---
 
-### R-004 — Small team, no redundancy, and single point of failure
+### R-004 — Small team, no redundancy, and microservices operational complexity
 
 | Field | Value |
 |-------|-------|
 | **ID** | R-004 |
-| **Category** | Team / Business |
-| **Description** | The team is 3 developers. Tech Lead holds 3 roles (Scrum Master, Tech Lead, Developer). If Tech Lead becomes unavailable (illness, departure), there is no backup for architectural decisions, deployment, and incident response. Knowledge is not fully documented. |
+| **Category** | Team / Technical |
+| **Description** | The team is 3 developers. Tech Lead holds 3 roles (Scrum Master, Tech Lead, Developer). Microservices add deployment, monitoring, and incident response complexity. If Tech Lead becomes unavailable, there is no backup for: (1) managing 5 services + RabbitMQ, (2) coordinating distributed incidents across services, (3) architectural decisions. Knowledge is not fully documented. |
 | **Probability** | Medium |
 | **Impact** | High |
 | **Risk level** | High |
 | **Strategy** | Mitigate |
-| **Mitigation plan** | (1) Every architectural decision goes into 05-architecture/decisions/records/ADR-XXX (mandatory, not optional). (2) Deployment runbook documented in 10-devops/. (3) Weekly sync with full team on any blockers (prevents information silos). (4) Pair programming on critical code (auth, ML integration, DB migrations). (5) Cross-training: each developer owns one domain (auth, translation, lexicon) and mentors the others. |
-| **Contingency plan** | If Tech Lead is out >1 week: Luis Alejandro takes over incident response; Camilo reviews deployments. Steering committee (PO + Tech Lead mentor) makes architecture decisions. |
-| **Trigger** | Tech Lead unavailable for >3 days. |
+| **Mitigation plan** | (1) Every architectural decision goes into 05-architecture/decisions/records/ADR-XXX (mandatory). (2) Deployment runbook + per-service runbook in 09-microservices/services/[service]/runbook.md. (3) Weekly sync with full team on blockers (prevents information silos). (4) Pair programming on critical code: service extraction, RabbitMQ integration, incident response drills. (5) Each developer owns one service (iam, recognition, lexicon, analytics, profile) and documents its health checks, common failures, and mitigation steps. (6) Incident response drill quarterly: simulate a service outage, practice coordination via correlation ID tracing. |
+| **Contingency plan** | If Tech Lead is out >3 days: Luis Alejandro takes over incident response (follows runbooks); Camilo reviews deployments. For architectural decisions: escalate to PO or steering committee. |
+| **Trigger** | Tech Lead unavailable for >3 days; incident affecting >1 service simultaneously. |
 | **Owner** | Juan Mauricio Suaza Solórzano & Luis Alejandro Duarte Aldana |
 | **Review date** | Monthly |
 | **Status** | Active |
@@ -155,20 +155,20 @@ IMPACT
 
 ---
 
-### R-007 — Single production server; no redundancy, no failover
+### R-007 — Single production server; no redundancy, no failover (microservices complexity)
 
 | Field | Value |
 |-------|-------|
 | **ID** | R-007 |
 | **Category** | Technical / Business |
-| **Description** | Production and staging run on one shared server. No multi-AZ, no load balancing, no hot standby. SLO is 99.5% (3h 39min/month downtime), which assumes a single node. If the server is down for maintenance or failure, the entire app is offline. |
+| **Description** | Production and staging run on one shared server. 5 microservices + RabbitMQ + PostgreSQL x5 + MongoDB all on one host. No multi-AZ, no load balancing, no hot standby. SLO is 99.5% (3h 39min/month downtime). If the server is down, all services offline simultaneously. If one component (e.g., RabbitMQ) fails, async event flow breaks and users cannot recover until manual restart. |
 | **Probability** | Medium |
 | **Impact** | High |
 | **Risk level** | High |
 | **Strategy** | Accept (with mitigation) |
-| **Mitigation plan** | (1) Maintenance window: Sundays 2am–4am COT (low-traffic, predictable). (2) Database daily automated backup at 3am. (3) Quarterly backup restore drill (a backup nobody has tested is not a backup). (4) Deployment SOP: never deploy on Friday or near a holiday. (5) Container restart on failure (Docker restart policy: restart unless-stopped). |
-| **Contingency plan** | If server is down: (1) Restore from latest backup to a temporary instance. (2) RTO = 30 min (restore from backup). RPO = 24 hours (daily backup). (3) During restore, users see a status page: "We are back in 30 minutes." |
-| **Trigger** | Server outage > 15 min. |
+| **Mitigation plan** | (1) Maintenance window: Sundays 2am–4am COT (low-traffic, predictable). (2) Database + RabbitMQ message queue daily automated backup at 3am. (3) Quarterly backup restore drill (test recovery of all 5 databases + message queue). (4) Deployment SOP: never deploy on Friday or near a holiday. (5) Container restart policy: restart unless-stopped for all services. (6) Monitoring: alert on RabbitMQ queue depth (if growing unbounded, broker is stuck). (7) Graceful degradation: if RabbitMQ is down, sync calls still work (gateway + services online), events queue when broker restarts. |
+| **Contingency plan** | If server is down: (1) Restore from latest backup to a temporary instance. (2) Restore all 5 PostgreSQL databases and MongoDB in order (auth first, then others). (3) Restart RabbitMQ and replay undelivered messages. (4) RTO = 45 min. RPO = 24 hours. (5) During restore, users see a status page: "We are back in 45 minutes." |
+| **Trigger** | Server outage > 15 min; RabbitMQ queue depth > 1000 for >10 min (indicates broker stall). |
 | **Owner** | DevOps / IT infrastructure (external to the team, SENA responsibility) |
 | **Review date** | Monthly |
 | **Status** | Active |
