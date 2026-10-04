@@ -1,54 +1,27 @@
-# Modelo de Datos — API Gateway
+# Data Model — API Gateway
 
-> El API Gateway es **stateless**: no tiene base de datos propia.
-> Su estado de configuración (rutas, rate limits, allowlists) se gestiona
-> mediante variables de ambiente y archivos de configuración versionados en Git,
-> no en tablas de base de datos.
+> The API gateway is **stateless**: it has no database and owns no data. This is deliberate. A gateway with a database
+> would become a second owner of some entity and break the rule of one database per service.
 
 ---
 
-## Motor de base de datos
+## Database engine
 
-**Motor:** No aplica — sin base de datos persistente.
+**Engine:** none.
 
-**Justificación:** Un API Gateway que requiere una BD propia introduce un punto de falla
-adicional en la capa que todo el tráfico atraviesa. El estado de routing se gestiona
-via configuración (archivos YAML o variables de ambiente), y el estado de sesión
-(token blacklist, rate limits) se delega a Redis compartido.
+## What it keeps
 
----
+| Item | Where | Notes |
+|------|-------|-------|
+| Routing table | Configuration file versioned in Git (`gateway.routes.json`, target) | Same content as the routing table in [README.md](./README.md) |
+| Rate-limit counters | In process memory, per gateway instance | Lost on restart; acceptable because the limit is a protection, not a business rule. If the gateway is scaled to several instances the effective limit is multiplied by the number of instances |
+| JWT verification key | Environment variable `JWT_VERIFY_KEY` | Never logged |
 
-## Estado en memoria / Redis
+## Schema migration
 
-El API Gateway sí mantiene estado efímero:
+Not applicable. A routing change is a configuration change deployed with the gateway.
 
-| Dato | Almacenamiento | TTL | Propósito |
-|------|---------------|-----|-----------|
-| Rate limit counters | Redis | 60 segundos | Conteo de peticiones por IP |
-| Token blacklist check | Redis (read-only) | Según expiración del token | Verificar tokens revocados |
+## Data it handles in transit
 
-El auth-service es el **dueño** del token blacklist — el gateway solo lo consulta.
-
----
-
-## Archivos de configuración de rutas
-
-En lugar de tablas, las rutas se definen en:
-
-```
-config/
-├── routes.yaml          # Mapa de rutas: path → servicio + puerto
-├── rate-limits.yaml     # Límites por ruta y por rol
-└── cors.yaml            # Configuración CORS por origen
-```
-
-Estos archivos están versionados en Git y se recargo en el startup del servicio.
-Un cambio de rutas requiere un redeploy (intencional: los cambios de routing son cambios de infraestructura).
-
----
-
-## Correlaciones
-
-- Configuración de ambientes → `10-devops/environments.md`
-- Runbook del gateway → `runbook.md`
-- Catálogo de rutas disponibles → `09-microservices/service-catalog.md`
+The `Authorization` header and the request body pass through; neither is stored. Access logs record method, path,
+status, latency, `sub` and correlation id, never the token or the body.

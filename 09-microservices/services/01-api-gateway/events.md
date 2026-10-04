@@ -1,50 +1,29 @@
-# Eventos — API Gateway
+# Events — API Gateway
 
-> El API Gateway **no emite eventos de dominio**. Su responsabilidad es de infraestructura
-> (enrutamiento, autenticación, rate limiting), no de negocio.
->
-> Los eventos de dominio (cosas que le importan al negocio) los emiten los servicios detrás del gateway.
+> The gateway is an infrastructure component. It does **not publish or consume domain events** and does not connect to
+> RabbitMQ. Domain events travel between the domain services only (exchange `traduce.events`, routing key
+> `<service>.<event>`). The catalog of events is in `02-domain/domain-events.md` and per service in `../0N-*/events.md`.
 
----
+## Events this service PUBLISHES
 
-## Eventos publicados
+None.
 
-**Ninguno.** El API Gateway no publica al message broker.
+## Events this service CONSUMES
 
----
+None.
 
-## Eventos consumidos
+## Why
 
-**Ninguno.** El API Gateway no suscribe al message broker.
+An event is a business fact. The gateway knows no business facts: it only sees HTTP requests. If a business fact must be
+recorded because a request arrived (for example a section view for analytics), the domain service that handles the
+request emits it, not the gateway.
 
----
+## Request-level signals it does produce
 
-## Logs de acceso (no son eventos de dominio)
+These are logs and headers, not domain events.
 
-El gateway sí genera **logs de acceso** estructurados por cada petición HTTP:
-
-```json
-{
-  "timestamp": "2024-01-15T10:30:00.123Z",
-  "level": "info",
-  "type": "access_log",
-  "method": "POST",
-  "path": "/api/v1/auth/login",
-  "status": 200,
-  "durationMs": 45,
-  "ip": "192.168.1.100",
-  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
-  "upstreamService": "auth-service",
-  "upstreamStatus": 200
-}
-```
-
-Estos logs van a la plataforma de observabilidad (`13-operations/observability.md`) pero
-**no se publican al broker de mensajes** — no son eventos de negocio.
-
----
-
-## Correlaciones
-
-- Observabilidad y logs → `13-operations/observability.md`
-- Eventos de negocio de los servicios → `09-microservices/services/02-auth-service/events.md`
+| Signal | Where | Purpose |
+|--------|-------|---------|
+| `X-Correlation-Id` | Request header, generated if missing and forwarded to the upstream | Becomes `metadata.correlationId` of the events the upstream publishes |
+| Access log line | Standard output | method, path, status, latency, `sub`, correlation id |
+| `401`, `429` responses | HTTP | Invalid / missing JWT, rate limit exceeded |

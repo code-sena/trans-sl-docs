@@ -1,114 +1,103 @@
 # Runbook — API Gateway
 
-> Procedimientos de operación para quien esté en guardia.
-> Cada sección es ejecutable sin contexto adicional.
+> For whoever is on call. Each section is executable without extra context. The gateway is not implemented yet; the
+> commands are the target ones and assume the services run with Docker Compose. There is no Kubernetes, dashboard or
+> alert channel defined yet.
 
-**Servicio:** api-gateway
-**Puerto local:** 8080
-**Versión:** 1.0
-**Última actualización:** [YYYY-MM-DD]
+**Service:** api-gateway
+**Version:** 1.0 (target)
+**Last updated:** 2026-10-04
 
 ---
 
-## 1. Información rápida
+## 1. Quick information
 
-| Campo | Valor |
+| Field | Value |
 |-------|-------|
-| Puerto local | 8080 |
-| URL producción | `https://api.[dominio]/` |
-| URL staging | `https://staging.api.[dominio]/` |
-| Dashboard Grafana | [URL del panel de gateway] |
-| Canal de alertas | [#alerts] |
-| Escalamiento | [Tech Lead — contacto] |
-| RTO objetivo | 5 min (es la puerta de entrada — P0 inmediato) |
-| RPO objetivo | N/A (stateless) |
+| Local port | 8080 |
+| Health | `GET http://localhost:8080/health` |
+| Upstreams | iam `:3001`, recognition `:3002`, lexicon `:3003`, analytics `:3004`, profile `:3005` |
+| State | None. A restart loses only the in-memory rate-limit counters |
+| Configuration | `gateway.routes.json` and environment variables (see [README.md](./README.md)) |
 
 ---
 
-## 2. Verificar salud
+## 2. Verify the service is healthy
 
 ```bash
-# Health check público (no requiere autenticación)
-curl https://api.[dominio]/health
+curl -s http://localhost:8080/health
+# Expected: {"status":"ok","upstreams":{"iam":"up","recognition":"up","lexicon":"up","analytics":"up","profile":"up"}}
 
-# Respuesta esperada:
-# {"status": "ok", "timestamp": "2024-01-15T10:30:00Z"}
+# Routing works end to end (public route of lexicon)
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/lexicon/alphabet   # 200
 
-# Si hay problemas, verificar los upstreams:
-curl -H "Authorization: Bearer [token-dev]" https://api.[dominio]/api/v1/auth/health
+# JWT validation works (no token on a protected route)
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/translations/history   # 401
 ```
 
 ---
 
-## 3. Alertas frecuentes
+## 3. Frequent problems and what to do
 
-### Alta tasa de errores 502/503 (upstream no responde)
+### 502 / 504 on one path prefix only
 
-**Síntoma:** Los servicios detrás del gateway devuelven 502 o 503.
-
-```bash
-# Ver a qué servicio corresponden los errores
-kubectl logs -n [ns] -l app=api-gateway --tail=200 | grep '"status":50'
-
-# Verificar que los pods del servicio afectado estén running
-kubectl get pods -n [ns] -l app=[servicio-afectado]
-```
-
-**Árbol de decisión:**
-- ¿El servicio afectado tiene pods `Running`? → El problema puede ser una excepción no manejada. Ver los logs del servicio.
-- ¿Los pods están en `CrashLoopBackOff`? → El servicio se cayó. Escalar el runbook del servicio afectado.
-- ¿Todos los servicios están caídos? → Problema de red o del gateway mismo. Ver sección 3.3.
-
-### Alta tasa de errores 401 (token inválido)
-
-**Síntoma:** Muchos 401. Puede ser ataque o clave JWT rotada.
+One upstream is down or slow. The `/health` body says which one.
 
 ```bash
-# Ver IPs con más 401s
-kubectl logs -n [ns] -l app=api-gateway --tail=500 | \
-  grep '"status":401' | jq '.ip' | sort | uniq -c | sort -rn | head
+docker compose ps
+docker compose logs --tail=100 <service>      # for example lexicon-service
+docker compose restart <service>
 ```
 
-- ¿Una IP sola genera todos los 401? → Posible ataque. Agregar a denylist.
-- ¿Muchas IPs generan 401 después de un deploy? → La clave pública JWT puede haber cambiado. Verificar variables de ambiente del gateway.
+If every prefix fails, the problem is the gateway: `docker compose logs --tail=100 api-gateway`.
 
-### Rate limit disparado globalmente
+### 401 on every protected request after a deploy of iam
+
+The signing key changed and the gateway still holds the old verification key.
 
 ```bash
-# Ver cuántas peticiones bloqueadas por rate limit
-kubectl logs -n [ns] -l app=api-gateway --tail=200 | grep '"status":429'
+# Compare the key in iam and in the gateway environment, then restart the gateway
+docker compose up -d --force-recreate api-gateway
 ```
 
-Si el rate limit está disparado en condiciones normales, el límite puede ser muy bajo.
-Coordinar con Tech Lead antes de modificarlo.
+### 429 Too Many Requests for legitimate users
+
+Several users behind one IP (campus network) hit the per-IP limit on public routes. Raise
+`RATE_LIMIT_PUBLIC_PER_MIN` and recreate the container. Do not disable the limit on `/api/auth/**`.
+
+### CORS errors in the browser
+
+The app origin is missing in `CORS_ORIGINS`. Add it and recreate the container.
 
 ---
 
-## 4. Rollback
+## 4. Maintenance operations
 
-El API Gateway es stateless — el rollback es un redeploy de la versión anterior:
+### 4.1 Add or change a route
+
+1. Edit `gateway.routes.json` (prefix, upstream, public flag) in a branch.
+2. Run the gateway tests, which assert the routing table.
+3. Deploy and run the checks of section 2.
+
+### 4.2 Rotate the JWT verification key
+
+1. Deploy the new key to `iam-service` and to the gateway at the same time (or accept both keys during the transition, if the gateway supports a key list).
+2. Tokens signed with the old key fail with `401` until users sign in again or refresh.
+
+### 4.3 Roll back
 
 ```bash
-kubectl rollout history deployment/api-gateway -n [ns]
-kubectl rollout undo deployment/api-gateway -n [ns]
-kubectl rollout status deployment/api-gateway -n [ns]
+docker compose pull api-gateway   # with the previous tag set in the compose file
+docker compose up -d api-gateway
 ```
+
+The gateway is stateless, so a rollback never needs a data restore.
 
 ---
 
-## 5. Escalar el gateway
+## 5. Post-incident checklist
 
-```bash
-# Escalar horizontalmente (sin downtime, stateless)
-kubectl scale deployment/api-gateway -n [ns] --replicas=3
-kubectl get pods -n [ns] -l app=api-gateway
-```
-
----
-
-## 6. Post-incidente
-
-- [ ] Gateway respondiendo con latencia P95 < 50ms
-- [ ] Zero 5xx en los últimos 5 minutos
-- [ ] Incidente registrado en `13-operations/incident-management.md`
-- [ ] Si el incidente causó SLA breach: notificar al Tech Lead
+- [ ] `/health` shows every upstream `up`
+- [ ] A public and a protected call work through the gateway
+- [ ] Incident recorded in `13-operations/incident-management.md`
+- [ ] Improvement ticket created in `15-project-control/technical-backlog.md`
