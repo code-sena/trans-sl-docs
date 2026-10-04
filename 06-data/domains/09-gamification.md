@@ -4,6 +4,7 @@
 > **Tables:** `achievements`, `user_achievements`
 > **Requirements:** **RF8 — proposed, not in the SRS**
 
+**Owned by:** profile-service (PostgreSQL db `profile`)
 **Version:** v0.2 · **Last updated:** 2026-09-10 · **Source:** `traduce_senas.dbml` (v9)
 **Conventions:** [`../modeling-conventions.md`](../modeling-conventions.md) · **Constraints:** [`../constraints.md`](../constraints.md) · **Open items:** [`../open-items.md`](../open-items.md)
 

@@ -4,6 +4,7 @@
 > **Tables:** `users`, `user_auth_providers`, `user_sessions`, `refresh_tokens`, `user_tokens`, `password_policies`
 > **Requirements:** RF1 · ERF1.1, ERF1.2, ERF1.3 · ERF5.3 · RNF4 · FR-905 … FR-907
 
+**Owned by:** iam-service (PostgreSQL db `iam`)
 **Version:** v0.2 · **Last updated:** 2026-09-10 · **Source:** `traduce_senas.dbml` (v9)
 **Conventions:** [`../modeling-conventions.md`](../modeling-conventions.md) · **Constraints:** [`../constraints.md`](../constraints.md) · **Open items:** [`../open-items.md`](../open-items.md)
 

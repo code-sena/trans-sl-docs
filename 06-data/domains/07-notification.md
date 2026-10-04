@@ -4,6 +4,7 @@
 > **Tables:** `notification_types`, `user_devices`, `notifications`
 > **Requirements:** RF4 · ERF4.1 · accessibility ERF (cross-cutting) · FR-501 … FR-509
 
+**Owned by:** profile-service (PostgreSQL db `profile`)
 **Version:** v0.2 · **Last updated:** 2026-09-10 · **Source:** `traduce_senas.dbml` (v9)
 **Conventions:** [`../modeling-conventions.md`](../modeling-conventions.md) · **Constraints:** [`../constraints.md`](../constraints.md) · **Open items:** [`../open-items.md`](../open-items.md)
 

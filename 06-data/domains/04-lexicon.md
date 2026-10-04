@@ -4,6 +4,7 @@
 > **Tables:** `categories`, `sign_lexicon`, `sign_localizations`, `multimedia_resources`
 > **Requirements:** RF7 · ERF7.1 · ERF5.4 (localization) · FR-301 … FR-310
 
+**Owned by:** lexicon-service (PostgreSQL db `lexicon` + static media)
 **Version:** v0.2 · **Last updated:** 2026-09-10 · **Source:** `traduce_senas.dbml` (v9)
 **Conventions:** [`../modeling-conventions.md`](../modeling-conventions.md) · **Constraints:** [`../constraints.md`](../constraints.md) · **Open items:** [`../open-items.md`](../open-items.md)
 
