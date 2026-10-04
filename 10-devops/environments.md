@@ -8,9 +8,11 @@
 
 ## Project environments
 
-| Environment | Purpose | Update | Access | Data | Backend URL |
+Traduce Señas runs as a microservices architecture with 5 domain services + API Gateway.
+
+| Environment | Purpose | Update | Access | Data | Gateway URL |
 |-------------|---------|--------|--------|------|-------------|
-| **local** | Development on dev's machine | Manual (npm run dev) | Individual dev | Seed data or empty | http://localhost:3000/api |
+| **local** | Development on dev's machine | Manual (npm run dev:all) | Individual dev | Seed data or empty | http://localhost:8080/api |
 | **staging** | Pre-production, testing | (Pending: CI/CD not yet configured) | Team | Test users | (Pending) |
 | **production** | Real users (Colombia) | Manual (approval) | Tech Lead + DevOps | Real | https://api.traducsenas.com/api |
 
@@ -32,21 +34,45 @@ Examples:
   APP_NOTIFICATIONS_SMTP_HOST
 ```
 
-### Variables per environment (Traduce Señas backend)
+### Variables per environment (Traduce Señas microservices)
+
+All services share these base variables; each service also has service-specific DB vars.
 
 | Variable | Local | Staging | Production |
 |----------|-------|---------|------------|
-| `PORT` | `3000` | `3000` | `3000` |
-| `DB_HOST` | `localhost` | Pending | Pending |
-| `DB_PORT` | `5433` | Pending | Pending |
-| `DB_USER` | `traduce_user` | Pending | Pending |
-| `DB_PASSWORD` | `dev_password` | Pending | Pending |
-| `DB_NAME` | `traduce_senas` | `traduce_senas` | `traduce_senas` |
-| `JWT_SECRET` | Generated locally | Pending | Pending |
-| `EMAIL_USER` | (optional for local) | Pending | Pending |
-| `EMAIL_PASS` | (optional for local) | Pending | Pending |
+| **Gateway (edge)** | | | |
+| `API_GATEWAY_PORT` | `8080` | `8080` | `80/443` |
+| **IAM Service** | | | |
+| `IAM_SERVICE_PORT` | `3001` | `3001` | (internal) |
+| `IAM_DB_HOST` | `localhost` | Pending | Pending |
+| `IAM_DB_PORT` | `5433` | Pending | Pending |
+| `IAM_DB_USER` | `traduce_user` | Pending | Pending |
+| `IAM_DB_PASSWORD` | `dev_password` | Pending | Pending |
+| `IAM_DB_NAME` | `iam` | `iam` | `iam` |
+| **Recognition Service** | | | |
+| `RECOGNITION_SERVICE_PORT` | `3002` | `3002` | (internal) |
+| `RECOGNITION_DB_HOST` | `localhost` | Pending | Pending |
+| `RECOGNITION_DB_PORT` | `5434` | Pending | Pending |
+| `MONGODB_URI` | `mongodb://localhost:27017/gesture_samples` | Pending | Pending |
+| **Lexicon Service** | | | |
+| `LEXICON_SERVICE_PORT` | `3003` | `3003` | (internal) |
+| `LEXICON_DB_HOST` | `localhost` | Pending | Pending |
+| `LEXICON_DB_PORT` | `5435` | Pending | Pending |
 | `LEXICON_MEDIA_DIR` | `./public/lexicon` | Cloud storage | Cloud storage (S3/GCS) |
 | `LEXICON_MEDIA_BASE_URL` | (localhost serves directly) | CDN URL | CDN URL |
+| **Analytics Service** | | | |
+| `ANALYTICS_SERVICE_PORT` | `3004` | `3004` | (internal) |
+| `ANALYTICS_DB_HOST` | `localhost` | Pending | Pending |
+| `ANALYTICS_DB_PORT` | `5436` | Pending | Pending |
+| **Profile Service** | | | |
+| `PROFILE_SERVICE_PORT` | `3005` | `3005` | (internal) |
+| `PROFILE_DB_HOST` | `localhost` | Pending | Pending |
+| `PROFILE_DB_PORT` | `5437` | Pending | Pending |
+| **Cross-service** | | | |
+| `JWT_SECRET` | Generated locally | Pending | Pending |
+| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672` | Pending | Pending |
+| `EMAIL_USER` | (optional for local) | Pending | Pending |
+| `EMAIL_PASS` | (optional for local) | Pending | Pending |
 
 ---
 
@@ -110,10 +136,12 @@ Developer
 
 **Adopted strategy:** Manual deployment with verification.
 
-The Traduce Señas backend (Express + Node.js) is deployed to:
+The Traduce Señas microservices (Express + Node.js) are deployed as containers:
 - **Server:** Cloud provider (pending: details to be documented)
-- **Process manager:** (pending: PM2, systemd, or container orchestration)
-- **Reverse proxy:** (pending: nginx or similar)
+- **Process manager per service:** (pending: PM2, systemd, or container orchestration)
+- **Reverse proxy (API Gateway):** nginx routes `/api/*` to the appropriate service (port 8080 public → 3001–3005 internal)
+- **Message broker:** RabbitMQ for asynchronous domain events
+- **Databases:** 5 PostgreSQL instances (per service) + MongoDB (gesture samples)
 
 ### Production deploy checklist
 
