@@ -1,9 +1,9 @@
 # Functional Requirements (FR)
 
-> **Status:** 🟡 Living document — v0.1
-> **Last updated:** 2026-09-08
+> **Status:** 🟡 Living document — v0.2
+> **Last updated:** 2026-10-04
 > **Baseline:** 79 FR across 11 modules (62 Must · 12 Should · 5 Could)
-> **Scope:** TraduceSeña 2.0 — React Native / Expo mobile app + Node/Express modular monolith + PostgreSQL + MongoDB
+> **Scope:** TraduceSeña 2.0 — React Native / Expo mobile app + Node/Express microservices behind an API gateway (iam, recognition, lexicon, analytics, profile) + PostgreSQL (one database per service) + MongoDB
 
 > Functional requirements define **what the system does**. Each FR is atomic, verifiable
 > and traced to the SRS requirement that originates it, the user story (HU) that plans it,
@@ -28,36 +28,36 @@
 
 ### Numbering
 
-| Series | Module | HU prefix |
-|--------|--------|-----------|
-| FR-0xx | Identity | `HU-IAM` |
-| FR-1xx | Authorization | `HU-AUTHZ` |
-| FR-2xx | Profile | `HU-PROF` |
-| FR-3xx | Lexicon | `HU-LEX` |
-| FR-4xx | Translation | `HU-TRA` |
-| FR-5xx | Notification | `HU-NOTIF` |
-| FR-6xx | AI | `HU-AI` |
-| FR-7xx | Usage | `HU-USG` |
-| FR-8xx | Gamification ⚠️ conditional on RF8 | `HU-GAM` |
-| FR-9xx | Audit / Configuration | `HU-AUD`, `HU-CFG` |
-| FR-95x | Navigation | `HU-NAV` |
+| Series | Module | Owning service | HU prefix |
+|--------|--------|----------------|-----------|
+| FR-0xx | Identity | `iam-service` | `HU-IAM` |
+| FR-1xx | Authorization | `iam-service` | `HU-AUTHZ` |
+| FR-2xx | Profile | `profile-service` | `HU-PROF` |
+| FR-3xx | Lexicon | `lexicon-service` | `HU-LEX` |
+| FR-4xx | Translation | `recognition-service` | `HU-TRA` |
+| FR-5xx | Notification | `profile-service` | `HU-NOTIF` |
+| FR-6xx | AI | `recognition-service` (PostgreSQL + MongoDB) | `HU-AI` |
+| FR-7xx | Usage | `analytics-service` | `HU-USG` |
+| FR-8xx | Gamification ⚠️ conditional on RF8 | `profile-service` | `HU-GAM` |
+| FR-9xx | Audit / Configuration | `iam-service` | `HU-AUD`, `HU-CFG` |
+| FR-95x | Navigation | Mobile app (UI); events go to `analytics-service` | `HU-NAV` |
 
 ### Summary by module
 
-| Module | FRs | Must | Should | Could |
-|--------|-----|------|--------|-------|
-| Identity | 15 | 13 | 2 | 0 |
-| Authorization | 4 | 4 | 0 | 0 |
-| Profile | 6 | 3 | 3 | 0 |
-| Lexicon | 10 | 10 | 0 | 0 |
-| Translation | 8 | 6 | 2 | 0 |
-| Notification | 9 | 7 | 2 | 0 |
-| AI | 7 | 7 | 0 | 0 |
-| Usage | 6 | 6 | 0 | 0 |
-| Gamification ⚠️ | 5 | 0 | 0 | 5 |
-| Audit / Configuration | 7 | 4 | 3 | 0 |
-| Navigation | 2 | 2 | 0 | 0 |
-| **Total** | **79** | **62** | **12** | **5** |
+| Module | Owning service | FRs | Must | Should | Could |
+|--------|----------------|-----|------|--------|-------|
+| Identity | iam-service | 15 | 13 | 2 | 0 |
+| Authorization | iam-service | 4 | 4 | 0 | 0 |
+| Profile | profile-service | 6 | 3 | 3 | 0 |
+| Lexicon | lexicon-service | 10 | 10 | 0 | 0 |
+| Translation | recognition-service | 8 | 6 | 2 | 0 |
+| Notification | profile-service | 9 | 7 | 2 | 0 |
+| AI | recognition-service | 7 | 7 | 0 | 0 |
+| Usage | analytics-service | 6 | 6 | 0 | 0 |
+| Gamification ⚠️ | profile-service | 5 | 0 | 0 | 5 |
+| Audit / Configuration | iam-service | 7 | 4 | 3 | 0 |
+| Navigation | mobile app (UI) | 2 | 2 | 0 | 0 |
+| **Total** | | **79** | **62** | **12** | **5** |
 
 ---
 
@@ -240,3 +240,4 @@
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
 | v0.1 | 2026-09-08 | Catalog created. The README promised it and it did not exist. Priorities derived from the planning HU of each FR. | Juan Mauricio Suaza Solórzano |
+| v0.2 | 2026-10-04 | Scope updated to microservices; owning service added per module (numbering and summary tables). | Documentation |
