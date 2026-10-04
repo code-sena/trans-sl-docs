@@ -109,15 +109,15 @@
 
 | Field | Value |
 |-------|-------|
-| **Question** | Architecture is a modular monolith now. Scope says "not microservices." But 05-architecture/overview.md and 09-microservices/ suggest a future extraction. When does this happen and why? |
-| **Context** | Microservices add operational complexity (deployment, monitoring, resilience). Worth it only if: (a) scaling bottleneck, (b) teams need independence, (c) different languages/stacks needed. None of these apply to 3-person team on 1 server. |
-| **Implication** | (1) If extracted early: waste dev time on infrastructure. (2) If extracted late: hard to do retroactively (data coupling, transactions). (3) Domain boundaries already exist in code; extraction is technically possible. (4) Decision: when (scale 500→5000 users?) and which services (auth, translations, lexicon)? |
+| **Question** | Should Traduce Señas adopt a microservices architecture? When? Why? |
+| **Context** | Microservices add operational complexity (deployment, monitoring, resilience). Worth it only if: (a) scaling bottleneck, (b) teams need independence, (c) different languages/stacks needed. 3-person team on 1 server suggests monolith is sufficient for MVP, but domain boundaries already exist in code. |
+| **Implication** | Microservices allow independent deployment, resilience via isolation, and scalability. But they require RabbitMQ, distributed tracing, per-service observability, and careful service coordination. |
 | **Required for** | Long-term architecture roadmap, infrastructure planning |
-| **Who answers** | Tech Lead + future CTO (if organization grows) |
-| **Deadline** | 2027-Q1 (not urgent) |
-| **Blocking** | NO — MVP is monolith. Decision can be deferred. |
-| **Status** | 🟢 ACCEPTED ASSUMPTION: stay monolith for MVP. Revisit if user base grows. |
-| **Current assumption** | No microservices extraction in 2026. Domain boundaries documented so extraction is possible in 2027+. |
+| **Who answers** | Product Owner (decision maker) + Tech Lead |
+| **Deadline** | 2026-10-04 |
+| **Blocking** | YES — decision affects deployment strategy, infrastructure, and incident response. |
+| **Status** | 🟢 RESOLVED |
+| **Decision** | **MICROSERVICES** — Product Owner decision, 2026-10-04. 5 domain services (iam, recognition, lexicon, analytics, profile) + api-gateway, with RabbitMQ for async events. See `09-microservices/service-catalog.md` for the single source of truth. |
 
 ---
 
@@ -130,6 +130,7 @@
 | D-003 | Documentation language? | English (except comments in Spanish) | ADR-001-documentation-language | 2026-09-01 |
 | D-004 | Sign language dataset source? | LSC-54 (government initiative) + crowd-sourced samples | (implicit in scope) | 2026-09-08 |
 | D-005 | 3D avatar for alphabet? | No — 2D images/animations only. Avatar out of scope. | (implicit in scope.md §1) | 2026-09-08 |
+| D-006 | Monolith vs microservices? | Microservices (5 services + gateway + RabbitMQ) | (see `09-microservices/service-catalog.md`) | 2026-10-04 |
 
 ---
 
