@@ -35,12 +35,23 @@
 
 ## Local ports in use
 
-Verify these ports are free before starting:
+Verify these ports are free before starting. Traduce Señas runs 5 microservices + API Gateway:
 
 | Port | Service | Description |
 |------|---------|-------------|
-| 3000 | Backend API | Express backend (Traduce Señas) |
-| 5433 | PostgreSQL | Relational database (traduce_senas) |
+| 8080 | api-gateway | Main entry point (routing, JWT validation, rate limit) |
+| 3001 | iam-service | Identity & Access Management |
+| 3002 | recognition-service | Sign recognition & translation (core) |
+| 3003 | lexicon-service | Sign lexicon & learning |
+| 3004 | analytics-service | Usage analytics |
+| 3005 | profile-service | User profiles, notifications, achievements |
+| 5433 | PostgreSQL (iam) | Identity database |
+| 5434 | PostgreSQL (recognition) | Translation & AI database |
+| 5435 | PostgreSQL (lexicon) | Lexicon database |
+| 5436 | PostgreSQL (analytics) | Analytics database |
+| 5437 | PostgreSQL (profile) | Profile database |
+| 27017 | MongoDB | Gesture samples (recognition service) |
+| 5672 | RabbitMQ | Async messaging (domain events) |
 | 8081 | Frontend (Expo) | React Native development server (web) |
 | 19000 | Expo | Expo development server |
 | 19001 | Expo | Expo development server (tunnel) |
@@ -65,44 +76,92 @@ git clone https://github.com/sena-proyectos/traduce-senas.git
 cd traduce-senas
 ```
 
-### Step 2: Environment variables — Backend
+### Step 2: Environment variables — Backend services
 
-In the `backend/` directory:
+Each microservice runs from `backend/src/services/[service]/` and has its own `.env`.
 
-```bash
-cd backend
-cp .env.example .env
-```
+**For now (extraction in progress):** services run from the monorepo (backend/) with separate env sections.
 
-**Required variables in `backend/.env`:**
+Example `backend/.env` (5 service ports + databases):
 
 | Variable | Description | Value for local |
 |----------|-------------|----------------|
-| `PORT` | Backend API port | `3000` |
-| `DB_HOST` | PostgreSQL host | `localhost` |
-| `DB_PORT` | PostgreSQL port | `5433` |
-| `DB_USER` | PostgreSQL user | `traduce_user` |
-| `DB_PASSWORD` | PostgreSQL password | `dev_password` |
-| `DB_NAME` | Database name | `traduce_senas` |
+| `API_GATEWAY_PORT` | Gateway public port | `8080` |
+| `IAM_SERVICE_PORT` | iam-service internal port | `3001` |
+| `RECOGNITION_SERVICE_PORT` | recognition-service internal port | `3002` |
+| `LEXICON_SERVICE_PORT` | lexicon-service internal port | `3003` |
+| `ANALYTICS_SERVICE_PORT` | analytics-service internal port | `3004` |
+| `PROFILE_SERVICE_PORT` | profile-service internal port | `3005` |
+| `IAM_DB_HOST` | iam service PostgreSQL | `localhost` |
+| `IAM_DB_PORT` | iam database port | `5433` |
+| `RECOGNITION_DB_HOST` | recognition service PostgreSQL | `localhost` |
+| `RECOGNITION_DB_PORT` | recognition database port | `5434` |
+| `MONGODB_URI` | MongoDB connection (gesture samples) | `mongodb://localhost:27017/gesture_samples` |
+| `RABBITMQ_URL` | RabbitMQ broker (domain events) | `amqp://guest:guest@localhost:5672` |
 | `JWT_SECRET` | Key for signing JWT | `openssl rand -base64 32` (generate one) |
-| `EMAIL_USER` | SMTP user for password recovery | [optional for local] |
-| `EMAIL_PASS` | SMTP password | [optional for local] |
 
 > **NEVER** commit `.env`. It is in `.gitignore`.
 
-### Step 3: Start PostgreSQL locally
+### Step 3: Start databases locally
+
+Start PostgreSQL per service, MongoDB, and RabbitMQ:
 
 ```bash
-# Start PostgreSQL container (5433 to avoid conflicts with local installs)
-docker run --name traduce-postgres \
+# Start iam-service PostgreSQL (5433)
+docker run --name traduce-iam-db \
   -e POSTGRES_USER=traduce_user \
   -e POSTGRES_PASSWORD=dev_password \
-  -e POSTGRES_DB=traduce_senas \
+  -e POSTGRES_DB=iam \
   -p 5433:5432 \
   -d postgres:15-alpine
 
-# Verify it is running
-docker ps | grep traduce-postgres
+# Start recognition-service PostgreSQL (5434)
+docker run --name traduce-recognition-db \
+  -e POSTGRES_USER=traduce_user \
+  -e POSTGRES_PASSWORD=dev_password \
+  -e POSTGRES_DB=recognition \
+  -p 5434:5432 \
+  -d postgres:15-alpine
+
+# Start lexicon-service PostgreSQL (5435)
+docker run --name traduce-lexicon-db \
+  -e POSTGRES_USER=traduce_user \
+  -e POSTGRES_PASSWORD=dev_password \
+  -e POSTGRES_DB=lexicon \
+  -p 5435:5432 \
+  -d postgres:15-alpine
+
+# Start analytics-service PostgreSQL (5436)
+docker run --name traduce-analytics-db \
+  -e POSTGRES_USER=traduce_user \
+  -e POSTGRES_PASSWORD=dev_password \
+  -e POSTGRES_DB=analytics \
+  -p 5436:5432 \
+  -d postgres:15-alpine
+
+# Start profile-service PostgreSQL (5437)
+docker run --name traduce-profile-db \
+  -e POSTGRES_USER=traduce_user \
+  -e POSTGRES_PASSWORD=dev_password \
+  -e POSTGRES_DB=profile \
+  -p 5437:5432 \
+  -d postgres:15-alpine
+
+# Start MongoDB (gesture samples for recognition service)
+docker run --name traduce-mongodb \
+  -p 27017:27017 \
+  -d mongo:6-alpine
+
+# Start RabbitMQ (domain events broker)
+docker run --name traduce-rabbitmq \
+  -e RABBITMQ_DEFAULT_USER=guest \
+  -e RABBITMQ_DEFAULT_PASS=guest \
+  -p 5672:5672 \
+  -p 15672:15672 \
+  -d rabbitmq:3-management-alpine
+
+# Verify all are running
+docker ps | grep traduce-
 ```
 
 ### Step 4: Install dependencies — Backend
@@ -121,14 +180,27 @@ npm install
 psql -h localhost -p 5433 -U traduce_user -d traduce_senas
 ```
 
-### Step 6: Start the Backend
+### Step 6: Start the Backend services
+
+**Current status (2026-10-04):** Services are being extracted from the monorepo. For now, start all services from one terminal:
 
 ```bash
 cd backend
-npm run dev
+npm run dev:all
+# Or individually (in separate terminals):
+npm run dev:iam
+npm run dev:recognition
+npm run dev:lexicon
+npm run dev:analytics
+npm run dev:profile
+npm run dev:gateway
 ```
 
-Expected output: `Servidor corriendo en el puerto 3000`
+Expected output: all services log their startup (ports 3001–3005 + gateway on 8080). Verify:
+```bash
+curl http://localhost:8080/health
+# Should respond with {alive: true}
+```
 
 ### Step 7: Install and start Frontend (React Native + Expo)
 
@@ -144,10 +216,20 @@ Follow Expo's prompts to run on web (`w`), Android, or iOS.
 
 ### Step 8: Verify it works
 
-**Backend:**
+**Backend (via API Gateway):**
 ```bash
-curl http://localhost:3000/api/auth/register
+curl http://localhost:8080/api/auth/register
 # Should respond with 400 (missing fields) or similar, not connection error
+```
+
+**Health check per service:**
+```bash
+curl http://localhost:8080/health                 # Gateway
+curl http://localhost:3001/health                 # iam-service
+curl http://localhost:3002/health                 # recognition-service
+curl http://localhost:3003/health                 # lexicon-service
+curl http://localhost:3004/health                 # analytics-service
+curl http://localhost:3005/health                 # profile-service
 ```
 
 **Frontend (web):**
@@ -162,13 +244,13 @@ curl http://localhost:3000/api/auth/register
 # At the start of the day
 git pull origin dev
 
-# Ensure Docker PostgreSQL is running
-docker start traduce-postgres
+# Start all infrastructure (PostgreSQL x5, MongoDB, RabbitMQ)
+docker start traduce-iam-db traduce-recognition-db traduce-lexicon-db traduce-analytics-db traduce-profile-db traduce-mongodb traduce-rabbitmq
 
-# Backend
+# Backend microservices
 cd backend
 npm install  # If package.json changed
-npm run dev  # Starts on http://localhost:3000
+npm run dev:all  # Starts all 5 services + gateway
 
 # Frontend (in a new terminal)
 cd frontend
@@ -185,47 +267,65 @@ git commit -m "type(scope): description"
 
 ## Common issues
 
-### "Port 3000 or 5433 already in use"
+### "Port 3001–3005 or 5433–5437 already in use"
 
 ```bash
 # Windows — Find process using port
-netstat -ano | findstr :3000
+netstat -ano | findstr :3001
 # Then kill it:
 taskkill /PID [PID] /F
 
 # macOS/Linux
-lsof -i :3000
+lsof -i :3001
 kill -9 [PID]
+
+# Or stop all Traduce containers
+docker stop traduce-iam-db traduce-recognition-db traduce-lexicon-db traduce-analytics-db traduce-profile-db traduce-mongodb traduce-rabbitmq
 ```
 
 ### "PostgreSQL container not starting"
 
 ```bash
 # Check if container exists but stopped
-docker ps -a | grep traduce-postgres
+docker ps -a | grep traduce-
 
-# Restart it
-docker start traduce-postgres
+# Restart specific service database
+docker start traduce-iam-db
 
 # View logs
-docker logs traduce-postgres
+docker logs traduce-iam-db
 
 # Remove and recreate (data will be lost)
-docker rm traduce-postgres
+docker rm traduce-iam-db
 # Then re-run the docker run command from Step 3
 ```
 
 ### "Database connection refused"
 
 ```bash
-# Verify PostgreSQL is running and healthy
+# Verify PostgreSQL is running for each service
 docker ps | grep postgres
 
-# Check credentials in backend/.env match the docker run command
-# Defaults: user=traduce_user, password=dev_password, db=traduce_senas, port=5433
+# Test connection to iam service (5433)
+psql -h localhost -p 5433 -U traduce_user -d iam -c "SELECT 1"
 
-# Test connection
-psql -h localhost -p 5433 -U traduce_user -d traduce_senas -c "SELECT 1"
+# Test connection to recognition service (5434)
+psql -h localhost -p 5434 -U traduce_user -d recognition -c "SELECT 1"
+```
+
+### "RabbitMQ or MongoDB not starting"
+
+```bash
+# Check RabbitMQ
+docker logs traduce-rabbitmq
+docker start traduce-rabbitmq
+
+# Check MongoDB
+docker logs traduce-mongodb
+docker start traduce-mongodb
+
+# Test RabbitMQ management UI
+open http://localhost:15672  # user: guest, pass: guest
 ```
 
 ### "JWT_SECRET not configured"
@@ -307,12 +407,20 @@ expo build:ios              # Build IPA
 
 | Service | URL | Credentials (local only) |
 |---------|-----|--------------------------|
-| Backend API | http://localhost:3000/api | |
-| Backend Health | http://localhost:3000/api/auth/register | (POST test) |
+| **API Gateway** | http://localhost:8080/api | Public entry point |
+| **Gateway Health** | http://localhost:8080/health | GET (liveness) |
+| **iam-service** | http://localhost:3001 | Internal port |
+| **recognition-service** | http://localhost:3002 | Internal port |
+| **lexicon-service** | http://localhost:3003 | Internal port |
+| **analytics-service** | http://localhost:3004 | Internal port |
+| **profile-service** | http://localhost:3005 | Internal port |
 | Frontend (Expo web) | http://localhost:8081 | Auto-opens |
 | Expo tunnel | http://localhost:19001 | Auto-opens |
-| PostgreSQL | localhost:5433 | user: traduce_user / pass: dev_password |
-| API Endpoints (real) | See `05-architecture/overview.md` | |
+| RabbitMQ Management | http://localhost:15672 | user: guest / pass: guest |
+| PostgreSQL (iam) | localhost:5433 | user: traduce_user / pass: dev_password |
+| PostgreSQL (recognition) | localhost:5434 | user: traduce_user / pass: dev_password |
+| MongoDB | localhost:27017 | (no auth in dev) |
+| API Gateway Endpoints | See `09-microservices/` | Service routing rules |
 
 ---
 
