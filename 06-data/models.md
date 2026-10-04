@@ -11,17 +11,16 @@
 
 ## Read this first
 
-**The scaffold this folder shipped with assumes microservices. This project is not one.**
-Traduce Señas is a **modular monolith**: one Node/Express backend whose bounded contexts are modules,
-one React Native/Expo client, three developers. "Database per service" does not apply, and pretending it
-does would document a system that does not exist. What does apply — the reason the principle exists at
-all — is preserved differently:
+**Traduce Señas is a microservices architecture with a database per service.** Five domain services
+(iam, recognition, lexicon, analytics, profile) sit behind an API Gateway, and each owns the domains
+listed in [`README.md`](README.md). The rule:
 
-> **Each bounded context owns its tables, and no module reads another module's tables directly.**
+> **Each service owns its tables, and no service reads another service's tables. There are no foreign
+> keys across services; cross-service references are logical IDs.**
 
-The boundary is enforced by repositories, code review and — with the schema-per-domain layout below — by
-a `GRANT` per module, instead of by a network hop. That is the honest version of the rule at this scale,
-and it is what makes a later extraction possible without redoing the model.
+The boundary is enforced by the network (REST through the gateway, events over RabbitMQ) and by a
+separate PostgreSQL database per service. The schema-per-domain layout below is the logical model; at
+deployment each group of schemas lives in the database of its owning service.
 
 **These documents are a baseline, faithful to the model of record including where it disagrees with
 `02-domain/`.** Those disagreements are listed in [`open-items.md`](open-items.md) rather than silently
@@ -37,14 +36,15 @@ resolved: reversing a design decision belongs to the team, not to a documentatio
 | **Sample store** | MongoDB 7 | `gesture_samples` — one collection, **no foreign keys** | A training sample's metadata changes every time the recognition pipeline changes: today landmarks and a storage path, tomorrow frame rate, hand count, capture device, extractor version. In the relational schema each of those is a migration. This is the one part of the system whose schema is genuinely unstable, and it is the one part that is not relational |
 | **Object storage** | S3-compatible bucket / filesystem | Videos, images, animations, `.tflite` model artifacts | Binary content never goes in the database. Tables keep a URI (`multimedia_resources.uri`, `ai_models.storage_reference`, `gesture_samples.storage_reference`) |
 
-**No Redis, no message broker.** Sessions are JWT plus a `refresh_tokens` row; domain events travel
-in-process. Adding either would be infrastructure with no requirement behind it — the same gold-plating
-test the traceability matrix applies to tables.
+**RabbitMQ yes, Redis no.** Domain events travel between services over RabbitMQ (topic exchange
+`traduce.events`). Sessions are JWT plus a `refresh_tokens` row in iam-service; adding Redis would be
+infrastructure with no requirement behind it — the same gold-plating test the traceability matrix
+applies to tables.
 
 **The cost of the MongoDB split, stated plainly:** `sign_id`, `recorded_by` and `validated_by` in
 `gesture_samples` are **public identifiers**, not references the database enforces. Nothing prevents a
 sample pointing at a sign that no longer exists; consistency is the application's job. The benefit is
-that the sample schema evolves without touching the monolith, and that the collection can be moved,
+that the sample schema evolves without touching the PostgreSQL databases, and that the collection can be moved,
 dumped or destroyed as a unit — which matters for a dataset governed by Law 1581.
 
 ---
