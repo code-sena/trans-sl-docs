@@ -203,12 +203,12 @@
 | Field | Value |
 |-------|-------|
 | **ID** | TD-012 |
-| **Title** | Add OpenTelemetry instrumentation to trace requests across services (post-microservices extraction) |
-| **Description** | When you have microservices: trace a user request as it flows through auth → translation → persistence. Not needed for monolith. |
-| **Why now** | Too early. Wait until microservices extraction (2027+). |
-| **Effort** | 20 hours |
-| **Priority** | Low |
-| **Target sprint** | Post-MVP |
+| **Title** | Add OpenTelemetry instrumentation to trace requests across 5 microservices |
+| **Description** | Architecture is now microservices: trace a user request as it flows through api-gateway → iam-service → profile-service (via RabbitMQ) → analytics-service, etc. For MVP: use correlation ID in logs. For post-MVP: integrate Jaeger/Zipkin. |
+| **Why now** | Microservices are now decided (2026-10-04). Start simple with correlation IDs in logs; upgrade to OpenTelemetry after MVP if needed. |
+| **Effort** | 20 hours (20 for correlation ID MVP; 20 for full OpenTelemetry) |
+| **Priority** | Medium |
+| **Target sprint** | Sprint 3 (correlation ID MVP); Sprint 5+ (OpenTelemetry) |
 
 ---
 
