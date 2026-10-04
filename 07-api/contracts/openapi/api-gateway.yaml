@@ -3,21 +3,46 @@ info:
   title: API Gateway
   version: 1.0.0
   description: |
-    Punto único de entrada al sistema. El gateway enruta las peticiones a los
-    microservicios correspondientes según el path.
+    Single entry point of Traduce Senas (`01-api-gateway`, port 8080). The gateway owns no data and no
+    business logic: it routes, validates the JWT signature, applies rate limiting and CORS, and forwards
+    each request to the domain service that owns the path. Clients only talk to the gateway; the
+    paths below `/api` are the same ones documented in each service contract.
 
-    ## Autenticación
-    La mayoría de los endpoints requieren un JWT válido:
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    El token se obtiene en `POST /api/v1/auth/login` (ver `auth-service.yaml`).
+    ## Routing table
+    | Public path prefix | Upstream service | Port | Contract |
+    |--------------------|------------------|------|----------|
+    | `/api/auth/**`, `/api/users/**`, `/api/roles/**`, `/api/consents/**` | iam-service | 3001 | `iam-service.yaml` |
+    | `/api/translations/**`, `/api/recognition/**`, `/api/models/**`, `/api/samples/**` | recognition-service | 3002 | `recognition-service.yaml` |
+    | `/api/lexicon/**` (including `/api/lexicon/media/**`) | lexicon-service | 3003 | `lexicon-service.yaml` |
+    | `/api/analytics/**` | analytics-service | 3004 | `analytics-service.yaml` |
+    | `/api/profile/**`, `/api/notifications/**`, `/api/achievements/**` | profile-service | 3005 | `profile-service.yaml` |
 
-    ## Headers internos (solo entre servicios)
-    El gateway agrega estos headers antes de reenviar la petición al upstream:
-    - `X-User-Id`: UUID del usuario autenticado
-    - `X-User-Role`: Rol del usuario (ADMIN, USER, VIEWER)
-    - `X-Correlation-Id`: ID de traza para correlacionar logs
+    Paths are forwarded unchanged (no prefix stripping). Routing is also declared machine-readably in
+    the `x-routing` extension of this file.
+
+    ## Authentication
+    Protected endpoints require a JWT issued by iam-service:
+    ```
+    Authorization: Bearer <accessToken>
+    ```
+    Get it with `POST /api/auth/login`. The gateway validates the signature (public keys from
+    `GET /api/auth/jwks`) and rejects invalid tokens with `401` before reaching the service. Public
+    endpoints (registration, login, lexicon catalog, media) are let through without a token. Services
+    still enforce authorization (for example the ADMIN role).
+
+    ## Headers added by the gateway (internal)
+    - `X-User-Id`: user UUID (`sub` claim)
+    - `X-User-Roles`: roles of the user, comma separated (for example `ADMIN`)
+    - `X-Correlation-Id`: id to correlate logs across services
+
+    ## Communication between services
+    Client calls are synchronous REST through this gateway. Services talk to each other
+    asynchronously with domain events over RabbitMQ (topic exchange `traduce.events`, routing key
+    `<service>.<event>`); the gateway is not involved.
+
+    ## Errors
+    Gateway errors use `ErrorResponse` from `_shared.yaml`: `401` invalid token, `404` unknown route,
+    `429` rate limit exceeded, `502`/`503` upstream unavailable.
 
 servers:
   - url: http://localhost:8080
@@ -33,23 +58,45 @@ servers:
       domain:
         default: example.com
 
+x-routing:
+  - prefixes: [/api/auth, /api/users, /api/roles, /api/consents]
+    upstream: iam-service
+    target: http://iam-service:3001
+    contract: iam-service.yaml
+  - prefixes: [/api/translations, /api/recognition, /api/models, /api/samples]
+    upstream: recognition-service
+    target: http://recognition-service:3002
+    contract: recognition-service.yaml
+  - prefixes: [/api/lexicon]
+    upstream: lexicon-service
+    target: http://lexicon-service:3003
+    contract: lexicon-service.yaml
+  - prefixes: [/api/analytics]
+    upstream: analytics-service
+    target: http://analytics-service:3004
+    contract: analytics-service.yaml
+  - prefixes: [/api/profile, /api/notifications, /api/achievements]
+    upstream: profile-service
+    target: http://profile-service:3005
+    contract: profile-service.yaml
+
 tags:
   - name: Health
-    description: Estado del gateway y sus upstreams
+    description: Status of the gateway and its upstreams
 
 paths:
   /health:
     get:
-      summary: Health check del gateway
+      summary: Gateway health check
       description: |
-        Verifica que el gateway esté funcionando y que todos los servicios upstream
-        estén respondiendo. No requiere autenticación.
-      tags:
-        - Health
+        Verifies that the gateway is running and reports the state of every upstream service.
+        No authentication required.
+      operationId: health
+      tags: [Health]
       security: []
       responses:
         '200':
-          description: Gateway y upstreams saludables
+          description: Gateway healthy (upstreams may be degraded)
           content:
             application/json:
               schema:
@@ -60,26 +107,28 @@ paths:
                     type: string
                     enum: [ok, degraded]
                   timestamp:
-                    type: string
-                    format: date-time
+                    $ref: './_shared.yaml#/components/schemas/Timestamp'
                   upstreams:
                     type: object
-                    description: Estado de cada microservicio
+                    description: State of each domain service
                     additionalProperties:
                       type: string
                       enum: [ok, degraded, down]
               example:
                 status: ok
-                timestamp: '2024-01-15T10:30:00Z'
+                timestamp: '2026-10-04T10:30:00Z'
                 upstreams:
-                  auth-service: ok
-                  nombre-servicio: ok
+                  iam-service: ok
+                  recognition-service: ok
+                  lexicon-service: ok
+                  analytics-service: ok
+                  profile-service: ok
         '503':
-          description: El gateway está iniciando o un upstream crítico está caído
+          description: Gateway starting or a critical upstream is down
           content:
             application/json:
               schema:
-                $ref: './auth-service.yaml#/components/schemas/ErrorResponse'
+                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
 
 components:
   securitySchemes:
