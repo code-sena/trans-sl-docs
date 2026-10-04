@@ -16,26 +16,20 @@
 | Docker Compose | 2.20+ | Included with Docker Desktop | `docker compose version` |
 | Git | 2.40+ | git-scm.com | `git --version` |
 
-### Project language tool
-
-> Add here the specific tool for the chosen stack and remove this instruction.
-> See your stack guide in `_stacks/` for recommended versions.
+### Backend and Frontend tools
 
 | Tool | Minimum version | Install from | Verify with |
 |------|----------------|--------------|-------------|
-| [Language / Runtime] | [LTS version] | [Official URL] | `[command --version]` |
-| [Package manager] | [version] | [included / URL] | `[command --version]` |
-| [Additional tool] | [version] | [URL] | [command] |
+| Node.js | 20.x (LTS) | nodejs.org | `node --version` |
+| npm | 10.x | Included with Node.js | `npm --version` |
 
-**Stack tool reference:**
-- Node.js + TypeScript → [`_stacks/node-typescript.md`](../_stacks/node-typescript.md)
-- Java + Spring Boot → [`_stacks/java-spring.md`](../_stacks/java-spring.md)
-- Python + FastAPI → [`_stacks/python-fastapi.md`](../_stacks/python-fastapi.md)
-- Go → [`_stacks/go.md`](../_stacks/go.md)
+**Backend:** Express 5.2+ TypeScript 5.6+ on Node.js 20+
+**Frontend:** React Native (Expo 57) via Expo CLI
 
 **Recommended (not required):**
-- Team editor: [VS Code / IntelliJ IDEA / PyCharm / GoLand]
-- Postman or Insomnia for manually testing endpoints
+- VS Code with ESLint and Prettier extensions
+- Postman or Insomnia for testing API endpoints
+- Expo Go app (iOS/Android) for testing the mobile app
 
 ---
 
@@ -45,14 +39,11 @@ Verify these ports are free before starting:
 
 | Port | Service | Description |
 |------|---------|-------------|
-| 8080 | api-gateway | Main entry point |
-| 3001 | auth-service | Authentication service |
-| 300X | [service-name] | [description] |
-| 5432 | PostgreSQL | Relational database |
-| 6379 | Redis | Cache and message queue |
-| 5672 | RabbitMQ | Message broker (AMQP) |
-| 15672 | RabbitMQ Management | RabbitMQ web interface |
-| 9092 | Kafka | Message broker (if applicable) |
+| 3000 | Backend API | Express backend (Traduce Señas) |
+| 5433 | PostgreSQL | Relational database (traduce_senas) |
+| 8081 | Frontend (Expo) | React Native development server (web) |
+| 19000 | Expo | Expo development server |
+| 19001 | Expo | Expo development server (tunnel) |
 
 **Check free ports:**
 ```bash
@@ -70,92 +61,98 @@ lsof -i :[PORT]
 ### Step 1: Clone the repository
 
 ```bash
-git clone https://github.com/[org]/[repo].git
-cd [repo]
+git clone https://github.com/sena-proyectos/traduce-senas.git
+cd traduce-senas
 ```
 
-### Step 2: Environment variables
+### Step 2: Environment variables — Backend
+
+In the `backend/` directory:
 
 ```bash
-# Copy the example environment variables
+cd backend
 cp .env.example .env
-
-# Edit .env if you need to change any value
-# (for local, the .env.example defaults should work)
 ```
 
-**Required variables to configure in .env:**
+**Required variables in `backend/.env`:**
 
 | Variable | Description | Value for local |
 |----------|-------------|----------------|
-| `DATABASE_URL` | PostgreSQL connection | `postgresql://dev:dev@localhost:5432/dev` |
-| `REDIS_URL` | Redis connection | `redis://localhost:6379` |
-| `JWT_SECRET` | Key for signing JWT | `[generate with: openssl rand -base64 32]` |
-| `[VARIABLE]` | [description] | [example value] |
+| `PORT` | Backend API port | `3000` |
+| `DB_HOST` | PostgreSQL host | `localhost` |
+| `DB_PORT` | PostgreSQL port | `5433` |
+| `DB_USER` | PostgreSQL user | `traduce_user` |
+| `DB_PASSWORD` | PostgreSQL password | `dev_password` |
+| `DB_NAME` | Database name | `traduce_senas` |
+| `JWT_SECRET` | Key for signing JWT | `openssl rand -base64 32` (generate one) |
+| `EMAIL_USER` | SMTP user for password recovery | [optional for local] |
+| `EMAIL_PASS` | SMTP password | [optional for local] |
 
-> **NEVER** commit the `.env` file. It is in `.gitignore` for a reason.
+> **NEVER** commit `.env`. It is in `.gitignore`.
 
-### Step 3: Start the infrastructure
-
-```bash
-# Start databases and brokers in Docker
-docker compose up -d
-
-# Verify they are healthy
-docker compose ps
-```
-
-The command should show all containers in `healthy` or `running` state.
-
-### Step 4: Install dependencies
-
-> Commands depend on the project stack. See `_stacks/[your-stack].md → Project commands`.
-
-| Stack | Command |
-|-------|---------|
-| Node.js + npm | `npm install` |
-| Java + Maven | `mvn install -DskipTests` |
-| Python + Poetry | `poetry install` |
-| Go | `go mod download` |
-
-### Step 5: Run migrations
-
-> The migration tool varies by stack. See `_stacks/[your-stack].md`.
-
-| Stack / Tool | Command |
-|--------------|---------|
-| Node.js + knex/Prisma | `npm run db:migrate` |
-| Java + Flyway | `mvn flyway:migrate` (or automatic on startup) |
-| Python + Alembic | `alembic upgrade head` |
-| Go + golang-migrate | `make migrate-up` |
+### Step 3: Start PostgreSQL locally
 
 ```bash
-# Optionally: load initial test data (seed)
-# [see command in your stack guide]
+# Start PostgreSQL container (5433 to avoid conflicts with local installs)
+docker run --name traduce-postgres \
+  -e POSTGRES_USER=traduce_user \
+  -e POSTGRES_PASSWORD=dev_password \
+  -e POSTGRES_DB=traduce_senas \
+  -p 5433:5432 \
+  -d postgres:15-alpine
+
+# Verify it is running
+docker ps | grep traduce-postgres
 ```
 
-### Step 6: Start the services
-
-> Startup commands depend on the stack. See `_stacks/[your-stack].md → Project commands`.
-
-| Stack | Development command |
-|-------|---------------------|
-| Node.js | `npm run dev` |
-| Java | `mvn spring-boot:run` or `java -jar target/app.jar` |
-| Python | `uvicorn main:app --reload` |
-| Go | `go run ./cmd/server/...` or `make dev` |
-
-### Step 7: Verify it works
+### Step 4: Install dependencies — Backend
 
 ```bash
-# Health check of the API Gateway
-curl http://localhost:8080/health
-
-# Expected response:
-# {"status": "ok", "timestamp": "2024-01-15T10:30:00Z"}
+cd backend
+npm install
 ```
 
-Open your browser at `http://localhost:15672` for the RabbitMQ interface (if using RabbitMQ).
+### Step 5: Run database migrations
+
+```bash
+# Migrations are in backend/DB/traduce_senas/ (Liquibase)
+# The application applies them on startup. Just ensure the DB is running.
+# Verify by connecting:
+psql -h localhost -p 5433 -U traduce_user -d traduce_senas
+```
+
+### Step 6: Start the Backend
+
+```bash
+cd backend
+npm run dev
+```
+
+Expected output: `Servidor corriendo en el puerto 3000`
+
+### Step 7: Install and start Frontend (React Native + Expo)
+
+In a new terminal:
+
+```bash
+cd frontend
+npm install
+npm start
+```
+
+Follow Expo's prompts to run on web (`w`), Android, or iOS.
+
+### Step 8: Verify it works
+
+**Backend:**
+```bash
+curl http://localhost:3000/api/auth/register
+# Should respond with 400 (missing fields) or similar, not connection error
+```
+
+**Frontend (web):**
+- Open http://localhost:19001 (Expo tunnel) or http://localhost:8081 (web)
+- Verify it loads the login screen
 
 ---
 
@@ -163,101 +160,145 @@ Open your browser at `http://localhost:15672` for the RabbitMQ interface (if usi
 
 ```bash
 # At the start of the day
-git pull origin develop
-# Install dependencies if they changed (see stack):
-#   npm install / mvn install / poetry install / go mod download
-# Run migrations if there are new ones (see stack):
-#   npm run db:migrate / alembic upgrade head / make migrate-up
-# Start the service (see stack):
-#   npm run dev / mvn spring-boot:run / uvicorn main:app --reload / make dev
+git pull origin dev
 
-# At the end
+# Ensure Docker PostgreSQL is running
+docker start traduce-postgres
+
+# Backend
+cd backend
+npm install  # If package.json changed
+npm run dev  # Starts on http://localhost:3000
+
+# Frontend (in a new terminal)
+cd frontend
+npm install  # If package.json changed
+npm start    # Starts Expo dev server
+
+# At the end of a task
 git add [specific files]
-git commit -m "feat(scope): description"
+git commit -m "type(scope): description"
+# See 00-governance/git-conventions.md for format
 ```
 
 ---
 
 ## Common issues
 
-### "Port already in use"
+### "Port 3000 or 5433 already in use"
 
 ```bash
-# Find which process is using the port
-lsof -i :5432    # macOS/Linux
-netstat -ano | findstr :5432  # Windows
+# Windows — Find process using port
+netstat -ano | findstr :3000
+# Then kill it:
+taskkill /PID [PID] /F
 
-# Kill the process (replace PID)
-kill -9 [PID]    # macOS/Linux
-taskkill /PID [PID] /F  # Windows
+# macOS/Linux
+lsof -i :3000
+kill -9 [PID]
 ```
 
-### "Docker containers not starting"
+### "PostgreSQL container not starting"
 
 ```bash
-# View logs of the failing container
-docker compose logs [service-name]
+# Check if container exists but stopped
+docker ps -a | grep traduce-postgres
 
-# Restart from scratch (deletes volumes)
-docker compose down -v
-docker compose up -d
+# Restart it
+docker start traduce-postgres
+
+# View logs
+docker logs traduce-postgres
+
+# Remove and recreate (data will be lost)
+docker rm traduce-postgres
+# Then re-run the docker run command from Step 3
 ```
 
 ### "Database connection refused"
 
 ```bash
-# Verify PostgreSQL is running
-docker compose ps | grep postgres
+# Verify PostgreSQL is running and healthy
+docker ps | grep postgres
 
-# View PostgreSQL logs
-docker compose logs postgres
+# Check credentials in backend/.env match the docker run command
+# Defaults: user=traduce_user, password=dev_password, db=traduce_senas, port=5433
+
+# Test connection
+psql -h localhost -p 5433 -U traduce_user -d traduce_senas -c "SELECT 1"
 ```
 
-### "Migration failed"
+### "JWT_SECRET not configured"
 
 ```bash
-# View migration status
-npm run db:migrate:status
-
-# Revert the last migration
-npm run db:migrate:revert
-
-# Run from a specific version
-npm run db:migrate -- --from V005
-```
-
-### "JWT_SECRET not set" or authentication errors
-
-```bash
-# Generate a valid JWT_SECRET
+# Generate one and add to backend/.env
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-# Copy the result into .env
+JWT_SECRET=<paste the output here>
+```
+
+### "Expo development server hangs or crashes"
+
+```bash
+# Clear Expo cache
+expo start --clear
+
+# Or fully reset
+rm -rf node_modules/.cache/expo
+npm install
+npm start
+```
+
+### "Backend migrations not applied"
+
+```bash
+# The application applies Liquibase migrations on startup
+# If they fail, check logs:
+docker logs traduce-postgres
+
+# Manually run a migration (pending — no SQL tool integrated yet)
+# See: backend/DB/traduce_senas/ for the migration scripts
 ```
 
 ---
 
 ## Utility commands
 
+### Backend (backend/ directory)
+
 ```bash
-# Tests
-npm test                    # All tests
-npm run test:unit           # Unit tests only
-npm run test:integration    # Integration tests only
-npm run test:coverage       # With coverage report
-
-# Database
-npm run db:migrate          # Apply pending migrations
-npm run db:seed             # Load test data
-npm run db:reset            # Revert everything and start over (DELETES DATA!)
-
-# Code quality
-npm run lint                # Check ESLint
-npm run lint:fix            # Auto-fix
-npm run format              # Apply Prettier
-
 # Build
-npm run build               # Compile TypeScript
-npm run build:docker        # Build local Docker image
+npm run build               # Compile TypeScript to dist/
+
+# Tests (pending — test suite not yet configured)
+npm test                    # Run the backend test suite (node:test)
+
+# Development
+npm run dev                 # Start with nodemon (hot reload)
+
+# AI/Training domain (LSC-54 dataset)
+npm run ia:inspect-lsc54       # Inspect LSC-54 dataset
+npm run ia:download-lsc54      # Download LSC-54 dataset
+npm run ia:measure-lsc54       # Measure sign separability
+npm run ia:convert-lsc54       # Convert to sign templates
+npm run ia:upload-templates    # Upload templates to DB
+
+# Production
+npm run start                # Start compiled app (dist/cmd/server/main.js)
+npm run build:docker        # Build Docker image: node:20-alpine
+```
+
+### Frontend (frontend/ directory)
+
+```bash
+# Development
+npm start                   # Start Expo dev server
+npm run android             # Start on Android emulator
+npm run ios                 # Start on iOS simulator
+npm run web                 # Start web (localhost:8081 after Expo tunnel)
+
+# Build (pending — not yet configured)
+expo build:android          # Build APK
+expo build:ios              # Build IPA
 ```
 
 ---
@@ -266,10 +307,12 @@ npm run build:docker        # Build local Docker image
 
 | Service | URL | Credentials (local only) |
 |---------|-----|--------------------------|
-| API Gateway | http://localhost:8080 | |
-| RabbitMQ UI | http://localhost:15672 | guest / guest |
-| [Tool] | http://localhost:[port] | [user / pass] |
-| Swagger UI | http://localhost:3001/api-docs | |
+| Backend API | http://localhost:3000/api | |
+| Backend Health | http://localhost:3000/api/auth/register | (POST test) |
+| Frontend (Expo web) | http://localhost:8081 | Auto-opens |
+| Expo tunnel | http://localhost:19001 | Auto-opens |
+| PostgreSQL | localhost:5433 | user: traduce_user / pass: dev_password |
+| API Endpoints (real) | See `05-architecture/overview.md` | |
 
 ---
 
