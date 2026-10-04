@@ -3,6 +3,23 @@
 > **What is this?** The individual documentation for each microservice in the system.
 > This is the most active section of the repository — it is updated with every significant change.
 
+## Services
+
+Traduce Señas is a microservices architecture: one API gateway and five domain services, each with its own database.
+
+```
+services/
+├── 01-api-gateway/          :8080  edge: routing, JWT validation, rate limit, CORS
+├── 02-iam-service/          :3001  identity, roles, consent, audit
+├── 03-recognition-service/  :3002  translation (core), models, gesture samples (PostgreSQL + MongoDB)
+├── 04-lexicon-service/      :3003  sign catalog and media
+├── 05-analytics-service/    :3004  usage statistics
+└── 06-profile-service/      :3005  preferences, notifications, achievements
+```
+
+The full inventory, with events, dependencies and extraction status, is in [`service-catalog.md`](./service-catalog.md).
+Services communicate through REST (via the gateway) and domain events over RabbitMQ.
+
 ## Structure of each microservice
 
 Each service has its own folder in `services/` with this structure:
@@ -28,16 +45,8 @@ services/
 ## Cross-cutting documents (apply to ALL services)
 
 ### `service-catalog.md` ⭐ (Start here)
-Registry of all microservices in the system.
-**Fill in:** when you define microservices. Update when you add/remove/rename.
-
-**Format:**
-```markdown
-| # | Service | Responsibility | Local port | Repo | Status |
-|---|---------|----------------|------------|------|--------|
-| 01 | iam | Authentication and authorization | 8001 | [repo] | ✅ In production |
-| 02 | reference-data | Master data for the system | 8002 | [repo] | 🚧 In development |
-```
+Registry of all microservices in the system: responsibility, contexts, data, port, events, dependencies and extraction status.
+**Update when you add, remove or rename a service, and when an extraction status changes.**
 
 ### `service-boundary-rules.md` ⭐
 The rules that define where each service ends.
