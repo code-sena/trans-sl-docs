@@ -7,62 +7,25 @@
 
 ## What is here and how to fill it in
 
-### `risks.md` ⭐
+### `risks.md` ✓ FILLED
 Project risk register.
-**Fill in:** from the start of the project. Update each sprint.
+**Status:** FILLED — 7 risks identified covering: LSC dataset limitations (R-001), model accuracy degradation (R-002), SENA timeline compression (R-003), team single points of failure (R-004), TensorFlow dependency (R-005), privacy/compliance risk under Law 1581 (R-006), single-server infrastructure (R-007).
+See file for mitigation and contingency plans per risk.
 
-**Format:**
-```markdown
-| ID | Risk | Probability | Impact | Severity | Strategy | Owner | Status |
-|----|------|------------|--------|---------|---------|-------|--------|
-| R-001 | [Description] | High/Medium/Low | High/Medium/Low | High | Mitigate/Accept/Transfer/Avoid | [Name] | Open |
-```
+### `dependencies.md` ✓ FILLED
+External project dependencies: third-party services, APIs, external teams.
+**Status:** FILLED — 9 critical/non-critical dependencies tracked: Google OAuth, Facebook, Firebase FCM, SMTP, TensorFlow.js, PostgreSQL, MongoDB, React Native, MediaPipe.
+Each includes fallback plans and coordination points with SENA IT.
 
-**Severity = Probability × Impact:**
-- High × High = 🔴 Critical
-- High × Low or Low × High = 🟡 Moderate
-- Low × Low = 🟢 Low
-
-**Strategies:**
-- **Mitigate:** reduce probability or impact
-- **Accept:** record and monitor, do not act
-- **Transfer:** move the risk (insurance, contracts)
-- **Avoid:** change the plan to eliminate the risk
-
-### `dependencies.md`
-External project dependencies.
-**Fill in:** third-party services, external teams, pending decisions from stakeholders.
-
-**Format:**
-```markdown
-| Dependency | Type | Required for | External owner | Expected date | Status |
-|------------|------|-------------|----------------|--------------|--------|
-| [Third-party API] | External | [Feature X] | [Company/Team] | [Date] | Waiting |
-```
-
-### `open-questions.md` ⭐
+### `open-questions.md` ⭐ ✓ FILLED
 Unanswered questions that block or could block the project.
-**Fill in:** every time the team encounters something it does not know and that requires a decision.
-**Criticality:** when a question has an answer, turn it into an ADR (if architectural) or close it here.
+**Status:** FILLED — 7 questions including critical ones: Q-001 (inference location), Q-002 (staging environment), Q-003 (model accuracy threshold), Q-004 (consent revocation), Q-005–Q-007 (lower priority).
+When answered, decisions become ADRs (05-architecture/decisions/).
 
-**Format:**
-```markdown
-| # | Question | Context | Required for | Who answers | Deadline | Status |
-|---|---------|---------|-------------|------------|---------|--------|
-| Q-001 | Do we use JWT or sessions? | Multiple services need auth | Sprint 2 | Tech Lead | [Date] | 🔴 Unanswered |
-```
-
-### `technical-backlog.md`
+### `technical-backlog.md` ✓ FILLED
 Technical debt and technical improvements identified.
-**Fill in:** when the team identifies something that "works but not as it should".
-Clearly separate from product HUs.
-
-**Format:**
-```markdown
-| ID | Description | Impact if not resolved | Estimated effort | Priority | Sprint |
-|----|-------------|----------------------|-----------------|---------|--------|
-| TD-001 | Refactor module X | Increased maintenance difficulty | 3 SP | Medium | Sprint 5 |
-```
+**Status:** FILLED — 13 items organized by priority (critical: logging, health checks, metrics, error logs; high: audit, rate limiting, CORS; medium: transactions, retries, feature flags; low: testing, tracing, idempotency).
+All items link to blocking features or risk mitigations.
 
 ---
 
