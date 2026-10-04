@@ -1,17 +1,17 @@
-# Data Model — Lexicon
+# Data Model — Lexicon Service
 
-> The `lexicon` module is the **authoritative owner** of the data described here.
-> Other modules must go through its HTTP API or its ports. No other module references these tables today.
+> `lexicon-service` is the **authoritative owner** of the data described here. No other service reads these tables; they use the
+> HTTP API (through the gateway) or the events. Other services keep only the sign `code` or `sign_id` as a logical reference.
 
-**Source of truth:** `backend/migrations/003_lexicon.sql` (idempotent) and the Liquibase changelogs `009`, `010`, `011` in `backend/DB/traduce_senas/changelogs/`.
+**Source of truth today:** `backend/migrations/003_lexicon.sql` (idempotent) and the Liquibase changelogs `009`, `010`, `011` in `backend/DB/traduce_senas/changelogs/`.
 **Target model:** `06-data/domains/04-lexicon.md`.
 
 ---
 
 ## Database engine
 
-**Engine:** PostgreSQL (database `traduce_senas`, schema `public`).
-**Justification:** the catalog is relational and small: signs, their texts per language and their media have fixed cardinalities, and the rules (unique code, one letter per language, ordered media) are best enforced with unique indexes and foreign keys. See ADR-003 for the general database decision.
+**Engine:** PostgreSQL (target database `lexicon`; today database `traduce_senas`, schema `public`) plus static media files.
+**Justification:** the catalog is relational and small: signs, their texts per language and their media have fixed cardinalities, and the rules (unique code, one letter per language, ordered media) are best enforced with unique indexes and foreign keys inside the same database. See ADR-003 for the general database decision.
 
 ER diagram: `08-uml/diagrams/source/er-lexicon.md`.
 
@@ -47,14 +47,14 @@ Seeded rows: `Alfabeto` and `General`.
 | is_animated | BOOLEAN | No | The 3D model contains an animation (G, H, J, Ñ, S, Z). Default `FALSE` | |
 | display_order | INT | No | Order in listings and in the alphabet. Default `1000` | |
 | status | VARCHAR(10) | No | `DRAFT`, `ACTIVE` or `INACTIVE`. Default `ACTIVE` | `ck_sign_lexicon_status` |
-| created_by | INT | Yes | User who created it | FK to `users`, `ON DELETE SET NULL` |
-| updated_by | INT | Yes | User who last edited it | FK to `users`, `ON DELETE SET NULL` |
+| created_by | INT | Yes | User who created it | Today FK to `users`, `ON DELETE SET NULL`. **Target: logical user ID, no FK** |
+| updated_by | INT | Yes | User who last edited it | Same as `created_by` |
 | created_at | TIMESTAMPTZ | No | Creation date | Default `NOW()` |
 | updated_at | TIMESTAMPTZ | No | Last modification | Trigger `trg_sign_lexicon_updated_at` |
 
 **Relationships:**
-- `category_id` → `categories.category_id` (same module)
-- `created_by`, `updated_by` → `users.user_id` (`users` module)
+- `category_id` → `categories.category_id` (same service)
+- `created_by`, `updated_by` → `sub` of the JWT, the user ID issued by `iam-service` (logical, no FK)
 
 ### Table: `sign_localizations`
 
@@ -97,14 +97,19 @@ Seeded rows: `Alfabeto` and `General`.
 | idx_sign_localizations_name | `(ui_language, name)` | BTREE | Catalog search by name |
 | uq_multimedia_resource_position | `(lexicon_id, display_order)` | UNIQUE BTREE | Unambiguous media order |
 
+### Static media
+
+Files under `public/lexicon/alfabeto/{glb,thumbs}` (or `LEXICON_MEDIA_DIR`, or a CDN). The database stores the path or URL only.
+Served at `/api/lexicon/media/*`, cached 7 days.
+
 ---
 
 ## Modeling decisions
 
 - **The alphabet is a subset of `sign_lexicon`.** The 27 letters are rows with `type = 'LETTER'`, seeded with codes `LETTER_A` ... `LETTER_Z` (`LETTER_NN` for Ñ), `display_order` 1 to 27 and the category `Alfabeto`.
-- **Texts live in `sign_localizations`, not in `sign_lexicon`.** The first version of the migration had `word`, `description` and `category` columns; migration 003 copies them into localizations (ES) and `categories` and then drops them.
-- **Media store paths, not binaries.** Files live in `backend/public/lexicon/alfabeto/{glb,thumbs}`; the API turns relative paths into absolute URLs.
-- **Retire, never delete.** A sign leaves the public catalog by `status = 'INACTIVE'`; there is no delete endpoint for signs.
+- **Texts live in `sign_localizations`, not in `sign_lexicon`.** The first version had `word`, `description` and `category` columns; migration 003 copies them into localizations (ES) and `categories` and then drops them.
+- **Media store paths, not binaries.**
+- **Retire, never delete.** A sign leaves the public catalog by `status = 'INACTIVE'`; there is no delete endpoint for signs. This is what lets `recognition-service` keep sign IDs in its history without a foreign key.
 
 ### Differences with the target model (`06-data/domains/04-lexicon.md`)
 
@@ -115,14 +120,23 @@ Seeded rows: `Alfabeto` and `General`.
 | Enumerations | `VARCHAR` with `CHECK` | PostgreSQL enum types |
 | Names | `type`, `language`, `multimedia_resource`, `display_order` | `sign_type`, `sign_language`, `multimedia_resources`, `position` |
 | Animation flag | `is_animated` | Not modeled |
-| `translations` link | `translations` stores free text, not a sign reference | `translation_signs.sign_id` with `RESTRICT` |
+| `translations` link | `translations` stores free text, not a sign reference | `translation_signs.sign_id` in recognition-service, logical ID, no FK (the FK of `06-data` is dropped by the database-per-service rule) |
+| `created_by`, `updated_by` | FK to `users` | Logical user ID, no FK |
+
+### Coupling to remove in the extraction
+
+| Coupling today | In the service |
+|----------------|----------------|
+| `003_lexicon.sql` creates `role`, `user_role` and the `ADMIN` role | Removed; roles belong to iam-service |
+| `postgresRoleChecker` reads `user_role` | Replaced by a role checker that reads the `roles` claim of the token |
+| FK `created_by`/`updated_by` → `users` | Dropped; keep the integer / UUID value |
 
 ---
 
 ## Schema migration
 
-**Tool:** plain SQL run with `psql` (`backend/migrations/`); the Liquibase changelogs in `backend/DB/traduce_senas/changelogs/` created the legacy tables first.
-**Script location:** `backend/migrations/003_lexicon.sql`
+**Tool:** today plain SQL run with `psql` (`backend/migrations/`); the Liquibase changelogs in `backend/DB/traduce_senas/changelogs/` created the legacy tables first. Target: Liquibase changelog of the service.
+**Script location:** `backend/migrations/003_lexicon.sql` today.
 **Naming convention:** `NNN_description.sql`, numbered in order.
 
 **Rollback policy:**

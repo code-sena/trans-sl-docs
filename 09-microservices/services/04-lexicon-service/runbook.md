@@ -1,10 +1,9 @@
-# Runbook — Lexicon
+# Runbook — Lexicon Service
 
-> Operation of the lexicon module. It runs inside the backend process, so starting, scaling and
-> deploying it means operating the backend. There is no Kubernetes, dashboard or alert channel defined yet;
-> this runbook covers what exists: Node.js, PostgreSQL and the media directory.
+> Operation of the lexicon service. Until the extraction it runs inside the backend process, so starting, scaling and deploying it
+> means operating the backend; sections marked "today" describe that. No Kubernetes, dashboard or alert channel is defined yet.
 
-**Module:** lexicon (`backend/src/domains/lexicon/`)
+**Service:** lexicon-service (module `backend/src/domains/lexicon/`)
 **Version:** 1.0
 **Last updated:** 2026-10-04
 
@@ -14,16 +13,16 @@
 
 | Field | Value |
 |-------|-------|
-| Process | Backend (`npm run dev` in development, `npm run build` then `npm start` in production) |
-| Local port | `3000` (env `PORT`) |
-| Base path | `/api/lexicon` |
-| Database | PostgreSQL `traduce_senas`, tables `categories`, `sign_lexicon`, `sign_localizations`, `multimedia_resource` (plus `users`, `role`, `user_role` for admin checks) |
+| Process | Today: backend (`npm run dev` in development, `npm run build` then `npm start` in production). Target: own container |
+| Local port | `3000` today (env `PORT`); `3003` target |
+| Base path | `/api/lexicon` (through the gateway: `http://localhost:8080/api/lexicon`) |
+| Database | PostgreSQL, tables `categories`, `sign_lexicon`, `sign_localizations`, `multimedia_resource` (today plus `users`, `role`, `user_role` for admin checks) |
 | Media | `backend/public/lexicon/` or `LEXICON_MEDIA_DIR`; served at `/api/lexicon/media` |
-| Health endpoint | None dedicated. Use `GET /api/lexicon/alphabet` |
+| Health endpoint | Target: `GET /health`. Today none dedicated; use `GET /api/lexicon/alphabet` |
 
 ---
 
-## 2. Verify the module is healthy
+## 2. Verify the service is healthy
 
 ```bash
 # Expect HTTP 200 and 27 letters in "data"
@@ -49,6 +48,8 @@ SELECT COUNT(*) FROM public.sign_lexicon WHERE type = 'LETTER' AND language = 'L
 
 The user has a valid token but no `ADMIN` role.
 
+- Today the role is read from the database on each request:
+
 ```sql
 SELECT u.email, r.name
 FROM public.users u
@@ -56,16 +57,16 @@ LEFT JOIN public.user_role ur ON ur.user_id = u.user_id
 LEFT JOIN public.role r ON r.role_id = ur.role_id
 WHERE u.email = 'admin@example.com';
 
--- Grant the role
+-- Grant the role (takes effect on the next request)
 INSERT INTO public.user_role (user_id, role_id)
 SELECT u.user_id, r.role_id FROM public.users u JOIN public.role r ON r.name = 'ADMIN'
 WHERE u.email = 'admin@example.com'
 ON CONFLICT DO NOTHING;
 ```
 
-The change takes effect on the next request (roles are not stored in the token).
+- In the extracted service the role is granted in iam-service and travels in the token: the user must refresh the token or sign in again.
 
-### Admin endpoints answer `500` and the log says "Falta la tabla public.user_role o public.role"
+### Admin endpoints answer `500` and the log says "Falta la tabla public.user_role o public.role" (today)
 
 The roles migration was not applied. Run the lexicon migration, which creates both tables:
 
@@ -106,7 +107,15 @@ Use another position or code, or remove the conflicting resource with `DELETE /a
 
 ### `400 VALIDATION_ERROR` on a resource URL
 
-Only relative paths with an allowed extension, or `https` URLs of the origin in `LEXICON_MEDIA_BASE_URL`, are accepted. Set that variable and restart the backend to allow a CDN.
+Only relative paths with an allowed extension, or `https` URLs of the origin in `LEXICON_MEDIA_BASE_URL`, are accepted. Set that variable and restart to allow a CDN.
+
+### Recognition does not know a newly published sign (target, once events exist)
+
+Check that `lexicon.SignPublished` was published (outbox row delivered) and consumed by `recognition.main`; see the DLQ in RabbitMQ:
+
+```bash
+docker compose exec rabbitmq rabbitmqctl list_queues name messages | grep -E 'lexicon|recognition'
+```
 
 ---
 
@@ -135,7 +144,7 @@ curl -X POST http://localhost:3000/api/lexicon/WORD_CODE/publish -H "Authorizati
 
 ### 4.3 Roll back a deploy
 
-There is no migration rollback. Redeploying an older backend build is enough if the database already ran migration 003. If the older build predates the localization refactor it expects the `word`, `description` and `category` columns that migration 003 drops, so restore the tables from the backup of section 4.1 as well.
+There is no migration rollback. Redeploying an older build is enough if the database already ran migration 003. If the older build predates the localization refactor it expects the `word`, `description` and `category` columns that migration 003 drops, so restore the tables from the backup of section 4.1 as well.
 
 ---
 

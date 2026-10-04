@@ -1,20 +1,22 @@
-# Lexicon
+# Lexicon Service
 
-> Catalog of Colombian Sign Language (LSC) signs: letters, words and phrases, with their categories, their
-> text in each interface language and their media (3D models, images). The alphabet is not a separate
-> structure: it is the set of signs with `type = 'LETTER'`.
->
-> **Form:** a module of the backend modular monolith (`backend/src/domains/lexicon/`), not an independent service.
-> See `09-microservices/service-catalog.md`.
+> Catalog of Colombian Sign Language (LSC) signs: letters, words and phrases, with their categories, their text in each
+> interface language and their media (3D models, images). The alphabet is not a separate structure: it is the set of signs
+> with `type = 'LETTER'`.
+
+**Extraction status:** in progress. The code exists and is tested as the backend module `lexicon`
+(`backend/src/domains/lexicon/`, hexagonal). It still runs inside the backend process and still depends on the shared `users`
+and `user_role` tables for `created_by` and the ADMIN check. Those two couplings are removed in the extraction (see
+[decisions.md](./decisions.md), DEC-008). See `09-microservices/service-catalog.md`.
 
 ---
 
 ## Responsibility
 
-Owns the sign catalog: `categories`, `sign_lexicon`, `sign_localizations` and `multimedia_resource`.
-`sign_lexicon.code` (for example `LETTER_A`, `GREETING_HELLO`) is the class that the recognizer predicts, so the
-published codes are the contract between this catalog and the recognition engine. A published code is never renamed
-and a sign is never deleted: it is retired with `status = 'INACTIVE'`.
+Owns the sign catalog: `categories`, `sign_lexicon`, `sign_localizations` and `multimedia_resource`, and serves the static media.
+`sign_lexicon.code` (for example `LETTER_A`, `GREETING_HELLO`) is the class that the recognizer predicts, so the published codes
+are the contract between this catalog and `recognition-service`. A published code is never renamed and a sign is never deleted:
+it is retired with `status = 'INACTIVE'`.
 
 ---
 
@@ -22,20 +24,21 @@ and a sign is never deleted: it is retired with `status = 'INACTIVE'`.
 
 | Field | Value |
 |-------|-------|
-| Number in catalog | 03 |
-| Process / port | Backend process, port `3000` (env `PORT`) |
-| Mount path | `/api/lexicon` |
-| Code | `backend/src/domains/lexicon/` |
-| Module factory | `makeLexiconModule` in `lexicon.module.ts`, mounted in `backend/cmd/server/main.ts` |
-| DB engine | PostgreSQL, database `traduce_senas`, schema `public` |
+| Number in catalog | 04 |
+| Local port | 3003 (today: backend, port `3000`, env `PORT`) |
+| Gateway path | `/api/lexicon/**`, including `/api/lexicon/media/**` |
+| Code | `backend/src/domains/lexicon/`; factory `makeLexiconModule` in `lexicon.module.ts` |
+| DB engine | PostgreSQL, database `lexicon` (today: `traduce_senas`, schema `public`) + static media (`.glb`, `.png`) |
 | Bounded context | Learning & Lexicon (`02-domain/domain-map.md`) |
-| Communicates with | `shared/http/auth_middleware` (JWT), `shared/http/require_role` (`ADMIN`), PostgreSQL |
-| Consumed by | The mobile / web app (alphabet screen, catalog search, admin screens) |
-| Status | Implemented, with unit tests |
+| Communicates with | RabbitMQ (publishes). Reads `roles` from the forwarded JWT; no synchronous calls to other services |
+| Consumed by | The app through the gateway (alphabet screen, catalog search, admin screens); recognition through events |
+| Events | Publishes `SignPublished`, `SignWithdrawn`, `SignViewed`, `LexiconSearchPerformed` (none implemented yet). See [events.md](./events.md) |
+| Health | `GET /health` (target; today use `GET /api/lexicon/alphabet`) |
+| Status | Module implemented, with unit tests |
 
 ---
 
-## Responsibilities (what this module DOES)
+## Responsibilities (what this service DOES)
 
 - Lists and searches active signs with relevance ordering (exact match, then prefix, then contains, also against `code`)
 - Serves the 27-letter alphabet in order (Ñ after N)
@@ -46,15 +49,17 @@ and a sign is never deleted: it is retired with `status = 'INACTIVE'`.
 
 ## Out of scope (what it does NOT do)
 
-- **Authentication and roles:** `shared/http/auth_middleware` and `require_role` do it; the module only receives them as dependencies
-- **Recognition:** the on-device engine and the `ia` module (`/api/sign-templates`) do it; the lexicon only supplies the class names
-- **Translation history:** the `translations` module stores what was recognized
-- **Storing binary files:** media are files in `public/lexicon/` (or a CDN); the database stores only the path or URL
-- **Emitting events:** no event is published when a sign changes
+- **Authentication and roles:** `iam-service` issues the JWT; the service reads `roles` from it and requires `ADMIN` for writes
+- **Recognition:** `recognition-service`. The lexicon only supplies the class names (codes)
+- **Translation history:** `recognition-service`
+- **Storing binary files in the database:** media are files in `public/lexicon/` (or a CDN); the database stores only the path or URL
+- **Usage statistics:** `analytics-service` counts views and searches from the events
 
 ---
 
 ## How to run it locally
+
+Today (inside the backend, port 3000):
 
 ```bash
 # 1. PostgreSQL with the base tables (users, role) already created by migrations/000_users.sql
@@ -75,7 +80,15 @@ curl "http://localhost:3000/api/lexicon?q=a&lang=ES&limit=5"
 npm test
 ```
 
-To make a user an administrator (the migration does not do it):
+Target (own service):
+
+```bash
+docker compose up -d lexicon-service
+curl http://localhost:3003/health
+curl http://localhost:8080/api/lexicon/alphabet     # through the gateway
+```
+
+To make a user an administrator today (the migration does not do it):
 
 ```sql
 INSERT INTO public.user_role (user_id, role_id)
@@ -86,15 +99,18 @@ WHERE u.email = 'admin@example.com'
 ON CONFLICT DO NOTHING;
 ```
 
+In the extracted service the role is granted in iam-service (role `ADMIN`) and reaches lexicon in the token.
+
 ### Environment variables
 
 | Variable | Purpose |
 |----------|---------|
-| `PORT` | HTTP port (default `3000`) |
-| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | PostgreSQL connection |
-| `JWT_SECRET` | Secret used to verify the admin token |
+| `PORT` | HTTP port (default `3000` today; `3003` target) |
+| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | PostgreSQL connection (`DB_NAME=lexicon` target) |
+| `JWT_SECRET` | Secret used to verify the admin token (today). Target: the verification key shared with the gateway |
 | `LEXICON_MEDIA_DIR` | Optional. Directory of the media files (default `<cwd>/public/lexicon`) |
 | `LEXICON_MEDIA_BASE_URL` | Optional. Origin from which absolute `https` resource URLs are accepted (for example a CDN). Without it, only relative paths are accepted |
+| `RABBITMQ_URL` | Broker URL (target) |
 
 ---
 
@@ -179,12 +195,12 @@ lexicon/
 
 ---
 
-## Documents for this module
+## Documents for this service
 
 - [data-model.md](./data-model.md) — Tables, constraints and differences with the target model
-- [events.md](./events.md) — Events (none today) and the planned ones
-- [decisions.md](./decisions.md) — Design decisions of the module
+- [events.md](./events.md) — Events (none emitted today) and the planned ones
+- [decisions.md](./decisions.md) — Design decisions
 - [runbook.md](./runbook.md) — Operation and troubleshooting
 - Target data model → `06-data/domains/04-lexicon.md`
 - Module README in the code → `backend/src/domains/lexicon/README.md`
-- API contract: there is no OpenAPI file for this module yet (`07-api/contracts/openapi/` only holds the scaffold gateway and auth-service)
+- API contract: there is no OpenAPI file for this service yet
