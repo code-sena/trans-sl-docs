@@ -27,7 +27,7 @@ foreach ($f in $obligatorios) {
 
 # 2. Rol de cada pantalla (ERF6.1): el administrador solo ve estas tres
 $admin = @('view-usage-statistics', 'view-admin-dashboard', 'train-recognition-model')
-$usuario = @('translate-signs', 'view-alphabet', 'view-translation-history')
+$usuario = @('translate-signs', 'view-alphabet', 'view-translation-history', 'view-achievements')
 
 foreach ($p in $paginas) {
   $ruta = Join-Path $p.FullName 'index.html'
