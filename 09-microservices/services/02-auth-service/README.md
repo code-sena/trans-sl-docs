@@ -1,5 +1,9 @@
 # Auth Service
 
+> **Status: not implemented as a service.** This folder is a scaffold example (RS256, Redis blacklist, roles in the token).
+> The real code is the `auth` module of the backend monolith (`backend/src/domains/auth/`): bcrypt, HS256 JWT with a
+> 1-day expiry and no refresh token, and roles read from `user_role`. See `09-microservices/service-catalog.md`.
+
 > **Identity authority** of the system. Manages authentication, JWT issuance, and RBAC permissions.
 > It is the authoritative owner of the `User` and `Role` entities.
 

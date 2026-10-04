@@ -1,5 +1,9 @@
 # API Gateway
 
+> **Status: not implemented.** This folder is a scaffold example. The backend is a modular monolith with no gateway:
+> the Express process mounts every module under `/api/*` and `authMiddleware` verifies the JWT in-process.
+> See `09-microservices/service-catalog.md`.
+
 > **Single entry point** to the system. Receives all frontend requests and routes them
 > to the corresponding microservice. It is the authoritative owner of the routing rules.
 
