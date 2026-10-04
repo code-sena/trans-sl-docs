@@ -76,22 +76,39 @@ IC: [Incident Commander Name]
 
 ### Step 4: DIAGNOSE (10-30 min)
 
+For microservices, each service must be checked independently:
+
 ```
 Diagnostic tools (in order):
-  1. Grafana → When did the problem start? Which service has a high error rate?
-  2. Logs (Kibana/CloudWatch) → What does the affected service say?
-  3. Jaeger/Zipkin → Where does the trace break?
-  4. kubectl get pods / docker ps → Is the pod/container running?
-  5. Manual health check → curl http://[service]/health
+  1. Which service is failing? (Check all 5 services + gateway health)
+     curl http://localhost:8080/health           # Gateway
+     curl http://localhost:3001/health/ready     # iam-service
+     curl http://localhost:3002/health/ready     # recognition-service
+     curl http://localhost:3003/health/ready     # lexicon-service
+     curl http://localhost:3004/health/ready     # analytics-service
+     curl http://localhost:3005/health/ready     # profile-service
+  
+  2. Grafana → When did the problem start? Which service has a high error rate?
+  
+  3. Logs (Kibana/CloudWatch) per service → What does the affected service say?
+     Filter by: service name + correlation ID (x-correlation-id) to trace request flow
+  
+  4. Distributed tracing (Jaeger) → Where does the trace break across services?
+  
+  5. RabbitMQ → Are domain events being published and consumed?
+     Check broker logs: docker logs traduce-rabbitmq
+  
+  6. docker ps / kubernetes → Is the pod/container running?
 
 Key question: What changed in the last 2 hours?
-  → Last deploy
-  → Configuration change
-  → Traffic spike
-  → Change in an external system
+  → Last deploy (which service?)
+  → Configuration change (which service's .env?)
+  → Traffic spike (check gateway + analytics)
+  → Database connection pool exhausted (check PostgreSQL/MongoDB logs)
+  → RabbitMQ message backlog (check broker health)
 ```
 
-**See specific decision tree:** `09-microservices/services/[service]/runbook.md`
+**See specific decision tree per service:** `09-microservices/services/[service]/runbook.md`
 
 ### Step 5: MITIGATE (15-60 min)
 
@@ -237,6 +254,7 @@ No formal paging system exists; use Slack mentions + SMS (manual for now).
 ## Correlations
 
 - Observability alerts → `13-operations/observability.md`
-- Technical runbooks (if microservices) → `09-microservices/services/XX/runbook.md`
+- Technical runbooks per service → `09-microservices/services/XX/runbook.md`
+- Microservices architecture → `09-microservices/service-catalog.md`
 - SLOs and Error Budget → `13-operations/README.md`
 - Post-incident technical debt → `15-project-control/technical-backlog.md`
