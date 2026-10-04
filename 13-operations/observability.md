@@ -1,19 +1,33 @@
 # System Observability
 
-> An unobservable system cannot be operated. Observability is not an optional feature
-> added later — it is designed from the first sprint.
-> The 3 pillars: Logs, Metrics, Traces.
-
-> **Stack note:** The concepts (structured logging, RED metrics, OpenTelemetry) apply
-> to any language. Code examples use Node.js ecosystem libraries
-> (pino, prom-client, @opentelemetry/sdk-node). For other technologies, the equivalents are:
-> - Java: Logback/SLF4J + Micrometer + OpenTelemetry Java Agent
-> - Python: structlog + prometheus_client + opentelemetry-sdk
-> - Go: zap + prometheus/client_golang + go.opentelemetry.io/otel
+> An unobservable system cannot be operated. For TraduceSeñas, observability is the difference
+> between "the system is broken and we know it" and "we wake up to 20 WhatsApp messages".
+> This document describes what exists today and what is planned.
 
 ---
 
-## The 3 pillars of observability
+## Current Status: Production System
+
+**TraduceSeñas is a modular monolith deployed as a single Node.js process on a shared server.**
+- Single backend instance serving 500 concurrent users (target)
+- PostgreSQL + MongoDB databases on the same host
+- No container orchestration; manual deployment
+
+**What exists today:**
+- Express error-handler middleware that logs to `console.error()` (unstructured)
+- HTTP status codes as the only public signal
+- Manual health check: `GET /health` (responds 200 if process is alive)
+- No metrics collection, no distributed tracing, no alert automation
+
+**Implication:** production availability depends on someone noticing a report in Slack before users stop using the app.
+
+---
+
+## Phase 1: Logs (Month 2–3, In Progress)
+
+### Standard format (structured JSON)
+
+All errors and significant events **must** produce JSON logs:
 
 ```
                     ┌───────────────────────────────────────────┐
@@ -52,244 +66,245 @@ All services must produce JSON logs with these minimum fields:
 ```json
 {
   "timestamp": "2024-01-15T10:30:00.123Z",
-  "level": "INFO",
-  "service": "auth-service",
-  "version": "1.3.0",
+  "level": "ERROR",
+  "service": "signa-backend",
+  "version": "0.1.0",
   "environment": "production",
   "correlationId": "550e8400-e29b-41d4-a716-446655440000",
   "userId": "user-uuid-if-available",
-  "message": "User authenticated successfully",
+  "message": "Failed to persist translation",
   "context": {
-    "userId": "uuid",
     "method": "POST",
-    "path": "/auth/login",
-    "statusCode": 200,
-    "durationMs": 45
+    "path": "/api/translations",
+    "statusCode": 500,
+    "durationMs": 145,
+    "error": "PostgreSQL connection timeout"
   }
 }
 ```
 
-**Required fields:**
+**Required fields in every log:**
 
-| Field | Description |
-|-------|-------------|
-| `timestamp` | ISO 8601 with milliseconds and UTC timezone |
-| `level` | `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL` |
-| `service` | Microservice name |
-| `correlationId` | For tracing the transaction across services |
-| `message` | Descriptive message, without sensitive data |
+| Field | Description | Example |
+|-------|-------------|---------|
+| `timestamp` | ISO 8601 UTC | `2024-01-15T10:30:00.123Z` |
+| `level` | ERROR, WARN, INFO | `ERROR` |
+| `service` | Backend name | `signa-backend` |
+| `correlationId` | UUID for tracing | `550e8400-e29b-41d4-a716-446655440000` |
+| `message` | What happened | `PostgreSQL connection failed` |
+
+**Implementation:**
+
+```typescript
+// Today (❌ wrong)
+console.error('Error:', err.stack); // unstructured, mixed with stdout
+
+// Tomorrow (✓ correct)
+import { logger } from '@shared/logger';
+logger.error('Failed to persist translation', {
+  correlationId,
+  userId,
+  error: err.message,
+  path: req.path,
+});
+```
+
+**What NOT to log:** passwords, full tokens, unmasked PII, full SQL queries with user data.
 
 ### Log levels
 
-| Level | When to use it | Example |
-|-------|---------------|---------|
-| `DEBUG` | Development info. Disabled in production | "SQL query executed: SELECT..." |
-| `INFO` | Normal business events | "Order #123 created" |
-| `WARN` | Abnormal but not failure | "Token about to expire", "Retry #2" |
-| `ERROR` | Error that requires attention | "Failed to connect to PostgreSQL" |
-| `FATAL` | Error that brings down the service | "Cannot start: port in use" |
+| Level | When | Example |
+|-------|------|---------|
+| `ERROR` | Something failed that the user will notice | `PostgreSQL connection timeout` |
+| `WARN` | Something unexpected but the system recovered | `JWT token refresh retry #2` |
+| `INFO` | Normal business events | `User logged in`, `Translation persisted` |
 
-### What NOT to log
-
-```
-✗ Passwords or full tokens
-✗ Credit card numbers
-✗ Unmasked PII (GDPR/Data Protection)
-✗ Full SQL queries with user data
-✓ IDs, counts, durations, status codes
-✓ First/last 4 digits of card: "****1234"
-✓ Masked email: "u***@example.com"
-```
-
-### Implementation
+### Tool: Pino (planned)
 
 ```typescript
-// Always use a configured logger, never console.log
-import { logger } from '@shared/logger';
+// Setup: src/shared/logger.ts
+import pino from 'pino';
 
-// ✓ Correct
-logger.info('Order created', { orderId: order.id, customerId: order.customerId });
-
-// ✗ Incorrect
-console.log('order:', JSON.stringify(order)); // May expose sensitive data
+export const logger = pino({
+  level: process.env.LOG_LEVEL || 'info',
+  formatters: {
+    level: (label) => ({ level: label.toUpperCase() }),
+    bindings: (bindings) => ({
+      service: 'signa-backend',
+      version: process.env.APP_VERSION || '0.1.0',
+      environment: process.env.NODE_ENV || 'development',
+    }),
+  },
+  timestamp: pino.stdTimeFunctions.isoTime,
+});
 ```
+
+**Destination:**
+- Local dev: console (Pino's pretty-printer)
+- Staging/production: stdout → Docker logs → (planned) centralized logging
 
 ---
 
-## Metrics
+## Phase 2: Metrics and Health (Month 3–4, Planned)
+
+### Health endpoints (foundation)
+
+**Liveness check — is the process running?**
+```
+GET /health
+→ 200 OK: { alive: true }
+```
+
+**Readiness check — can it serve traffic?**
+```
+GET /health/ready
+→ 200 OK if:
+   - PostgreSQL connected (query: SELECT 1)
+   - MongoDB connected (ping)
+   - Active ML model resolvable (file exists)
+→ 503 Service Unavailable otherwise
+```
+
+This is the hook for orchestration (if we move to containers with Kubernetes later).
 
 ### RED Metrics (Rate, Errors, Duration)
 
-For each endpoint and each business operation, measure:
+Per NFR-002, critical endpoints must hit:
+- P95 latency < 300 ms
+- P99 latency < 500 ms
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `http_requests_total` | Counter | Total requests by method, path, status |
-| `http_request_duration_seconds` | Histogram | Latency of each request |
-| `http_requests_in_flight` | Gauge | Active requests at this moment |
+Implement with `prom-client`:
 
 ```typescript
-// Implementation with prom-client (Node.js)
-import { Counter, Histogram, Registry } from 'prom-client';
+// src/shared/metrics.ts
+import { Counter, Histogram } from 'prom-client';
 
-const requestCounter = new Counter({
+export const httpRequestDuration = new Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'HTTP request latency',
+  labelNames: ['method', 'path', 'status'],
+  buckets: [0.05, 0.1, 0.3, 0.5, 1], // align with NFR-002
+});
+
+export const httpRequestsTotal = new Counter({
   name: 'http_requests_total',
   help: 'Total HTTP requests',
   labelNames: ['method', 'path', 'status'],
 });
-
-const requestDuration = new Histogram({
-  name: 'http_request_duration_seconds',
-  help: 'HTTP request duration in seconds',
-  labelNames: ['method', 'path', 'status'],
-  buckets: [0.01, 0.05, 0.1, 0.3, 0.5, 1, 2, 5], // seconds
-});
 ```
 
-### Business metrics (USE method for resources)
+**Domain metrics to track:**
 
-| Business metric | Type | Description |
-|----------------|------|-------------|
-| `orders_created_total` | Counter | Orders successfully created |
-| `orders_failed_total` | Counter | Orders that failed (by reason) |
-| `order_value_usd` | Histogram | Distribution of order values |
+| Metric | Type | Why |
+|--------|------|-----|
+| `translations_completed_total` | Counter | Happy path: model worked |
+| `translations_failed_total` | Counter | Model failed; reason label = LOW_CONFIDENCE / NO_HAND_DETECTED / etc. |
+| `recognition_confidence_seconds` | Histogram | Silent model degradation detector |
+| `signs_most_failed` | Top-K | Which classes need more training samples |
 
-### Metrics endpoint
-
+**Metrics endpoint:**
 ```
 GET /metrics
-```
-
-Exposes metrics in Prometheus format (text/plain).
-Only accessible from the internal network, not exposed to the API Gateway.
-
----
-
-## Distributed traces
-
-Tracing allows following a request across multiple services.
-
-### Context propagation
-
-```
-External request
-     │
-     ▼
-[API Gateway]  generates trace-id: abc123, span-id: 001
-     │         Headers: traceparent: 00-abc123-001-01
-     │
-     ▼
-[Auth Service]  creates child span: abc123 / 002
-     │
-     ▼
-[Order Service]  creates child span: abc123 / 003
-     │
-     ▼
-[PostgreSQL DB]  creates child span: abc123 / 004 (automatic instrumentation)
-```
-
-### Implementation with OpenTelemetry
-
-```typescript
-// Automatic instrumentation (configure at service startup)
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-
-const sdk = new NodeSDK({
-  traceExporter: new OTLPTraceExporter({
-    url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
-  }),
-  instrumentations: [
-    // Automatically instruments: HTTP, Express, PostgreSQL, Redis
-    getNodeAutoInstrumentations(),
-  ],
-});
-
-sdk.start();
-```
-
-### Create manual spans for business logic
-
-```typescript
-import { trace } from '@opentelemetry/api';
-
-const tracer = trace.getTracer('auth-service');
-
-async function authenticateUser(email: string): Promise<Token> {
-  return tracer.startActiveSpan('authenticate-user', async (span) => {
-    try {
-      span.setAttributes({ 'user.email_domain': email.split('@')[1] });
-      const user = await userRepo.findByEmail(email);
-      span.setAttributes({ 'user.found': !!user });
-      // ... logic ...
-      return token;
-    } catch (error) {
-      span.recordException(error);
-      span.setStatus({ code: SpanStatusCode.ERROR });
-      throw error;
-    } finally {
-      span.end();
-    }
-  });
-}
+Response: Prometheus format (text/plain)
+Access: Internal network only, not through the API Gateway
 ```
 
 ---
 
-## Grafana Dashboards
+## Phase 3: Dashboards (Month 4–5, Planned)
 
-### Main dashboard — Executive view
+### Main dashboard — Command center
 
 Required panels:
-1. **Error rate** (%) — last 30 min
-2. **P95 latency** (ms) — per service
-3. **Throughput** (RPS) — per service
-4. **Availability** (%) — vs SLO
-5. **Instances per service** — to detect scaling events
+1. **Error rate (%)** — last 30 min — CRITICAL: if > 5%, page ops
+2. **P95 latency (ms)** — per endpoint — CRITICAL: if > 300ms, investigate
+3. **Throughput (RPS)** — total and per endpoint
+4. **Active users** — concurrent sessions (from `users.last_activity`)
+5. **Translations per day** — trending
+6. **Model accuracy trend** — average confidence of COMPLETED translations
 
-### Per-service dashboard
+### Per-domain dashboard
 
-Each service must have its own dashboard with:
-1. RED metrics (Rate, Errors, Duration)
-2. JVM / Node.js metrics (GC, heap, CPU)
-3. DB connection pool (active, waiting, maximum)
-4. Message metrics (published / consumed / DLQ)
+**Authentication:**
+- Login success rate (%)
+- Failed login attempts (by reason: wrong password, account locked, etc.)
+- Token refresh failures
+
+**Translations:**
+- Completed / Failed ratio
+- Average latency per request
+- Most failed signs (which classes to retrain)
+
+**Lexicon:**
+- Sign catalog query latency
+- Cache hit rate
 
 ---
 
-## Alerts
+## Phase 4: Distributed Traces (Post-MVP, Month 6+, Planned)
 
-### Standard alert rules
+Traces allow following a user's request across all services (not applicable until microservices extraction).
 
-| Alert | Condition | Severity | Notifies |
-|-------|-----------|----------|---------|
-| `HighErrorRate` | Error rate > 5% for 5 min | P1 | PagerDuty + Slack |
-| `HighLatency` | P95 > 500ms for 5 min | P2 | Slack #alerts |
-| `ServiceDown` | Health check fails > 1 min | P1 | PagerDuty |
-| `DLQNotEmpty` | DLQ has > 0 messages | P2 | Slack #alerts |
-| `LowDiskSpace` | Disk > 80% | P2 | Slack #alerts |
-| `PodCrashLooping` | Pod restarts > 3 times in 10 min | P1 | PagerDuty |
+**Tool:** OpenTelemetry + Jaeger.
+
+For now: use `correlationId` header to link logs of a single request.
+
+```typescript
+// src/shared/http/correlation_middleware.ts
+app.use((req, res, next) => {
+  const correlationId = req.headers['x-correlation-id'] || generateUUID();
+  res.setHeader('x-correlation-id', correlationId);
+  req.correlationId = correlationId;
+  next();
+});
+```
+
+---
+
+## Phase 5: Alerts (Month 5+, Planned)
+
+### Alert rules (Prometheus + Alertmanager)
+
+| Alert | Rule | Severity | Notifies | SLA |
+|-------|------|----------|----------|-----|
+| `HighErrorRate` | Error rate > 5% for 5 min | P1 | Slack #incidents | Ack within 5 min |
+| `HighLatency` | P95 > 300 ms for 10 min | P2 | Slack #alerts | Ack within 15 min |
+| `ServiceDown` | Health check 503 for > 2 min | P1 | Slack #incidents + SMS | Ack within 5 min |
+| `PostgreSQLDown` | Connection pool exhausted | P0 | Slack #incidents + SMS | Immediate |
 
 ```yaml
-# prometheus-rules.yaml
+# Planned: prometheus-rules.yaml
 groups:
-  - name: service-alerts
+  - name: traduce-senas-alerts
     rules:
       - alert: HighErrorRate
-        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        expr: (rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m])) > 0.05
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "High error rate in {{ $labels.service }}"
+          summary: "High error rate in production"
           description: "Error rate: {{ $value | humanizePercentage }}"
+          
+      - alert: ServiceUnhealthy
+        expr: up{job="signa-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend health check failing"
 ```
+
+**Notification channels:**
+- `#incidents`: P0–P1 alerts, for immediate escalation
+- `#alerts`: P2–P3, informational
+- SMS + PagerDuty: P0 only (future, if on-call rotation is established)
 
 ---
 
 ## Correlations
 
-- Alert response runbook → `09-microservices/services/XX/runbook.md`
-- SLOs and Error Budget → `13-operations/README.md`
-- Incidents → `13-operations/incident-management.md`
-- How to add business metrics → `09-microservices/services/XX/README.md`
+- Observability requirements → `04-requirements/non-functional.md` § NFR-006
+- Alert response → `13-operations/incident-management.md`
+- SLO tracking → `13-operations/README.md`
+- Backlog (logging library, observability setup) → `15-project-control/technical-backlog.md`
