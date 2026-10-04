@@ -83,19 +83,19 @@
 
 ---
 
-### PostgreSQL
+### PostgreSQL (5 instances, one per service)
 
 | Field | Value |
 |-------|-------|
-| **Dependency** | PostgreSQL 15+ relational database |
+| **Dependency** | PostgreSQL 15+ relational database x5 (iam, recognition, lexicon, analytics, profile) |
 | **Type** | Self-hosted (on SENA's shared server) |
-| **Required for** | Structured data (users, translations, lexicon, audit logs) |
+| **Required for** | Structured data per service (users, translations, lexicon, audit logs, analytics events) |
 | **External owner** | SENA IT / Infrastructure team |
 | **SLA** | SENA-defined (not formally documented) |
-| **Fallback** | Restore from daily backup (RTO: 30 min, RPO: 24 hours) |
-| **Status** | Running in production |
-| **Notes** | Connection string in .env. Pooled with pg-pool (min: 2, max: 30 connections). Migrations in migrations/ run on deploy. |
-| **Risk** | Connection pool exhaustion under load (R-007 trigger). No read replicas; all reads hit the primary. |
+| **Fallback** | Restore from daily backup per database (RTO: 45 min, RPO: 24 hours) |
+| **Status** | Running in production (5 databases) |
+| **Notes** | Each service has its own connection string in .env (IAM_DB_*, RECOGNITION_DB_*, etc.). Pooled with pg-pool (min: 2, max: 30 connections per service). Migrations per service run on deploy. |
+| **Risk** | Connection pool exhaustion per service (one slow service does not block others). No read replicas; all reads hit the primary. Restore complexity: 5 databases must be restored in order (iam first). |
 
 ---
 
@@ -105,13 +105,29 @@
 |-------|-------|
 | **Dependency** | MongoDB 6+ document database |
 | **Type** | Self-hosted (on SENA's shared server) |
-| **Required for** | AI data: gesture samples, model versions, training logs |
+| **Required for** | AI data: gesture samples, model versions, training logs (recognition-service only) |
 | **External owner** | SENA IT / Infrastructure team |
 | **SLA** | SENA-defined |
 | **Fallback** | Restore from daily backup (RTO: 2 hours, RPO: 24 hours) |
 | **Status** | Running in production |
-| **Notes** | Connection string in .env (MONGO_URI). No sharding; single replica set. Collections: gesture_samples, ai_models, training_logs. |
-| **Risk** | Grows independently of PostgreSQL; no FK constraints to catch orphaned records. |
+| **Notes** | Connection string in .env (MONGODB_URI). Only recognition-service uses it. No sharding; single replica set. Collections: gesture_samples, ai_models, training_logs. |
+| **Risk** | Grows independently of PostgreSQL; no FK constraints to catch orphaned records. If MongoDB is down, recognition-service cannot persist samples but can still serve cached models. |
+
+---
+
+### RabbitMQ (Message Broker)
+
+| Field | Value |
+|-------|-------|
+| **Dependency** | RabbitMQ 3.10+ message broker |
+| **Type** | Self-hosted (on SENA's shared server) |
+| **Required for** | Async domain events: iam.UserRegistered → profile-service creates profile; recognition.TranslationCompleted → analytics records usage |
+| **External owner** | SENA IT / Infrastructure team |
+| **SLA** | SENA-defined |
+| **Fallback** | (1) If broker is down, sync calls still work (gateway + services), but events queue on restart. (2) Restore message queue from backup. |
+| **Status** | Running in production (as of 2026-10-04, microservices decision) |
+| **Notes** | Connection string in .env (RABBITMQ_URL). Topic exchange: `traduce.events`. All services subscribe to events relevant to them. Management UI at localhost:15672 (user: guest, pass: guest). |
+| **Risk** | If broker is down, events are lost (unless persistent queue + backup restore). Message queue can grow unbounded if consumer is slow or down. Monitor queue depth; alert if > 1000 messages for > 10 min. |
 
 ---
 
@@ -152,8 +168,9 @@
 | Firebase FCM | Ready | No | Google Cloud | Fallback: polling |
 | SMTP | Pending | No | SENA IT | Password recovery emails |
 | TensorFlow.js | Ready | Yes | TensorFlow team | Model location TBD (Q-001) |
-| PostgreSQL | Ready | Yes | SENA IT | No read replicas |
-| MongoDB | Ready | Yes | SENA IT | Grows independently |
+| PostgreSQL (x5) | Ready | Yes | SENA IT | One per service; no read replicas |
+| MongoDB | Ready | Yes | SENA IT | recognition-service only; grows independently |
+| RabbitMQ | Ready | Yes | SENA IT | Message broker for async events; critical for microservices |
 | React Native | Ready | No | Meta / Expo | Can switch to Flutter if needed |
 | MediaPipe | Ready | No | Google | Fallback: raw video |
 
@@ -162,9 +179,11 @@
 ## Coordination points with SENA
 
 1. **SMTP credentials:** needed before MVP release (password recovery unimplemented until then)
-2. **MongoDB backup schedule:** quarterly drill scheduled for 2026-11-15
-3. **PostgreSQL backup restore:** tested 2026-11-15
-4. **Server capacity planning:** model size (25 MB) + concurrent users (500) + gesture samples (unknown growth rate)
+2. **RabbitMQ setup:** broker must be running; test connection before first microservice deploy
+3. **PostgreSQL x5 databases:** one per service (iam, recognition, lexicon, analytics, profile); backups must include all 5
+4. **MongoDB backup schedule:** daily automated backup; quarterly restore drill scheduled for 2026-11-15
+5. **Backup restore procedure:** restore order is critical: (1) PostgreSQL iam, (2) other PostgreSQL dbs, (3) MongoDB, (4) RabbitMQ queue. Test quarterly.
+6. **Server capacity planning:** 5 services + RabbitMQ broker + 5 databases + MongoDB = higher resource usage than monolith. Monitor: CPU, memory, disk I/O, network (inter-service calls + event broker).
 
 ---
 
@@ -172,4 +191,6 @@
 
 - Risk register (dependency failures) → `15-project-control/risks.md`
 - Open questions (inference location decision) → `15-project-control/open-questions.md`
+- Microservices architecture spec → `09-microservices/service-catalog.md`
 - Deployment plan → `05-architecture/deployment.md`
+- Incident response per service → `09-microservices/services/XX/runbook.md`
