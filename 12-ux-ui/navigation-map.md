@@ -2,7 +2,7 @@
 
 > **Status:** 🟡 Living document — v0.3, 2026-09-15
 > **Sources:** SRS v2.0 (2026) · `frontendTS/src/app/routes/` · `04-requirements/user-stories.md`
-> **Mockups:** 17 of the 21 screens below have their HTML in `mockup/layout/<folder>/index.html`
+> **Mockups:** 18 of the 21 screens below have their HTML in `mockup/layout/<folder>/index.html`
 
 Defines every screen of Traduce Señas, how the screens connect, who can reach each one and which
 requirement justifies it. When a screen is added, removed or renamed, this file changes in the same PR.
@@ -43,7 +43,7 @@ After a successful login the app shows the tab bar. **The tabs depend on the rol
 | 15 | `manage-profile` | Perfil | `ProfileScreen` | RF5 · ERF5.1, ERF5.2, ERF5.4 | User · Admin | Web · Mobile | ✅ |
 | 16 | `change-password` | Cambiar contraseña | — | RF5 · ERF5.3 | User · Admin | Web · Mobile | 🆕 |
 | 17 | `view-notifications` | Notificaciones | — | RF4 · ERF4.1 | User | Web · Mobile | 🆕 |
-| 18 | `view-achievements` | Mis logros | — | RF8 · ERF8.1, ERF8.2 | User | Web · Mobile | 🆕 |
+| 18 | `view-achievements` | Mis logros | — | RF8 · ERF8.1, ERF8.2 | User | Web · Mobile | 🆕 · dibujado |
 | 19 | `view-usage-statistics` | Estadísticas | `StatsScreen` | RF6 · ERF6.1 | Admin | Web · Mobile | ✅ |
 | 20 | `view-admin-dashboard` | Administración | `AdminDashboardScreen` | — | Admin | Web · Mobile | ✅ |
 | 21 | `train-recognition-model` | Entrenar la IA | `AdminTrainingScreen` | — (supports RF3, RNF8) | Admin | Web · Mobile | ✅ |
@@ -51,7 +51,7 @@ After a successful login the app shows the tab bar. **The tabs depend on the rol
 > **RF2 · ERF2.1 (navigation bar) applies to every screen**, not only to the landing: the SRS requires the
 > bar to be visible on all pages and to work on PC, tablet and phone.
 
-**Which screens have a mockup.** 17 of the 21 have their own folder in `mockup/layout/`. The four that
+**Which screens have a mockup.** 18 of the 21 have their own folder in `mockup/layout/`. The three that
 do not:
 
 | # | Screen | Where it is instead |
@@ -59,7 +59,6 @@ do not:
 | 7 | `verify-code` | Step 2 of `recover-password`, which is a single page with three steps |
 | 9 | `set-new-password` | Step 3 of the same page |
 | 17 | `view-notifications` | Not drawn yet — RF4 · ERF4.1 still needs a mockup |
-| 18 | `view-achievements` | Not drawn yet — RF8 · ERF8.1, ERF8.2 still need a mockup |
 
 ---
 
@@ -206,7 +205,7 @@ Recorded so they are decided, not rediscovered. Owner: whoever takes the matchin
 | UX-03 | ✅ **Decided 2026-09-15:** signing in with the administrator email shows **only Estadísticas and Administración** — no Traducción, Alfabeto or Historial — and a regular user never sees those two. Matches `MainTabNavigator` and ERF6.1 | Applied in both mockup sets. When roles replace the hard-coded email (UX-02), the bar is built from the role |
 | UX-04 | "Cambiar contraseña" in the profile reuses the recovery flow (`ForgotPassword` with `fromProfile`). ERF5.3 asks for current + new + confirmation | Build `change-password` as in the mockup |
 | UX-05 | No notifications screen; the switch in the profile is local state and is not saved | Build `view-notifications`; persist the switch (HU-PROF-005) |
-| UX-06 | No achievements screen, although RF8 is in the SRS v2.0 | Build `view-achievements`. This also closes GAP-01 in `04-requirements/` |
+| UX-06 | ✅ **Resolved:** `view-achievements` drawn in `mockup/layout/view-achievements` (RF8 · ERF8.1, ERF8.2): unlocked vs locked with progress, empty and error states, one-time unlock dialog; unlocking works with notifications off | Build it in the app. Closing GAP-01 in `04-requirements/` still needs the RF8 decision |
 | UX-07 | Statistics use fixed sample data and have no date or activity filter (ERF6.1) | Add both filters; connect to real data with the backend |
 | UX-08 | The frontend ships four languages (es, en, fr, pt); the SRS and HU-PROF-004 mention Spanish and English | Decide whether fr and pt stay |
 | UX-09 | Public pages use `LandingTheme`, fixed light purple: they ignore dark mode and the green accent | Move them to the theme tokens, as the mockups do |
