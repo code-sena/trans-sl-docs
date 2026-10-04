@@ -22,10 +22,11 @@ What the system **DOES build and maintain**:
 | 6 | Usage statistics (FR6) | Administrator dashboard: number of translations, time of use, most visited sections, filterable by date and activity type | `business/notificaciones` event observers + backend reporting |
 | 7 | Sign alphabet (FR7) | Learning module showing every letter of the alphabet in LSC, in alphabetical order, rendered as **2D images or animations** | `business/traduccion` lexicon + `data/repositories` |
 
-> **These are modules inside a single deployable, not services.** TraduceSeñas is a modular
-> monolith in N layers — see `overview.md`. Module names follow the folder structure defined in
-> the technical document §4.2. The `09-microservices/` section of this repository comes from the
-> scaffold and does not apply to this project.
+> **Each feature is delivered by one of the microservices.** TraduceSeñas is a microservices
+> architecture (iam, recognition, lexicon, analytics, profile + API Gateway) — see `overview.md`
+> and `09-microservices/`. The module names in the table are the client-side folders of the
+> technical document §4.2; the backend part of each feature lives in the service that owns its
+> bounded context. Extraction from the current domain modules is in progress.
 >
 > **FR7 renders in 2D.** The SRS left 3D modelling of the alphabet under evaluation, with 2D
 > images or animations as the fallback if it proved too slow to build. With the 3D avatar out of
@@ -156,7 +157,7 @@ What the system **does NOT build** in this version and why:
 |------|-------------|
 | **Time** | ⚠ **Re-planning pending.** The original baseline was 14 two-week sprints, 2026-01-01 → 2026-07-31 (`Scrum.xlsx`), and that window has closed. The technical-economic proposal describes a different plan — 6 phases totalling 26 weeks against the sprint plan's 28 — so the two were never reconciled. Until the team agrees a new baseline, treat time as an open constraint and do not commit to dates |
 | **Budget** | ⚠ **Unreconciled.** The components are development and programming $48,000,000 · hardware $15,003,310 · infrastructure and servers $1,350,000 · testing and training $2,000,000 · software and security $225,000 — which **sum to $66,578,310**. The proposal's own §7 states a total of $66,350,000, its summary states approximately $66,800,000, and its change report §10.1 states $51,350,000. Four figures, none of which match the arithmetic. Treat $66,578,310 as the only defensible number until the proposal is corrected. Source: `Propuesta Técnica y Económica.docx` |
-| **Technology** | React Native + TypeScript, React for web, Node.js + Express, MySQL, MediaPipe + OpenCV. Modular monolith in N layers — microservices are explicitly out |
+| **Technology** | React Native + TypeScript, React for web, Node.js + Express, PostgreSQL + MongoDB, RabbitMQ, MediaPipe + OpenCV. Microservices (iam, recognition, lexicon, analytics, profile + API Gateway), database per service |
 | **Team** | 3 people for 6 months. One of them holds Tech Lead, Scrum Master and developer roles simultaneously — see `overview.md` |
 | **Developer equipment** | Minimum per developer: Intel Core i5 8th gen / Ryzen 5, 8 GB RAM, 256 GB SSD, 720p camera. Training recognition models requires an NVIDIA GTX 1650 or better, which the minimum profile does not include. Source: `informe tecnico (1).xlsx`, sheet 2 |
 | **Regulatory** | Ley 1581 de 2012 and Decreto 1377 de 2013 on personal data protection. Binding, not advisory — see the NFR8 obligations above |
@@ -187,7 +188,7 @@ What the system **does NOT build** in this version and why:
 
 | # | Conflict between the sources | Status |
 |---|------------------------------|--------|
-| 1 | Architectural style: this repository was scaffolded from a microservices framework; the technical document §4.1 decides a modular monolith in N layers and rejects microservices | ✅ Modular monolith wins, applied throughout this section. **The ADR recording it has not been written** |
+| 1 | Architectural style: the technical document §4.1 describes a modular monolith in N layers, while the repository and the product owner decision use microservices | ✅ Resolved 2026-10-04 — microservices (see `05-architecture/`). The technical document §4.1 must be corrected |
 | 2 | Direction of translation: the SRS, the technical document and the proposal all describe a bidirectional system | ✅ Resolved 2026-08-28 — the MVP is unidirectional. The three source documents must be corrected |
 | 3 | Budget total: $66,800,000 (proposal summary) · $66,350,000 (proposal §7) · $66,578,310 (the sum of the components) · $51,350,000 (change report §10.1) | 🔴 Open — see Constraints above |
 | 4 | Schedule: 26 weeks over 6 phases (proposal) vs. 28 weeks over 14 sprints (`Scrum.xlsx`) | 🔴 Open — and both baselines have expired |
@@ -229,7 +230,8 @@ The scope can change, but the change has a process:
 | 2026-08-28 | Target platforms fixed as Android + iOS + web | Team decision, resolving a conflict between the SRS, the NFRs and the proposal |
 | 2026-08-28 | Social login fixed as Google + Facebook; Sign in with Apple excluded | The project is demonstrated, not published to the App Store |
 | 2026-08-28 | Schedule marked as pending re-planning | The original 2026-01-01 → 2026-07-31 baseline closed with no replacement agreed |
-| 2026-09-03 | Feature ownership re-expressed as modules of a modular monolith instead of microservices | Aligns the scope with the architecture decided in the technical document §4.1 |
+| 2026-09-03 | Feature ownership re-expressed as modules of a modular monolith instead of microservices | Aligns the scope with the architecture decided in the technical document §4.1 (superseded on 2026-10-04) |
+| 2026-10-04 | Architecture confirmed as microservices (iam, recognition, lexicon, analytics, profile + API Gateway); database changed from MySQL to PostgreSQL + MongoDB | Product owner decision; aligned with `05-architecture/` |
 | 2026-09-03 | NFR8 data protection obligations brought into scope as build items | Ley 1581 de 2012 is binding and was absent from every document in this section |
 | 2026-09-03 | Staging environment dropped; PO acceptance moves to `dev` | Only one server is funded. The risk is accepted explicitly rather than left implicit |
 | 2026-09-03 | FR7 alphabet fixed as 2D imagery | The SRS left 3D under evaluation; with the avatar out of scope, the 2D fallback becomes the decision |
