@@ -13,7 +13,7 @@
 **Engine:** PostgreSQL (target database `lexicon`; today database `traduce_senas`, schema `public`) plus static media files.
 **Justification:** the catalog is relational and small: signs, their texts per language and their media have fixed cardinalities, and the rules (unique code, one letter per language, ordered media) are best enforced with unique indexes and foreign keys inside the same database. See ADR-003 for the general database decision.
 
-ER diagram: `08-uml/diagrams/source/er-lexicon.md`.
+Data model and ER: `06-data/domains/04-lexicon.md`.
 
 ---
 
