@@ -1,0 +1,165 @@
+' Fuente: backendTS@497feef (origin/develop, 2026-10-05), generado 2026-10-06
+@startuml class-backend-overview
+title Backend Traduce Señas - vista general (backendTS@497feef)
+top to bottom direction
+skinparam wrapWidth 300
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+hide empty members
+
+' Convención: <<entity>> <<port in>> <<port out>> <<module>> <<adapter in>> <<adapter out>> <<entrypoint>>
+' Solo nombres. El detalle está en class-backend-<dominio>.puml y class-lexicon-service.puml
+
+package "Backend principal (proceso único, puerto 3000)" {
+
+  package "iam  (src/domains/iam)" {
+    interface IamService <<port in>>
+    interface IamRepository <<port out>>
+    class Role <<entity>>
+    class makeIamModule <<module>>
+  }
+
+  package "auth  (src/domains/auth)" {
+    interface AuthService <<port in>>
+    interface AuthRepository <<port out>>
+    interface RoleAssigner <<port out>>
+    interface RoleReader <<port out>>
+    class UserToken <<entity>>
+    class makeAuthModule <<module>>
+  }
+
+  package "users  (src/domains/users)" {
+    interface UserService <<port in>>
+    interface UserRepository <<port out>>
+    interface AdminGuard <<port out>>
+    class User <<entity>>
+    class makeUsersModule <<module>>
+  }
+
+  package "translations  (src/domains/translations)" {
+    interface TranslationService <<port in>>
+    interface TranslationRepository <<port out>>
+    class Translation <<entity>>
+    class makeTranslationsModule <<module>>
+  }
+
+  package "analytics  (src/domains/analytics)" {
+    interface AnalyticsService <<port in>>
+    interface UsageEventRepository <<port out>>
+    class NewUsageEvent <<entity>>
+    class makeAnalyticsModule <<module>>
+  }
+
+  package "ia  (src/domains/ia)" {
+    interface SignTemplateService <<port in>>
+    interface SignTemplateRepository <<port out>>
+    class SignTemplate <<entity>>
+    class makeIaModule <<module>>
+  }
+
+  interface PermissionChecker <<port out>>
+  note right of PermissionChecker
+    Cada dominio (users, translations,
+    analytics, ia) define su propio puerto
+    PermissionChecker; aquí se dibuja uno.
+  end note
+
+  package "shared  (src/shared)" {
+    interface TokenProvider <<port out>>
+    class jwtTokenProvider <<adapter out>>
+    class makeAuthMiddleware <<adapter in>>
+    class errorHandler <<adapter in>>
+    class pool <<adapter out>>
+    class config
+  }
+
+  class "cmd/server/main.ts" as main <<entrypoint>>
+}
+
+package "lexicon-service (services/lexicon-service, puerto 3003)" {
+  interface LexiconService <<port in>>
+  interface LexiconRepository <<port out>>
+  interface EventPublisher <<port out>>
+  class Sign <<entity>>
+  class makeLexiconModule <<module>>
+  class "cmd/main.ts" as lexmain <<entrypoint>>
+}
+
+' Relaciones dentro de cada dominio
+makeIamModule ..> IamService : arma
+IamRepository ..> Role
+makeAuthModule ..> AuthService : arma
+AuthRepository ..> UserToken
+makeUsersModule ..> UserService : arma
+UserRepository ..> User
+makeTranslationsModule ..> TranslationService : arma
+TranslationRepository ..> Translation
+makeAnalyticsModule ..> AnalyticsService : arma
+UsageEventRepository ..> NewUsageEvent
+makeIaModule ..> SignTemplateService : arma
+SignTemplateRepository ..> SignTemplate
+makeLexiconModule ..> LexiconService : arma
+LexiconRepository ..> Sign
+lexmain ..> makeLexiconModule
+
+' Acoplamiento directo entre dominios: auth -> users
+makeAuthModule ..> UserRepository : importa postgresUserRepository\ny normalizeEmail de users
+
+' Puertos que main.ts cumple con iamService (los dominios no importan iam)
+main ..> IamService : construye adaptadores
+main ..> RoleAssigner : { assignDefaultRole }
+main ..> RoleReader : { listRoleNames } vía getMyAccess
+main ..> PermissionChecker : { hasPermission }
+main ..> AdminGuard : { isLastAdmin }
+
+' Shared
+jwtTokenProvider ..|> TokenProvider
+makeAuthMiddleware ..> TokenProvider
+jwtTokenProvider ..> config
+pool ..> config
+makeAuthModule ..> jwtTokenProvider
+
+' Punto de entrada
+main ..> makeIamModule
+main ..> makeAuthModule
+main ..> makeUsersModule
+main ..> makeTranslationsModule
+main ..> makeIaModule
+main ..> makeAuthMiddleware : se pasa a iam, users, translations e ia
+main ..> errorHandler
+main ..> pool : pool.end() en SIGTERM
+
+' Entre servicios solo viaja el JWT (mismo JWT_SECRET, HS256, con roles)
+jwtTokenProvider ..> lexmain : el token que firma lo verifica\nlexicon-service (no hay llamadas HTTP entre ellos)
+
+' Maquetación
+makeIamModule -[hidden]right- makeAuthModule
+makeAuthModule -[hidden]right- makeUsersModule
+makeIamModule -[hidden]down- makeTranslationsModule
+makeTranslationsModule -[hidden]right- makeAnalyticsModule
+makeAnalyticsModule -[hidden]right- makeIaModule
+
+note bottom of main
+  Rutas montadas: /api/iam, /api/auth, /api/translations,
+  /api/users, /api/sign-templates. CORS abierto, JSON hasta 2mb.
+  PROBLEMA en 497feef: main.ts construye roleReader, permissionChecker
+  y adminGuard pero NO los pasa a los módulos
+  (makeAuthModule recibe solo { roleAssigner }; users, translations e ia
+  solo { authMiddleware }) y makeAnalyticsModule se importa pero no se monta.
+  El arreglo existe como commit local sin subir (8228aa1).
+end note
+
+note bottom of lexmain
+  Rutas: /api/lexicon/* y /health. Base de datos propia (db/003_lexicon.sql).
+  Publica lexicon.SignPublished / lexicon.SignWithdrawn en RabbitMQ
+  (exchange traduce.events) o en memoria si no hay RABBITMQ_URL.
+  Tiene su propio src/shared: no importa nada del backend principal.
+end note
+
+note bottom of AuthRepository
+  Los puertos en ports/outbound/* son, en su mayoría, re-exports de
+  domain/repository.ts. En el backend principal no hay patrones GoF:
+  todo son funciones fábrica makeX(deps) y objetos literales.
+  lexicon-service sí tiene algunos (ver class-backend-patterns.puml).
+end note
+@enduml
