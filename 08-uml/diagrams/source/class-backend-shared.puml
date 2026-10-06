@@ -1,0 +1,89 @@
+' Fuente: backendTS@497feef (origin/develop, 2026-10-05), generado 2026-10-06
+@startuml class-backend-shared
+title Backend Traduce Señas - shared (backendTS@497feef)
+top to bottom direction
+skinparam wrapWidth 300
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+
+interface TokenPayload <<entity>> {
+  + userId : number
+  + email : string
+  + roles? : string[]
+}
+note right of TokenPayload : src/shared/security/token_provider.ts\nroles solo se firma en el token (lo lee lexicon-service con ROLE_SOURCE=jwt).
+
+interface TokenProvider <<port out>> {
+  + sign(payload: TokenPayload) : string
+  + verify(token: string) : TokenPayload
+}
+note right of TokenProvider : src/shared/security/token_provider.ts\nauth lo re-exporta desde ports/outbound/auth_provider.ts
+
+class jwtTokenProvider <<adapter out>> {
+  - signOptions : SignOptions
+  + sign(payload: TokenPayload) : string
+  + verify(token: string) : TokenPayload
+}
+note right of jwtTokenProvider : src/shared/security/jwt.ts\nObjeto literal con jsonwebtoken. Firma { sub, user_id, email, roles }\ncon config.jwt.secret (HS256 por defecto), expira en '1d'.\nverify devuelve solo { userId, email } (sin roles).
+
+class makeAuthMiddleware <<adapter in>> {
+  + (tokenProvider: TokenProvider) : RequestHandler
+}
+note right of makeAuthMiddleware : src/shared/http/auth_middleware.ts\nLee "Authorization: Bearer <token>", llena req.user\n{ userId: number; email: string } o responde 401.
+
+interface RoleChecker <<port out>> {
+  + hasRole(userId: number, roleName: string) : Promise<boolean>
+}
+note right of RoleChecker : src/shared/security/role_checker.ts
+
+class postgresRoleChecker <<adapter out>>
+note right of postgresRoleChecker : src/shared/security/postgres_role_checker.ts\nConsulta public.user_role y public.role (en SINGULAR), pero la\nmigración 003 crea public.user_roles y public.roles: fallaría con 42P01.\nNo lo usa nadie en 497feef (código sin uso).
+
+class makeRequireRole <<adapter in>> {
+  + (roleChecker: RoleChecker) : (roleName: string) => RequestHandler
+}
+note right of makeRequireRole : src/shared/http/require_role.ts\nVa después de authMiddleware; 403 FORBIDDEN si no tiene el rol.\nNo se usa en ninguna ruta del backend principal\n(los dominios usan permisos de iam, no roles).
+
+class errorHandler <<adapter in>> {
+  + (err: Error, req, res, next) : void
+}
+note right of errorHandler : src/shared/http/error_handler.ts\nResponde 500 { success: false, message: 'Error interno del servidor' }.
+
+class pool <<adapter out>> {
+  pg.Pool
+}
+note right of pool : src/shared/database/postgres.ts\nInstancia de módulo de pg.Pool (no es una clase propia).\nLa usan todos los repositorios postgres del backend principal.
+
+class config {
+  + port : number = 3000
+  + db : { host, port, user, password, database }
+  + jwt : { secret: string, expiresIn: '1d' }
+  + mailer : { service: 'gmail', user, pass }
+}
+note right of config : src/shared/config/config.ts\nObjeto literal que lee variables de entorno con dotenv:\nPORT, DB_*, JWT_SECRET, EMAIL_USER, EMAIL_PASS.
+
+jwtTokenProvider ..|> TokenProvider
+TokenProvider ..> TokenPayload
+makeAuthMiddleware ..> TokenProvider
+postgresRoleChecker ..|> RoleChecker
+postgresRoleChecker ..> pool
+makeRequireRole ..> RoleChecker
+jwtTokenProvider ..> config
+pool ..> config
+' Maquetación: apilar verticalmente
+TokenPayload -[hidden]down- TokenProvider
+TokenProvider -[hidden]down- jwtTokenProvider
+jwtTokenProvider -[hidden]down- makeAuthMiddleware
+makeAuthMiddleware -[hidden]down- RoleChecker
+RoleChecker -[hidden]down- postgresRoleChecker
+postgresRoleChecker -[hidden]down- makeRequireRole
+makeRequireRole -[hidden]down- errorHandler
+errorHandler -[hidden]down- pool
+pool -[hidden]down- config
+
+note as N1
+  src/shared/database/montsdb/ solo tiene .gitkeep (MongoDB no implementado).
+  Mailer y PasswordHasher no están en shared: viven en auth (y users tiene su propio PasswordHasher).
+  lexicon-service NO usa este shared: tiene su propio src/shared (ver class-lexicon-service.puml).
+end note
+@enduml

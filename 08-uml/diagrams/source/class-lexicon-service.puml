@@ -1,0 +1,386 @@
+' Fuente: backendTS@497feef (origin/develop, 2026-10-05), services/lexicon-service, generado 2026-10-06
+@startuml class-lexicon-service
+title Microservicio lexicon-service: catálogo de señas (backendTS@497feef, services/lexicon-service)
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+left to right direction
+
+' ---------- dominio ----------
+enum SignType <<entity>> {
+  LETTER
+  WORD
+  PHRASE
+}
+enum SignStatus <<entity>> {
+  DRAFT
+  ACTIVE
+  INACTIVE
+}
+enum ResourceType <<entity>> {
+  MODEL_3D
+  IMAGE
+  VIDEO
+  GIF
+}
+enum UiLanguage <<entity>> {
+  ES
+  EN
+}
+note bottom of UiLanguage : src/domain/entity.ts\nDEFAULT_UI_LANGUAGE = 'ES', DEFAULT_LANGUAGE = 'LSC',\nCODE_PATTERN = /^[A-Z0-9_]{1,50}$/
+
+interface Sign <<entity>> {
+  + lexiconId : number
+  + code : string
+  + word : string
+  + meaning : string | null
+  + type : SignType
+  + letter : string | null
+  + language : string
+  + categoryId : number
+  + category : string
+  + description : string | null
+  + animated : boolean
+  + displayOrder : number
+  + status : SignStatus
+  + resources : MultimediaResource[]
+  + localizations? : Localization[]
+  + createdAt : Date
+  + updatedAt : Date
+}
+note bottom of Sign : src/domain/entity.ts\nTabla public.sign_lexicon (db/003_lexicon.sql, base de datos propia del servicio).\nword/meaning/description salen de la localización del idioma pedido.
+Sign --> SignType
+Sign --> SignStatus
+
+interface Localization <<entity>> {
+  + uiLanguage : UiLanguage
+  + name : string
+  + meaning : string | null
+  + description : string | null
+}
+note bottom of Localization : Tabla public.sign_localizations
+Localization --> UiLanguage
+
+interface MultimediaResource <<entity>> {
+  + resourceId : number
+  + type : ResourceType
+  + url : string
+  + mimeType : string | null
+  + displayOrder : number
+  + description : string | null
+}
+note bottom of MultimediaResource : Tabla public.multimedia_resource
+MultimediaResource --> ResourceType
+
+interface Category <<entity>> {
+  + categoryId : number
+  + name : string
+  + description : string | null
+}
+interface CategorySummary <<entity>> {
+  + signCount : number
+}
+note bottom of Category : Tabla public.categories
+CategorySummary --|> Category
+
+Sign "1" *-- "0..*" MultimediaResource
+Sign "1" *-- "1..*" Localization
+Sign "*" --> "1" Category
+
+note as NTypes
+  También en src/domain/entity.ts:
+  NewSign { code; type; letter; language; categoryId; animated; displayOrder; localizations }
+  SignChanges { type?; letter?; language?; categoryId?; animated?; displayOrder? }
+  NewResource { type; url; mimeType?; displayOrder?; description? }
+  SignFilter { type?; language?; category?; q?; status?; limit?; offset?; lang; includeInactive? }
+end note
+
+class LEXICON_EVENTS <<entity>> {
+  + SignPublished = 'lexicon.SignPublished'
+  + SignWithdrawn = 'lexicon.SignWithdrawn'
+}
+note bottom of LEXICON_EVENTS : src/domain/events.ts\nSignPublishedPayload { lexiconId; code; type; language; letter; categoryId }\nSignWithdrawnPayload { lexiconId; code }
+
+class rules <<domain service>> {
+  + normalizeCode(code) : string
+  + assertCode(value) : string
+  + assertSignType(type) : SignType
+  + assertSignStatus(status) : SignStatus
+  + assertLetterMatchesType(type, letter) : void
+  + parseUiLanguage(value) : UiLanguage
+  + parseSignLanguage(value) : string
+  + parseDisplayOrder(value) : number
+  + parseAnimated(value) : boolean
+  + parsePositiveInt(value, label) : number
+  + parsePagination(input) : { limit; offset }
+  + parseCategoryId(value) : number
+  + validateLocalization(input) : Localization
+  + buildLocalizations(input) : Localization[]
+  + validateChanges(current, changes) : SignChanges
+  + validateResource(input, mediaBaseUrl?) : NewResource
+  + validateCategoryName(value) : string
+  + validateCategoryDescription(value) : string | null
+}
+note bottom of rules : src/domain/rules.ts\nFunciones exportadas, no un objeto. MAX_PAGE_SIZE = 100, MAX_QUERY_LENGTH = 100.\nCódigos reservados: ALPHABET, SEARCH, CATEGORIES, ADMIN, MEDIA.\nURL de recurso: ruta relativa de medios o https del origen configurado.
+
+abstract class LexiconError <<error>> {
+  + {abstract} code : string
+  + {abstract} httpStatus : number
+}
+class LexiconValidationError <<error>>
+class SignNotFoundError <<error>>
+class CodeTakenError <<error>>
+class CategoryNotFoundError <<error>>
+class CategoryInUseError <<error>>
+class CategoryNameTakenError <<error>>
+class LetterTakenError <<error>>
+class PositionTakenError <<error>>
+note bottom of LexiconError : src/domain/rules.ts\nVALIDATION_ERROR (400), SIGN_NOT_FOUND (404), CODE_TAKEN (409),\nCATEGORY_NOT_FOUND (404), CATEGORY_IN_USE (409), CATEGORY_NAME_TAKEN (409),\nLETTER_TAKEN (409), POSITION_TAKEN (409).
+LexiconError --|> Error
+LexiconValidationError --|> LexiconError
+SignNotFoundError --|> LexiconError
+CodeTakenError --|> LexiconError
+CategoryNotFoundError --|> LexiconError
+CategoryInUseError --|> LexiconError
+CategoryNameTakenError --|> LexiconError
+LetterTakenError --|> LexiconError
+PositionTakenError --|> LexiconError
+rules ..> LexiconValidationError : lanza
+
+' ---------- puertos ----------
+interface LexiconRepository <<port out>> {
+  + list(filter: SignFilter) : Promise<Sign[]>
+  + findByCode(code: string, options?: { lang?; includeInactive? }) : Promise<Sign | null>
+  + create(sign: NewSign, userId: number | null) : Promise<Sign>
+  + update(code, changes: SignChanges, userId, localization?) : Promise<Sign | null>
+  + setStatus(code: string, status: SignStatus, userId: number | null) : Promise<Sign | null>
+  + upsertLocalization(code: string, localization: Localization) : Promise<Localization | null>
+  + hasResourceAt(code: string, displayOrder: number) : Promise<boolean>
+  + addResource(code: string, resource: NewResource) : Promise<MultimediaResource | null>
+  + removeResource(code: string, resourceId: number) : Promise<boolean>
+}
+note bottom of LexiconRepository : src/domain/repository.ts (no hay carpeta ports/outbound)
+interface CategoryRepository <<port out>> {
+  + list() : Promise<CategorySummary[]>
+  + findById(categoryId: number) : Promise<Category | null>
+  + findByName(name: string) : Promise<Category | null>
+  + create(input: { name; description }) : Promise<Category>
+  + update(categoryId: number, changes: { name?; description? }) : Promise<Category | null>
+  + countSigns(categoryId: number) : Promise<number>
+  + delete(categoryId: number) : Promise<boolean>
+}
+note bottom of CategoryRepository : src/domain/repository.ts
+LexiconRepository ..> Sign
+CategoryRepository ..> Category
+
+interface EventPublisher <<port out>> {
+  + publish(type: string, payload: unknown) : Promise<void>
+}
+interface ClosableEventPublisher <<port out>> {
+  + close() : Promise<void>
+}
+note bottom of EventPublisher : src/shared/events/event_publisher.ts\nEventEnvelope<T> { eventId; type; occurredAt; payload: T }
+ClosableEventPublisher --|> EventPublisher
+
+interface LexiconService <<port in>> {
+  + list(input) : Promise<LexiconResult>
+  + alphabet(input: { language?; lang? }) : Promise<LexiconResult>
+  + get(input: { code; lang?; includeInactive? }) : Promise<LexiconResult>
+  + create(input: { sign: CreateSignInput; userId }) : Promise<LexiconResult>
+  + update(input: { code; changes: UpdateSignInput; userId }) : Promise<LexiconResult>
+  + publish(input: { code; userId }) : Promise<LexiconResult>
+  + deactivate(input: { code; userId }) : Promise<LexiconResult>
+  + upsertLocalization(input: { code; uiLanguage; localization }) : Promise<LexiconResult>
+  + addResource(input: { code; resource: NewResource }) : Promise<LexiconResult>
+  + removeResource(input: { code; resourceId }) : Promise<LexiconResult>
+  + listCategories() : Promise<LexiconResult>
+  + createCategory(input: { name?; description? }) : Promise<LexiconResult>
+  + updateCategory(input: { categoryId; changes }) : Promise<LexiconResult>
+  + deleteCategory(input: { categoryId }) : Promise<LexiconResult>
+}
+note bottom of LexiconService : src/ports/inbound/lexicon_service.ts\nLexiconResult { success; message?; data?; meta?: { limit; offset } }
+
+' ---------- casos de uso (src/application/*.ts) ----------
+class makeListSigns <<use case>>
+note bottom of makeListSigns : list_signs.ts
+class makeGetAlphabet <<use case>>
+note bottom of makeGetAlphabet : get_alphabet.ts (type = LETTER)
+class makeGetSign <<use case>>
+note bottom of makeGetSign : get_sign.ts
+class makeCreateSign <<use case>>
+note bottom of makeCreateSign : create_sign.ts\nCrea en DRAFT; exige nombre en español y categoría.
+class makeUpdateSign <<use case>>
+note bottom of makeUpdateSign : update_sign.ts
+class makePublishSign <<use case>>
+note bottom of makePublishSign : publish_sign.ts\nPasa a ACTIVE y publica lexicon.SignPublished.
+class makeDeactivateSign <<use case>>
+note bottom of makeDeactivateSign : deactivate_sign.ts\nPasa a INACTIVE y publica lexicon.SignWithdrawn.
+class makeUpsertLocalization <<use case>>
+note bottom of makeUpsertLocalization : upsert_localization.ts
+class makeAddResource <<use case>>
+class makeRemoveResource <<use case>>
+note bottom of makeAddResource : manage_resources.ts
+class makeListCategories <<use case>>
+class makeCreateCategory <<use case>>
+class makeUpdateCategory <<use case>>
+class makeDeleteCategory <<use case>>
+note bottom of makeCreateCategory : manage_categories.ts
+class resolveCategoryId <<use case>> {
+  + (categoryRepository, ref: { categoryId?; category? }) : Promise<number | undefined>
+}
+note bottom of resolveCategoryId : resolve_category.ts (auxiliar)
+class publishQuietly <<use case>> {
+  + (publisher: EventPublisher, type: string, payload: unknown) : Promise<void>
+}
+note bottom of publishQuietly : publish_event.ts\nSi publicar falla, solo lo registra en consola.
+
+makeListSigns ..> LexiconRepository
+makeGetAlphabet ..> LexiconRepository
+makeGetSign ..> LexiconRepository
+makeCreateSign ..> LexiconRepository
+makeCreateSign ..> resolveCategoryId
+makeUpdateSign ..> LexiconRepository
+makeUpdateSign ..> resolveCategoryId
+makePublishSign ..> LexiconRepository
+makePublishSign ..> publishQuietly
+makeDeactivateSign ..> LexiconRepository
+makeDeactivateSign ..> publishQuietly
+makeUpsertLocalization ..> LexiconRepository
+makeAddResource ..> LexiconRepository
+makeRemoveResource ..> LexiconRepository
+makeListCategories ..> CategoryRepository
+makeCreateCategory ..> CategoryRepository
+makeUpdateCategory ..> CategoryRepository
+makeDeleteCategory ..> CategoryRepository
+resolveCategoryId ..> CategoryRepository
+publishQuietly ..> EventPublisher
+publishQuietly ..> LEXICON_EVENTS
+makeCreateSign ..> rules
+makeUpdateSign ..> rules
+
+' ---------- adaptadores de salida ----------
+class makePostgresLexiconRepository <<adapter out>> {
+  + (pool: Pool) : LexiconRepository
+}
+note bottom of makePostgresLexiconRepository : src/adapters/outbound/postgres/lexicon_repository.ts\nSQL sobre sign_lexicon, sign_localizations, multimedia_resource y categories.
+class makePostgresCategoryRepository <<adapter out>> {
+  + (pool: Pool) : CategoryRepository
+}
+note bottom of makePostgresCategoryRepository : src/adapters/outbound/postgres/category_repository.ts
+class RabbitMqEventPublisher <<adapter out>> {
+  - url : string
+  - connection? : Connection
+  - channelPromise? : Promise<Channel>
+  + publish(type: string, payload: unknown) : Promise<void>
+  + close() : Promise<void>
+}
+note bottom of RabbitMqEventPublisher : src/shared/events/rabbitmq_event_publisher.ts\nExchange 'traduce.events' de tipo topic, mensajes persistentes.
+class InMemoryEventPublisher <<adapter out>> {
+  + published : EventEnvelope[]
+  + publish(type: string, payload: unknown) : Promise<void>
+  + close() : Promise<void>
+}
+note bottom of InMemoryEventPublisher : src/shared/events/in_memory_event_publisher.ts\nSe usa si RABBITMQ_URL está vacío.
+class createEventPublisher <<adapter out>> {
+  + (rabbitmqUrl: string) : ClosableEventPublisher
+}
+note bottom of createEventPublisher : src/shared/events/create_event_publisher.ts (makeEnvelope en make_envelope.ts)
+
+makePostgresLexiconRepository ..|> LexiconRepository
+makePostgresCategoryRepository ..|> CategoryRepository
+RabbitMqEventPublisher ..|> ClosableEventPublisher
+InMemoryEventPublisher ..|> ClosableEventPublisher
+createEventPublisher ..> RabbitMqEventPublisher
+createEventPublisher ..> InMemoryEventPublisher
+
+' ---------- seguridad (src/shared) ----------
+interface AuthenticatedUser <<entity>> {
+  + userId : number
+  + email : string
+  + roles : string[]
+}
+interface TokenVerifier <<port out>> {
+  + verify(token: string) : AuthenticatedUser
+}
+interface RoleChecker <<port out>> {
+  + check(user: AuthenticatedUser, roleName: string) : Promise<RoleDecision>
+}
+note bottom of RoleChecker : src/shared/security/role_checker.ts\nRoleDecision { allowed: boolean; reason?: string }
+class makeJwtTokenVerifier <<adapter out>> {
+  + (secret: string) : TokenVerifier
+}
+note bottom of makeJwtTokenVerifier : src/shared/security/jwt_token_verifier.ts\nSolo HS256; userId de sub o user_id; roles del token.\nEl secreto debe ser el mismo JWT_SECRET del backend principal.
+class jwtRoleChecker <<adapter out>>
+class noRolesChecker <<adapter out>>
+note bottom of noRolesChecker : ROLE_SOURCE=none (por defecto): niega todo lo de ADMIN.\nROLE_SOURCE=jwt: jwtRoleChecker mira los roles del token.
+class makeRoleChecker <<adapter out>> {
+  + (source: RoleSource) : RoleChecker
+}
+makeJwtTokenVerifier ..|> TokenVerifier
+jwtRoleChecker ..|> RoleChecker
+noRolesChecker ..|> RoleChecker
+makeRoleChecker ..> jwtRoleChecker
+makeRoleChecker ..> noRolesChecker
+TokenVerifier ..> AuthenticatedUser
+
+' ---------- adaptadores de entrada ----------
+class makeAuthMiddleware <<adapter in>> {
+  + (tokenVerifier: TokenVerifier) : RequestHandler
+}
+note bottom of makeAuthMiddleware : src/shared/http/auth_middleware.ts\n401 UNAUTHORIZED si falta o falla el token.
+class makeRequireRole <<adapter in>> {
+  + (roleChecker: RoleChecker) : (roleName: string) => RequestHandler
+}
+note bottom of makeRequireRole : src/shared/http/require_role.ts\n403 FORBIDDEN con el motivo del RoleChecker.
+makeAuthMiddleware ..> TokenVerifier
+makeRequireRole ..> RoleChecker
+
+class makeLexiconController <<adapter in>> {
+  deps: lexiconService, options: { mediaBaseUrl? }
+  + list / adminList / adminGet / search / alphabet / get
+  + create / update / publish / deactivate
+  + upsertLocalization / addResource / removeResource
+  + listCategories / createCategory / updateCategory / deleteCategory
+}
+note bottom of makeLexiconController : src/adapters/inbound/http/lexicon_controller.ts\nConvierte las URL relativas de medios en absolutas.\nLexiconError -> su httpStatus; 23514 -> 400; resto -> 500.\nDTOs en dto/sign_request.ts.
+class makeLexiconRoutes <<adapter in>> {
+  deps: lexiconService, authMiddleware, requireAdmin, mediaDir, mediaBaseUrl?
+  + () : Router
+}
+note bottom of makeLexiconRoutes : src/adapters/inbound/http/routes.ts
+note right of makeLexiconRoutes
+  Rutas bajo /api/lexicon (puerto 3003 por defecto):
+  Públicas: GET /, /search, /alphabet, /categories, /:code
+  y GET /media/* (archivos estáticos: modelos 3D, imágenes)
+  Solo ADMIN (JWT + rol): POST/PATCH/DELETE /categories[/:id],
+  GET /admin/signs[/:code], POST /, PATCH /:code, DELETE /:code,
+  POST /:code/publish, PUT /:code/localizations/:lang,
+  POST /:code/resources, DELETE /:code/resources/:resourceId
+  Además GET /health (fuera de /api/lexicon).
+end note
+makeLexiconRoutes ..> makeLexiconController
+makeLexiconController ..> LexiconService
+
+' ---------- módulo, app y arranque ----------
+class makeLexiconModule <<module>> {
+  + (deps: { pool; eventPublisher; authMiddleware; requireAdmin; config: LexiconConfig }) : { lexiconService; router }
+}
+note bottom of makeLexiconModule : src/lexicon.module.ts
+class makeLexiconApp <<module>> {
+  + (deps) : Express
+}
+note bottom of makeLexiconApp : src/app.ts\nexpress.json 2mb, GET /health, monta /api/lexicon y errorHandler.
+class main <<entrypoint>>
+note bottom of main : cmd/main.ts\nloadServiceConfig (PORT=3003, DB_*, JWT_SECRET >= 32, RABBITMQ_URL, ROLE_SOURCE)\ny loadLexiconConfig (LEXICON_MEDIA_DIR, LEXICON_MEDIA_BASE_URL).\nrequireAdmin = requireRole('ADMIN').
+
+main ..> makeLexiconApp
+main ..> createEventPublisher
+main ..> makeJwtTokenVerifier
+main ..> makeRoleChecker
+main ..> makeAuthMiddleware
+main ..> makeRequireRole
+makeLexiconApp ..> makeLexiconModule
+makeLexiconModule ..> makePostgresLexiconRepository
+makeLexiconModule ..> makePostgresCategoryRepository
+makeLexiconModule ..> makeLexiconRoutes
+makeLexiconModule ..> LexiconService : construye
+@enduml

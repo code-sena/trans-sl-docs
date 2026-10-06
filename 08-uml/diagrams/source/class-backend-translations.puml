@@ -1,0 +1,214 @@
+' Fuente: backendTS@497feef (origin/develop, 2026-10-05), generado 2026-10-06
+@startuml class-backend-translations
+title Backend Traduce Señas - dominio translations (backendTS@497feef)
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+left to right direction
+
+' ---------- dominio ----------
+enum TranslationType <<entity>> {
+  texto_sena
+  sena_texto
+  voz_sena
+}
+note bottom of TranslationType : src/domains/translations/domain/entity.ts (TRANSLATION_TYPES)\ntexto_sena y voz_sena están fuera del MVP (solo seña -> texto/voz)\npero el código y migrations/001_translations.sql los aceptan.
+
+interface Translation <<entity>> {
+  + translationId : number
+  + userId : number | null
+  + inputText : string
+  + outputText : string
+  + type : TranslationType
+  + confidence : number | null
+  + source : string | null
+  + isDeleted : boolean
+  + createdAt : Date
+}
+note bottom of Translation : src/domains/translations/domain/entity.ts\nTabla public.translations (migrations/001_translations.sql)
+Translation --> TranslationType
+
+interface NewTranslation <<entity>> {
+  + userId : number | null
+  + inputText : string
+  + outputText : string
+  + type : TranslationType
+  + confidence? : number | null
+  + source? : string | null
+}
+
+interface TranslationStats <<entity>> {
+  + totalTranslations : number
+  + activeUsers30d : number
+  + daily : { date; count }[7]
+  + weekly : { weekStart; count }[4]
+  + monthly : { month; count }[12]
+}
+note bottom of TranslationStats : src/domains/translations/domain/stats.ts\nTambién StatsRaw, StatsWindow, CountByDate, CountByMonth.\nFechas agrupadas en hora de Bogotá (UTC-5).
+
+interface MyStats <<entity>> {
+  + totalTranslations : number
+  + distinctWords : number
+  + activeDays : number
+  + currentStreakDays : number
+  + longestStreakDays : number
+}
+note bottom of MyStats : src/domains/translations/domain/my_stats.ts\nEstadísticas del Perfil. MyStatsRaw { totalTranslations; distinctWords; days: string[] }
+
+class translationDomainService <<domain service>> {
+  + ensureIsValid(input: { outputText?; type?; confidence? }) : void
+  + resolveInputText(inputText: string | undefined, outputText: string) : string
+  + normalizeListParams(params: { limit?; offset? }) : { limit: number; offset: number }
+}
+note bottom of translationDomainService : src/domains/translations/domain/service.ts\nconfidence entre 0 y 1; limit 1..200 (por defecto 50).
+
+class translationStatsDomain <<domain service>> {
+  + window(now: Date) : StatsWindow
+  + build(raw: StatsRaw, now: Date) : TranslationStats
+}
+note bottom of translationStatsDomain : src/domains/translations/domain/stats.ts\nRellena con ceros: 7 días, 4 semanas, 12 meses.
+
+class myStatsDomain <<domain service>> {
+  + bogotaToday(now: Date) : string
+  + build(raw: MyStatsRaw, now: Date) : MyStats
+}
+note bottom of myStatsDomain : src/domains/translations/domain/my_stats.ts\nCalcula días activos y rachas.
+
+class InvalidTranslationError <<error>>
+class PermissionDeniedError <<error>>
+note bottom of PermissionDeniedError : src/domains/translations/domain/stats.ts
+InvalidTranslationError --|> Error
+PermissionDeniedError --|> Error
+translationDomainService ..> InvalidTranslationError : lanza
+translationStatsDomain ..> TranslationStats
+myStatsDomain ..> MyStats
+
+' ---------- puertos ----------
+interface TranslationRepository <<port out>> {
+  + create(translation: NewTranslation) : Promise<Translation>
+  + listByUser(params: { userId; limit; offset }) : Promise<Translation[]>
+  + softDelete(params: { translationId; userId }) : Promise<{ translationId } | null>
+}
+note bottom of TranslationRepository : se define en src/domains/translations/domain/repository.ts\nre-export: ports/outbound/translation_repository.ts
+
+interface TranslationStatsRepository <<port out>> {
+  + getStats(window: StatsWindow) : Promise<StatsRaw>
+}
+note bottom of TranslationStatsRepository : ports/outbound/translation_stats_repository.ts
+
+interface MyStatsRepository <<port out>> {
+  + getMyStats(userId: number) : Promise<MyStatsRaw>
+}
+note bottom of MyStatsRepository : ports/outbound/my_stats_repository.ts
+
+interface PermissionChecker <<port out>> {
+  + hasPermission(userId: number, permission: string) : Promise<boolean>
+}
+note bottom of PermissionChecker : ports/outbound/permission_checker.ts\nmain.ts lo construye con iam.iamService.hasPermission
+
+interface TranslationService <<port in>> {
+  + create(input: { userId; inputText?; outputText; type; confidence?; source? }) : Promise<TranslationResult>
+  + list(input: { userId; limit?; offset? }) : Promise<TranslationResult>
+  + getStats(input: { userId }) : Promise<TranslationStats>
+  + getMyStats(input: { userId }) : Promise<MyStats>
+  + remove(input: { translationId; userId }) : Promise<TranslationResult>
+}
+note bottom of TranslationService : src/domains/translations/ports/inbound/translation_service.ts\nTranslationResult { success: boolean; message?: string; data?: unknown }
+
+TranslationRepository ..> Translation
+TranslationRepository ..> NewTranslation
+
+' ---------- casos de uso (src/domains/translations/application/*.ts) ----------
+class makeCreateTranslation <<use case>> {
+  deps: translationRepository
+  + (input) : Promise<TranslationResult>
+}
+note bottom of makeCreateTranslation : application/create_translation.ts
+class makeListTranslations <<use case>> {
+  deps: translationRepository
+  + ({ userId, limit?, offset? }) : Promise<TranslationResult>
+}
+note bottom of makeListTranslations : application/list_translations.ts
+class makeDeleteTranslation <<use case>> {
+  deps: translationRepository
+  + ({ translationId, userId }) : Promise<TranslationResult>
+}
+note bottom of makeDeleteTranslation : application/delete_translation.ts\nBorrado lógico (is_deleted = TRUE).
+class makeGetTranslationStats <<use case>> {
+  deps: statsRepository, permissionChecker, now?
+  + ({ userId }) : Promise<TranslationStats>
+}
+note bottom of makeGetTranslationStats : application/get_translation_stats.ts\nExige el permiso 'stats.read'.
+class makeGetMyTranslationStats <<use case>> {
+  deps: myStatsRepository, now?
+  + ({ userId }) : Promise<MyStats>
+}
+note bottom of makeGetMyTranslationStats : application/get_my_translation_stats.ts
+
+makeCreateTranslation ..> TranslationRepository
+makeCreateTranslation ..> translationDomainService
+makeListTranslations ..> TranslationRepository
+makeListTranslations ..> translationDomainService
+makeDeleteTranslation ..> TranslationRepository
+makeGetTranslationStats ..> TranslationStatsRepository
+makeGetTranslationStats ..> PermissionChecker
+makeGetTranslationStats ..> translationStatsDomain
+makeGetTranslationStats ..> PermissionDeniedError : lanza
+makeGetMyTranslationStats ..> MyStatsRepository
+makeGetMyTranslationStats ..> myStatsDomain
+
+' ---------- adaptadores de salida ----------
+class postgresTranslationRepository <<adapter out>>
+note bottom of postgresTranslationRepository : adapters/outbound/postgres/translation_repository.ts
+class postgresTranslationStatsRepository <<adapter out>>
+note bottom of postgresTranslationStatsRepository : adapters/outbound/postgres/translation_stats_repository.ts
+class postgresMyStatsRepository <<adapter out>>
+note bottom of postgresMyStatsRepository : adapters/outbound/postgres/my_stats_repository.ts\n"Palabra" = output_text normalizado (btrim + lower).
+
+postgresTranslationRepository ..|> TranslationRepository
+postgresTranslationStatsRepository ..|> TranslationStatsRepository
+postgresMyStatsRepository ..|> MyStatsRepository
+
+' ---------- adaptadores de entrada ----------
+class makeTranslationController <<adapter in>> {
+  deps: translationService
+  + create(req, res)
+  + list(req, res)
+  + stats(req, res, next)
+  + myStats(req, res, next)
+  + remove(req, res)
+}
+note bottom of makeTranslationController : adapters/inbound/http/translation_controller.ts\nuserId sale del JWT; si falta, resolveUserId acepta user_id del body o\nquery (fallback "para pruebas manuales"). Errores -> 400 con el mensaje;\nPermissionDeniedError -> 403 PERMISSION_ERROR. No valida con zod.\nCreateTranslationRequestDto (dto/translation_request.ts) no se usa.
+class makeTranslationRoutes <<adapter in>> {
+  deps: translationService, authMiddleware
+  + () : Router
+}
+note bottom of makeTranslationRoutes : adapters/inbound/http/routes.ts
+note right of makeTranslationRoutes
+  Rutas bajo /api/translations (todas con JWT):
+  POST /
+  GET /stats
+  GET /me/stats
+  GET /history
+  DELETE /:id
+end note
+
+makeTranslationRoutes ..> makeTranslationController
+makeTranslationController ..> TranslationService
+
+' ---------- módulo ----------
+class makeTranslationsModule <<module>> {
+  + (deps: { authMiddleware; permissionChecker: PermissionChecker }) : { translationService: TranslationService; router: Router }
+}
+note bottom of makeTranslationsModule : src/domains/translations/translations.module.ts\nOJO: cmd/server/main.ts (497feef) lo llama con { authMiddleware } solamente:\npermissionChecker llega undefined y GET /stats fallaría con 500.
+
+makeTranslationsModule ..> postgresTranslationRepository
+makeTranslationsModule ..> postgresTranslationStatsRepository
+makeTranslationsModule ..> postgresMyStatsRepository
+makeTranslationsModule ..> makeCreateTranslation
+makeTranslationsModule ..> makeListTranslations
+makeTranslationsModule ..> makeDeleteTranslation
+makeTranslationsModule ..> makeGetTranslationStats
+makeTranslationsModule ..> makeGetMyTranslationStats
+makeTranslationsModule ..> makeTranslationRoutes
+makeTranslationsModule ..> TranslationService : construye
+@enduml

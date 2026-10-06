@@ -1,0 +1,216 @@
+' Fuente: backendTS@497feef (origin/develop, 2026-10-05), generado 2026-10-06
+@startuml class-backend-iam
+title Backend Traduce Señas - dominio iam: roles y permisos (backendTS@497feef)
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+left to right direction
+
+' ---------- dominio ----------
+enum RoleName <<entity>> {
+  USER
+  LINGUIST
+  ADMIN
+}
+note bottom of RoleName : src/domains/iam/domain/entity.ts (ROLE_NAMES)\nDEFAULT_ROLE = 'USER'. Los tres son roles protegidos (no se borran).
+
+interface Role <<entity>> {
+  + roleId : number
+  + name : string
+  + description : string | null
+  + permissions : string[]
+}
+note bottom of Role : src/domains/iam/domain/entity.ts\nTablas public.roles, public.role_permissions y public.user_roles\n(migrations/003_iam_roles_permissions.sql, con seed de roles y permisos).
+
+interface Permission <<entity>> {
+  + permissionId : number
+  + name : string
+  + description : string | null
+}
+note bottom of Permission : src/domains/iam/domain/entity.ts\nTabla public.permissions. Definida pero sin uso en el código:\nlos permisos viajan como string[] dentro de Role.
+
+note as NPerm
+  PERMISSIONS (domain/entity.ts), sembrados en la migración 003:
+  translation.create, translation.read.own, translation.delete.own,
+  lexicon.read, lexicon.write, profile.manage.own,
+  samples.capture, samples.validate, users.manage, stats.read,
+  models.manage, notifications.manage, security.policy.manage
+end note
+
+class iamDomainService <<domain service>> {
+  + effectivePermissions(roles: Role[]) : string[]
+  + ensureHasPermission(granted: string[], required: string) : void
+  + ensureCanDelete(usersWithRole: number) : void
+  + ensureNotProtected(roleName: string) : void
+  + decideRevoke(s: { hasRole; isAdminRole; adminCount; userRoleCount }) : RevokeOutcome
+  + ensureValidId(value: unknown, field: string) : void
+  + ensureValidRoleName(roleName: unknown) : void
+}
+note bottom of iamDomainService : src/domains/iam/domain/service.ts\nRevokeOutcome = 'revoked' | 'not_assigned' | 'last_admin' | 'last_role'.\nInvariantes: siempre queda un ADMIN, todo usuario conserva un rol,\nun rol en uso no se borra (INV-017).
+
+class PermissionDeniedError <<error>>
+class RoleInUseError <<error>>
+class RoleNotFoundError <<error>>
+class UserNotFoundError <<error>>
+class InvalidIamInputError <<error>>
+class LastAdminError <<error>>
+class UserWithoutRoleError <<error>>
+class ProtectedRoleError <<error>>
+note bottom of PermissionDeniedError : src/domains/iam/domain/service.ts\n(todas extienden Error)
+PermissionDeniedError --|> Error
+RoleInUseError --|> Error
+RoleNotFoundError --|> Error
+UserNotFoundError --|> Error
+InvalidIamInputError --|> Error
+LastAdminError --|> Error
+UserWithoutRoleError --|> Error
+ProtectedRoleError --|> Error
+iamDomainService ..> PermissionDeniedError : lanza
+iamDomainService ..> RoleInUseError : lanza
+iamDomainService ..> ProtectedRoleError : lanza
+iamDomainService ..> InvalidIamInputError : lanza
+iamDomainService ..> Role
+
+' ---------- puertos ----------
+interface IamRepository <<port out>> {
+  + findRoleByName(name: string) : Promise<Role | null>
+  + findRoleById(roleId: number) : Promise<Role | null>
+  + listRoles() : Promise<Role[]>
+  + listRolesForUser(userId: number) : Promise<Role[]>
+  + listPermissionsForUser(userId: number) : Promise<string[]>
+  + userExists(userId: number) : Promise<boolean>
+  + assignRole(params: { userId; roleId }) : Promise<void>
+  + revokeRoleGuarded(params: { userId; roleId; isAdminRole }) : Promise<RevokeOutcome>
+  + isLastAdmin(userId: number) : Promise<boolean>
+  + countUsersWithRole(roleId: number) : Promise<number>
+  + deleteRole(roleId: number) : Promise<void>
+}
+note bottom of IamRepository : se define en src/domains/iam/domain/repository.ts\nre-export: ports/outbound/iam_repository.ts
+IamRepository ..> Role
+
+interface IamService <<port in>> {
+  + hasPermission(userId: number, permission: string) : Promise<boolean>
+  + getMyAccess(input: { userId }) : Promise<IamResult>
+  + listRoles(input: { actorId }) : Promise<IamResult>
+  + assignRole(input: { actorId; userId; roleName }) : Promise<IamResult>
+  + revokeRole(input: { actorId; userId; roleName }) : Promise<IamResult>
+  + deleteRole(input: { actorId; roleId }) : Promise<IamResult>
+  + assignDefaultRole(userId: number) : Promise<void>
+  + isLastAdmin(userId: number) : Promise<boolean>
+}
+note bottom of IamService : src/domains/iam/ports/inbound/iam_service.ts\nIamResult { success: boolean; message?: string; data?: unknown }.\nmain.ts usa hasPermission, getMyAccess, assignDefaultRole e isLastAdmin\npara cumplir los puertos de auth, users, translations, ia y analytics.
+
+' ---------- casos de uso (src/domains/iam/application/*.ts) ----------
+class makeHasPermission <<use case>> {
+  deps: iamRepository
+  + (userId: number, permission: string) : Promise<boolean>
+}
+note bottom of makeHasPermission : application/has_permission.ts
+class makeGetMyAccess <<use case>> {
+  deps: iamRepository
+  + ({ userId }) : Promise<IamResult>
+}
+note bottom of makeGetMyAccess : application/get_my_access.ts\ndata = { roles: string[]; permissions: string[] }
+class makeListRoles <<use case>> {
+  deps: iamRepository
+  + ({ actorId }) : Promise<IamResult>
+}
+note bottom of makeListRoles : application/list_roles.ts\nExige users.manage.
+class makeAssignRole <<use case>> {
+  deps: iamRepository
+  + ({ actorId, userId, roleName }) : Promise<IamResult>
+}
+note bottom of makeAssignRole : application/assign_role.ts\nExige users.manage. Idempotente.
+class makeRevokeRole <<use case>> {
+  deps: iamRepository
+  + ({ actorId, userId, roleName }) : Promise<IamResult>
+}
+note bottom of makeRevokeRole : application/revoke_role.ts\nExige users.manage.
+class makeDeleteRole <<use case>> {
+  deps: iamRepository
+  + ({ actorId, roleId }) : Promise<IamResult>
+}
+note bottom of makeDeleteRole : application/delete_role.ts\nExige users.manage; no borra roles protegidos ni en uso.
+class makeAssignDefaultRole <<use case>> {
+  deps: iamRepository
+  + (userId: number) : Promise<void>
+}
+note bottom of makeAssignDefaultRole : application/assign_default_role.ts
+class makeIsLastAdmin <<use case>> {
+  deps: iamRepository
+  + (userId: number) : Promise<boolean>
+}
+note bottom of makeIsLastAdmin : application/is_last_admin.ts
+
+makeHasPermission ..> IamRepository
+makeGetMyAccess ..> IamRepository
+makeGetMyAccess ..> iamDomainService
+makeListRoles ..> IamRepository
+makeListRoles ..> iamDomainService
+makeAssignRole ..> IamRepository
+makeAssignRole ..> iamDomainService
+makeRevokeRole ..> IamRepository
+makeRevokeRole ..> iamDomainService
+makeRevokeRole ..> LastAdminError : lanza
+makeRevokeRole ..> UserWithoutRoleError : lanza
+makeDeleteRole ..> IamRepository
+makeDeleteRole ..> iamDomainService
+makeAssignDefaultRole ..> IamRepository
+makeAssignDefaultRole ..> RoleNotFoundError : lanza
+makeIsLastAdmin ..> IamRepository
+
+' ---------- adaptadores de salida ----------
+class postgresIamRepository <<adapter out>>
+note bottom of postgresIamRepository : adapters/outbound/postgres/iam_repository.ts\nSQL sobre roles, permissions, role_permissions, user_roles y users.\nrevokeRoleGuarded: transacción con SELECT ... FOR UPDATE OF ur.
+class translateAssignRoleFkError <<adapter out>> {
+  + (error: unknown) : Error | null
+}
+note bottom of translateAssignRoleFkError : adapters/outbound/postgres/iam_fk_error.ts\n23503 en fk_user_roles_role -> RoleNotFoundError;\nen fk_user_roles_user -> UserNotFoundError.
+postgresIamRepository ..|> IamRepository
+postgresIamRepository ..> translateAssignRoleFkError
+postgresIamRepository ..> iamDomainService : decideRevoke
+
+' ---------- adaptadores de entrada ----------
+class makeIamController <<adapter in>> {
+  deps: iamService
+  + myAccess(req, res, next)
+  + listRoles(req, res, next)
+  + assignRole(req, res, next)
+  + revokeRole(req, res, next)
+  + deleteRole(req, res, next)
+}
+note bottom of makeIamController : adapters/inbound/http/iam_controller.ts\nValida params/body con zod (dto/iam_request.ts).\n400 VALIDATION_ERROR, 403 PERMISSION_ERROR, 404 NOT_FOUND,\n409 ROLE_IN_USE / LAST_ADMIN / ROLE_REQUIRED / ROLE_PROTECTED.
+class makeIamRoutes <<adapter in>> {
+  deps: iamService, authMiddleware
+  + () : Router
+}
+note bottom of makeIamRoutes : adapters/inbound/http/routes.ts
+note right of makeIamRoutes
+  Rutas bajo /api/iam (todas con JWT):
+  GET /me/access
+  GET /roles
+  POST /users/:userId/roles
+  DELETE /users/:userId/roles/:roleName
+  DELETE /roles/:roleId
+end note
+
+makeIamRoutes ..> makeIamController
+makeIamController ..> IamService
+
+' ---------- módulo ----------
+class makeIamModule <<module>> {
+  + (deps: { authMiddleware }) : { iamService: IamService; router: Router }
+}
+note bottom of makeIamModule : src/domains/iam/iam.module.ts\nSe crea primero en cmd/server/main.ts: los demás dominios\nno importan iam, reciben adaptadores construidos con iamService.
+
+makeIamModule ..> postgresIamRepository
+makeIamModule ..> makeHasPermission
+makeIamModule ..> makeGetMyAccess
+makeIamModule ..> makeListRoles
+makeIamModule ..> makeAssignRole
+makeIamModule ..> makeRevokeRole
+makeIamModule ..> makeDeleteRole
+makeIamModule ..> makeAssignDefaultRole
+makeIamModule ..> makeIsLastAdmin
+makeIamModule ..> makeIamRoutes
+makeIamModule ..> IamService : construye
+@enduml

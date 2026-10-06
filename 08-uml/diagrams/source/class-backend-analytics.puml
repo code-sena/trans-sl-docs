@@ -1,0 +1,160 @@
+' Fuente: backendTS@497feef (origin/develop, 2026-10-05), generado 2026-10-06
+@startuml class-backend-analytics
+title Backend Traduce Señas - dominio analytics: eventos de uso (backendTS@497feef)
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+left to right direction
+
+' ---------- dominio ----------
+enum UsageSection <<entity>> {
+  HOME
+  TRANSLATION
+  ALPHABET
+  LEXICON
+  HISTORY
+  PROFILE
+  SETTINGS
+  NOTIFICATIONS
+  ACHIEVEMENTS
+  ADMIN
+}
+enum UsageEventType <<entity>> {
+  SECTION_VIEW
+  TRANSLATION_STARTED
+  TRANSLATION_COMPLETED
+  TRANSLATION_FAILED
+  AUDIO_PLAYED
+  SIGN_VIEWED
+  SEARCH_PERFORMED
+  HISTORY_ENTRY_DELETED
+  PREFERENCE_CHANGED
+  NOTIFICATION_OPENED
+}
+enum ReferenceType <<entity>> {
+  TRANSLATION
+  SIGN
+  CATEGORY
+  ACHIEVEMENT
+  NOTIFICATION
+  AI_MODEL
+  USER
+}
+note bottom of ReferenceType : src/domains/analytics/domain/entity.ts\n(USAGE_SECTIONS, USAGE_EVENT_TYPES, REFERENCE_TYPES).\nCatálogo reference_entity del DBML.
+
+interface NewUsageEvent <<entity>> {
+  + userId : number | null
+  + sessionId : number | null
+  + section : UsageSection
+  + eventType : UsageEventType
+  + referenceType : string | null
+  + referenceId : number | null
+}
+note bottom of NewUsageEvent : src/domains/analytics/domain/entity.ts\nTabla public.usage_events (migrations/004_analytics_usage_events.sql).\nsessionId siempre null: user_sessions está pendiente.
+interface UsageEvent <<entity>> {
+  + usageEventId : number
+  + createdAt : string
+}
+note bottom of UsageEvent : Definida pero sin uso (el repositorio solo inserta y agrega).
+UsageEvent --|> NewUsageEvent
+NewUsageEvent --> UsageSection
+NewUsageEvent --> UsageEventType
+NewUsageEvent ..> ReferenceType
+
+interface SectionReportRow <<entity>> {
+  + section : UsageSection
+  + visits : number
+}
+note bottom of SectionReportRow : Solo conteos agregados, nunca datos individuales (INV-012).
+
+class analyticsDomainService <<domain service>> {
+  + ensureEventIsValid(event: Pick<NewUsageEvent, 'section' | 'eventType' | 'referenceType' | 'referenceId'>) : void
+  + normalizeRange(range: { from?; to? }, now: Date) : { from: string; to: string }
+}
+note bottom of analyticsDomainService : src/domains/analytics/domain/service.ts\nRango semiabierto [from, to) en UTC (deuda: America/Bogota);\npor defecto 30 días, máximo 366.
+
+class InvalidUsageEventError <<error>>
+class InvalidRangeError <<error>>
+class PermissionDeniedError <<error>>
+note bottom of InvalidUsageEventError : src/domains/analytics/domain/service.ts
+InvalidUsageEventError --|> Error
+InvalidRangeError --|> Error
+PermissionDeniedError --|> Error
+analyticsDomainService ..> InvalidUsageEventError : lanza
+analyticsDomainService ..> InvalidRangeError : lanza
+
+' ---------- puertos ----------
+interface UsageEventRepository <<port out>> {
+  + append(event: NewUsageEvent) : Promise<void>
+  + countSectionViews(range: { from: string; to: string }) : Promise<SectionReportRow[]>
+}
+note bottom of UsageEventRepository : se define en src/domains/analytics/domain/repository.ts\nre-export: ports/outbound/usage_event_repository.ts\nSolo añade (append-only): no modifica ni borra eventos.
+UsageEventRepository ..> NewUsageEvent
+UsageEventRepository ..> SectionReportRow
+
+interface PermissionChecker <<port out>> {
+  + hasPermission(userId: number, permission: string) : Promise<boolean>
+}
+note bottom of PermissionChecker : ports/outbound/permission_checker.ts
+
+interface AnalyticsService <<port in>> {
+  + recordUsageEvent(input: RecordUsageEventInput) : Promise<void>
+  + getSectionReport(input: { userId; from?; to? }) : Promise<SectionReport>
+}
+note bottom of AnalyticsService : src/domains/analytics/ports/inbound/analytics_service.ts\nRecordUsageEventInput { userId; section; eventType; referenceType?; referenceId? }\nSectionReport { from; to (exclusivo); sections: SectionReportRow[] }
+
+' ---------- casos de uso ----------
+class makeRecordUsageEvent <<use case>> {
+  deps: usageEventRepository
+  + (RecordUsageEventInput) : Promise<void>
+}
+note bottom of makeRecordUsageEvent : application/record_usage_event.ts
+class makeGetSectionReport <<use case>> {
+  deps: usageEventRepository, permissionChecker, now?
+  + ({ userId, from?, to? }) : Promise<SectionReport>
+}
+note bottom of makeGetSectionReport : application/get_section_report.ts\nExige el permiso 'stats.read'.
+
+makeRecordUsageEvent ..> UsageEventRepository
+makeRecordUsageEvent ..> analyticsDomainService
+makeGetSectionReport ..> UsageEventRepository
+makeGetSectionReport ..> PermissionChecker
+makeGetSectionReport ..> analyticsDomainService
+makeGetSectionReport ..> PermissionDeniedError : lanza
+
+' ---------- adaptadores ----------
+class postgresUsageEventRepository <<adapter out>>
+note bottom of postgresUsageEventRepository : adapters/outbound/postgres/usage_event_repository.ts
+postgresUsageEventRepository ..|> UsageEventRepository
+
+class makeAnalyticsController <<adapter in>> {
+  deps: analyticsService
+  + recordEvent(req, res, next)
+  + sectionReport(req, res, next)
+}
+note bottom of makeAnalyticsController : adapters/inbound/http/analytics_controller.ts\nValida con zod (dto/analytics_request.ts: recordEventBodySchema,\nsectionReportQuerySchema). 400 VALIDATION_ERROR, 403 PERMISSION_ERROR.
+class makeAnalyticsRoutes <<adapter in>> {
+  deps: analyticsService, authMiddleware
+  + () : Router
+}
+note bottom of makeAnalyticsRoutes : adapters/inbound/http/routes.ts
+note right of makeAnalyticsRoutes
+  Rutas del router (todas con JWT):
+  POST /events
+  GET /reports/sections
+  En 497feef el router NO se monta en main.ts:
+  no hay prefijo /api/analytics y ninguna ruta responde.
+end note
+makeAnalyticsRoutes ..> makeAnalyticsController
+makeAnalyticsController ..> AnalyticsService
+
+' ---------- módulo ----------
+class makeAnalyticsModule <<module>> {
+  + (deps: { authMiddleware; permissionChecker: PermissionChecker }) : { analyticsService: AnalyticsService; router: Router }
+}
+note bottom of makeAnalyticsModule : src/domains/analytics/analytics.module.ts\nOJO: cmd/server/main.ts (497feef) lo importa pero no lo llama.
+makeAnalyticsModule ..> postgresUsageEventRepository
+makeAnalyticsModule ..> makeRecordUsageEvent
+makeAnalyticsModule ..> makeGetSectionReport
+makeAnalyticsModule ..> makeAnalyticsRoutes
+makeAnalyticsModule ..> AnalyticsService : construye
+@enduml

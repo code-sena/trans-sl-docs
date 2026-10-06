@@ -1,0 +1,290 @@
+' Fuente: backendTS@497feef (origin/develop, 2026-10-05), generado 2026-10-06
+@startuml class-backend-auth
+title Backend Traduce Señas - dominio auth (backendTS@497feef)
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+left to right direction
+
+' ---------- dominio ----------
+enum UserTokenType <<entity>> {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+interface UserToken <<entity>> {
+  + tokenId : number
+  + userId : number
+  + tokenType : UserTokenType
+  + tokenHash : string
+  + attempts : number
+  + expiresAt : Date
+  + usedAt : Date | null
+  + revokedAt : Date | null
+  + createdAt : Date
+}
+note bottom of UserToken : src/domains/auth/domain/entity.ts\nTabla public.user_tokens (migrations/005_auth_email_normalization_user_tokens.sql)\nCódigo de un solo uso guardado como hash bcrypt.
+UserToken --> UserTokenType
+
+class authDomainService <<domain service>> {
+  + generateCode(random = randomInt) : string
+  + codeExpiryDate(now: Date) : Date
+  + issueDecision(lastCreatedAt: Date | null, sentLastHour: number, now: Date) : IssueDecision
+  + canIssueToken(lastCreatedAt: Date | null, sentLastHour: number, now: Date) : boolean
+}
+note bottom of authDomainService : src/domains/auth/domain/service.ts\nObjeto literal. Constantes: CODE_TTL_MS = 15 min, MAX_ATTEMPTS = 5,\nRESEND_COOLDOWN_MS = 60 s, MAX_SENDS_PER_HOUR = 5, DUMMY_HASH (bcrypt).\nIssueDecision = 'ok' | 'cooldown' | 'hourly_limit'. Código de 6 dígitos con crypto.randomInt.
+
+class AuthError <<error>> {
+  + code : string = 'AUTH_ERROR'
+  + httpStatus : number = 400
+}
+class ValidationError <<error>>
+class InvalidCredentialsError <<error>>
+class EmailAlreadyExistsError <<error>>
+class InvalidCodeError <<error>>
+class EmailNotVerifiedError <<error>>
+class AccountBlockedError <<error>>
+class RegistrationFailedError <<error>>
+note bottom of AuthError : src/domains/auth/domain/service.ts\nCódigos: VALIDATION_ERROR (400), INVALID_CREDENTIALS (400),\nEMAIL_ALREADY_EXISTS (409), INVALID_CODE (400),\nEMAIL_NOT_VERIFIED (403), ACCOUNT_BLOCKED (403).\nRegistrationFailedError extiende Error (termina en 500).
+AuthError --|> Error
+ValidationError --|> AuthError
+InvalidCredentialsError --|> AuthError
+EmailAlreadyExistsError --|> AuthError
+InvalidCodeError --|> AuthError
+EmailNotVerifiedError --|> AuthError
+AccountBlockedError --|> AuthError
+RegistrationFailedError --|> Error
+
+' ---------- puertos ----------
+interface AuthRepository <<port out>> {
+  + issueTokenIfAllowed(params: { userId; type; hashToken; expiresAt; now; decide }) : Promise<'issued' | 'cooldown' | 'hourly_limit'>
+  + reserveAttempt(userId: number, type: UserTokenType, now: Date, maxAttempts: number) : Promise<UserToken | null>
+  + releaseAttempt(tokenId: number) : Promise<void>
+  + consumeAndResetPassword(tokenId: number, userId: number, passwordHash: string) : Promise<boolean>
+  + consumeAndActivate(tokenId: number, userId: number) : Promise<boolean>
+}
+note bottom of AuthRepository : se define en src/domains/auth/domain/repository.ts\nre-export: ports/outbound/auth_repository.ts
+
+interface PasswordHasher <<port out>> {
+  + hash(plain: string) : Promise<string>
+  + compare(plain: string, hashed: string) : Promise<boolean>
+}
+note bottom of PasswordHasher : src/domains/auth/ports/outbound/auth_provider.ts\n(también hashea los códigos de un solo uso)
+
+interface Mailer <<port out>> {
+  + sendPasswordResetCode(params: { to; name; code }) : Promise<void>
+  + sendVerificationCode(params: { to; name; code }) : Promise<void>
+}
+note bottom of Mailer : src/domains/auth/ports/outbound/mailer.ts
+
+interface TokenProvider <<port out>> {
+  + sign(payload: TokenPayload) : string
+  + verify(token: string) : TokenPayload
+}
+note bottom of TokenProvider : definido en src/shared/security/token_provider.ts\nre-export: auth/ports/outbound/auth_provider.ts\nTokenPayload { userId, email, roles? }
+
+interface RoleAssigner <<port out>> {
+  + assignDefaultRole(userId: number) : Promise<void>
+}
+note bottom of RoleAssigner : src/domains/auth/ports/outbound/role_assigner.ts\nmain.ts lo cumple con iam.iamService.assignDefaultRole
+
+interface RoleReader <<port out>> {
+  + listRoleNames(userId: number) : Promise<string[]>
+}
+note bottom of RoleReader : src/domains/auth/ports/outbound/role_reader.ts\nmain.ts lo construye con iam.iamService.getMyAccess,\npero en 497feef NO lo pasa a makeAuthModule (ver nota del módulo).
+
+interface UserRepository <<port out>> {
+  findByEmail / findById / create / deleteById / ...
+}
+note bottom of UserRepository : de users: src/domains/users/ports/outbound/user_repository.ts\n(acoplamiento entre dominios; ver class-backend-users.puml)
+
+class userDomainService <<domain service>> {
+  + ensureRegistrationIsValid(...) : void
+}
+note bottom of userDomainService : de users: src/domains/users/domain/service.ts\n(también normalizeEmail). La usan los casos de uso de auth.
+
+interface AuthService <<port in>> {
+  + register(input: RegisterInput) : Promise<AuthResult>
+  + login(input: LoginInput) : Promise<AuthResult>
+  + forgotPassword(input: { email }) : Promise<AuthResult>
+  + verifyEmail(input: { email; code; password }) : Promise<AuthResult>
+  + resendVerification(input: { email }) : Promise<AuthResult>
+  + verifyCode(input: { email; code }) : Promise<AuthResult>
+  + resetPassword(input: { email; code; newPassword }) : Promise<AuthResult>
+  + googleLogin(input: GoogleLoginInput) : Promise<AuthResult>
+}
+note bottom of AuthService : src/domains/auth/ports/inbound/auth_service.ts
+
+note as NDto
+  Tipos en auth_service.ts
+  RegisterInput { name, email, password: string }
+  LoginInput { email, password: string }
+  GoogleLoginInput { email, name: string }
+  AuthResult { success: boolean; message: string; data?: unknown }
+  Validación HTTP con zod (adapters/inbound/http/dto/auth_request.ts):
+  registerBodySchema, loginBodySchema, forgotPasswordBodySchema,
+  verifyCodeBodySchema, verifyEmailBodySchema, resendVerificationBodySchema,
+  resetPasswordBodySchema. Las interfaces *RequestDto de dto/*.ts
+  siguen definidas pero el controller no las usa.
+end note
+
+' ---------- casos de uso (src/domains/auth/application/*.ts) ----------
+class makeRegister <<use case>> {
+  deps: userRepository, passwordHasher, roleAssigner, authRepository, mailer, now?
+  + (RegisterInput) : Promise<AuthResult>
+}
+note bottom of makeRegister : application/register.ts\nCrea el usuario INACTIVE, asigna rol por defecto\n(si falla borra el usuario) y envía el código de verificación.
+class makeLogin <<use case>> {
+  deps: userRepository, passwordHasher, tokenProvider, roleReader
+  + (LoginInput) : Promise<AuthResult>
+}
+note bottom of makeLogin : application/login.ts\nSolo cuentas ACTIVE; firma el JWT con los roles.
+class makeForgotPassword <<use case>> {
+  deps: userRepository, authRepository, passwordHasher, mailer, now?
+  + ({ email }) : Promise<AuthResult>
+}
+note bottom of makeForgotPassword : application/forgot_password.ts\nRespuesta genérica; el envío va en segundo plano.
+class makeCheckResetCode <<use case>> {
+  deps: userRepository, authRepository, passwordHasher, now?
+  + (email: string, code: string) : Promise<{ user; token }>
+}
+note bottom of makeCheckResetCode : application/verify_code.ts\nReserva el intento antes de comparar (máx. 5).
+class makeVerifyCode <<use case>> {
+  + ({ email, code }) : Promise<AuthResult>
+}
+note bottom of makeVerifyCode : application/verify_code.ts
+class makeResetPassword <<use case>> {
+  deps: userRepository, authRepository, passwordHasher, now?
+  + ({ email, code, newPassword }) : Promise<AuthResult>
+}
+note bottom of makeResetPassword : application/reset_password.ts\nvalida newPassword.length >= 8
+class makeVerifyEmail <<use case>> {
+  deps: userRepository, authRepository, passwordHasher, now?
+  + ({ email, code, password }) : Promise<AuthResult>
+}
+note bottom of makeVerifyEmail : application/verify_email.ts\nExige código y contraseña; activa la cuenta.
+class makeResendVerification <<use case>> {
+  deps: userRepository, authRepository, passwordHasher, mailer, now?
+  + ({ email }) : Promise<AuthResult>
+}
+note bottom of makeResendVerification : application/resend_verification.ts
+class issueAndSendVerification <<use case>> {
+  + (deps, user, now: Date) : Promise<boolean>
+}
+note bottom of issueAndSendVerification : application/issue_verification.ts\nFunción auxiliar compartida por register y resend.
+class makeGoogleLogin <<use case>> {
+  deps: userRepository, tokenProvider, roleAssigner, roleReader
+  + (GoogleLoginInput) : Promise<AuthResult>
+}
+note bottom of makeGoogleLogin : application/google_login.ts\nCableado en AuthService.googleLogin pero ninguna ruta lo llama\n(no hay POST /auth/google en 497feef).
+
+makeRegister ..> UserRepository
+makeRegister ..> PasswordHasher
+makeRegister ..> RoleAssigner
+makeRegister ..> userDomainService
+makeRegister ..> issueAndSendVerification
+makeLogin ..> UserRepository
+makeLogin ..> PasswordHasher
+makeLogin ..> TokenProvider
+makeLogin ..> RoleReader
+makeForgotPassword ..> UserRepository
+makeForgotPassword ..> AuthRepository
+makeForgotPassword ..> PasswordHasher
+makeForgotPassword ..> Mailer
+makeForgotPassword ..> authDomainService
+makeCheckResetCode ..> UserRepository
+makeCheckResetCode ..> AuthRepository
+makeCheckResetCode ..> PasswordHasher
+makeVerifyCode ..> makeCheckResetCode
+makeResetPassword ..> makeCheckResetCode : lo crea internamente
+makeResetPassword ..> AuthRepository
+makeResetPassword ..> PasswordHasher
+makeVerifyEmail ..> UserRepository
+makeVerifyEmail ..> AuthRepository
+makeVerifyEmail ..> PasswordHasher
+makeResendVerification ..> UserRepository
+makeResendVerification ..> issueAndSendVerification
+issueAndSendVerification ..> AuthRepository
+issueAndSendVerification ..> PasswordHasher
+issueAndSendVerification ..> Mailer
+issueAndSendVerification ..> authDomainService
+makeGoogleLogin ..> UserRepository
+makeGoogleLogin ..> TokenProvider
+makeGoogleLogin ..> RoleAssigner
+makeGoogleLogin ..> RoleReader
+
+AuthRepository ..> UserToken
+authDomainService ..> AuthError : sus casos de uso lanzan
+
+' ---------- adaptadores de salida ----------
+class postgresAuthRepository <<adapter out>>
+note bottom of postgresAuthRepository : adapters/outbound/postgres/auth_repository.ts\nSQL sobre public.user_tokens y public.users con shared pool;\ntransacciones con SELECT ... FOR UPDATE por usuario.
+class bcryptPasswordHasher <<adapter out>> {
+  - SALT_ROUNDS : 10
+}
+note bottom of bcryptPasswordHasher : adapters/outbound/security/password.ts
+class nodemailerMailer <<adapter out>>
+note bottom of nodemailerMailer : adapters/outbound/mailer/mailer.ts\nUsa config.mailer (shared); remitente "TraduceSeñas".\nPlantillas HTML en mailer/templates.ts (escapeHtml).
+class jwtTokenProvider <<adapter out>>
+note bottom of jwtTokenProvider : src/shared/security/jwt.ts
+
+postgresAuthRepository ..|> AuthRepository
+bcryptPasswordHasher ..|> PasswordHasher
+nodemailerMailer ..|> Mailer
+jwtTokenProvider ..|> TokenProvider
+
+' ---------- adaptadores de entrada ----------
+class makeAuthController <<adapter in>> {
+  deps: authService
+  + register(req, res, next)
+  + login(req, res, next)
+  + forgotPassword(req, res, next)
+  + verifyCode(req, res, next)
+  + verifyEmail(req, res, next)
+  + resendVerification(req, res, next)
+  + resetPassword(req, res, next)
+}
+note bottom of makeAuthController : adapters/inbound/http/auth_controller.ts\nValida el body con zod (400 INVALID_BODY);\nAuthError -> su httpStatus { success, code, message }.
+class makeAuthRoutes <<adapter in>> {
+  deps: authService
+  + () : Router
+}
+note bottom of makeAuthRoutes : adapters/inbound/http/routes.ts
+note right of makeAuthRoutes
+  Rutas bajo /api/auth (todas públicas, sin JWT):
+  POST /register
+  POST /login
+  POST /forgot-password
+  POST /verify-code
+  POST /verify-email
+  POST /resend-verification
+  POST /reset-password
+end note
+
+makeAuthRoutes ..> makeAuthController
+makeAuthController ..> AuthService
+
+' ---------- módulo ----------
+class makeAuthModule <<module>> {
+  + (moduleDeps: { roleAssigner: RoleAssigner; roleReader: RoleReader }) : { authService: AuthService; router: Router }
+}
+note bottom of makeAuthModule : src/domains/auth/auth.module.ts\nImporta postgresUserRepository de users.\nOJO: cmd/server/main.ts (497feef) lo llama con { roleAssigner } solamente:\nroleReader llega undefined y login/googleLogin fallarían al leer roles.
+class postgresUserRepository <<adapter out>>
+note bottom of postgresUserRepository : de users
+
+postgresUserRepository ..|> UserRepository
+makeAuthModule ..> postgresUserRepository
+makeAuthModule ..> postgresAuthRepository
+makeAuthModule ..> bcryptPasswordHasher
+makeAuthModule ..> nodemailerMailer
+makeAuthModule ..> jwtTokenProvider
+makeAuthModule ..> makeRegister
+makeAuthModule ..> makeLogin
+makeAuthModule ..> makeForgotPassword
+makeAuthModule ..> makeVerifyCode
+makeAuthModule ..> makeVerifyEmail
+makeAuthModule ..> makeResendVerification
+makeAuthModule ..> makeResetPassword
+makeAuthModule ..> makeGoogleLogin
+makeAuthModule ..> makeAuthRoutes
+makeAuthModule ..> AuthService : construye
+@enduml

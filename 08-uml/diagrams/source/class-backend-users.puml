@@ -1,0 +1,217 @@
+' Fuente: backendTS@497feef (origin/develop, 2026-10-05), generado 2026-10-06
+@startuml class-backend-users
+title Backend Traduce Señas - dominio users (backendTS@497feef)
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+left to right direction
+
+' ---------- dominio ----------
+enum UserStatus <<entity>> {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+interface User <<entity>> {
+  + userId : number
+  + name : string
+  + email : string
+  + password : string | null
+  + status : UserStatus
+  + emailVerifiedAt : Date | null
+  + termsAccepted : boolean
+  + termsAcceptedAt : Date | null
+  + createdAt : Date
+}
+note bottom of User : src/domains/users/domain/entity.ts\nTabla public.users (migrations/000_users.sql y 006_users_status_email_verification.sql).\nNo tiene edad, tema ni idioma.
+User --> UserStatus
+
+interface NewUser <<entity>> {
+  + name : string
+  + email : string
+  + password : string | null
+  + status? : UserStatus = INACTIVE
+  + emailVerifiedAt? : Date | null
+}
+note bottom of NewUser : src/domains/users/domain/entity.ts
+
+interface UserStats <<entity>> {
+  + totalUsers : number
+  + activeAccounts : number
+}
+note bottom of UserStats : src/domains/users/domain/stats.ts\nactiveAccounts = usuarios con status ACTIVE
+
+class userDomainService <<domain service>> {
+  + normalizeEmail(raw: string) : string
+  + ensureRegistrationIsValid(input: { name?; email?; password? }) : void
+}
+note bottom of userDomainService : src/domains/users/domain/service.ts\nnormalizeEmail = trim + minúsculas (ck_users_email_normalized).\nLa usa también el dominio auth.
+
+class accountDomainService <<domain service>> {
+  + ensureNewPasswordIsValid(password: string) : void
+}
+note bottom of accountDomainService : src/domains/users/domain/service.ts\nMIN_PASSWORD_LENGTH = 8, MAX_PASSWORD_BYTES = 72;\nexige mayúscula, minúscula, número y símbolo.
+
+class InvalidUserDataError <<error>>
+class PermissionDeniedError <<error>>
+class AccountError <<error>> {
+  + code : string
+  + httpStatus : number
+}
+class AccountValidationError <<error>>
+class InvalidPasswordError <<error>>
+class LastAdminAccountError <<error>>
+class AccountNotFoundError <<error>>
+note bottom of AccountError : src/domains/users/domain/service.ts\nVALIDATION_ERROR (400), INVALID_PASSWORD (403),\nLAST_ADMIN (409), USER_NOT_FOUND (404).\nPermissionDeniedError está en domain/stats.ts.
+InvalidUserDataError --|> Error
+PermissionDeniedError --|> Error
+AccountError --|> Error
+AccountValidationError --|> AccountError
+InvalidPasswordError --|> AccountError
+LastAdminAccountError --|> AccountError
+AccountNotFoundError --|> AccountError
+userDomainService ..> InvalidUserDataError : lanza
+accountDomainService ..> AccountValidationError : lanza
+
+' ---------- puertos ----------
+interface UserRepository <<port out>> {
+  + findByEmail(email: string) : Promise<User | null>
+  + findById(userId: number) : Promise<User | null>
+  + create(user: NewUser) : Promise<User>
+  + deleteById(userId: number) : Promise<void>
+  + updatePassword(userId: number, hashedPassword: string) : Promise<void>
+}
+note bottom of UserRepository : se define en src/domains/users/domain/repository.ts\nre-export: ports/outbound/user_repository.ts\nTambién lo usa el dominio auth.
+
+interface AccountRepository <<port out>> {
+  + changePassword(userId: number, hashedPassword: string) : Promise<void>
+  + erase(userId: number) : Promise<EraseOutcome>
+}
+note bottom of AccountRepository : se define en src/domains/users/domain/repository.ts\nEraseOutcome = 'erased' | 'last_admin' | 'not_found'.\nerase = supresión Ley 1581: borra traducciones, tokens, roles y el usuario;\nanonimiza usage_events. Todo en una transacción.
+
+interface UserStatsRepository <<port out>> {
+  + getStats() : Promise<UserStats>
+}
+note bottom of UserStatsRepository : ports/outbound/user_stats_repository.ts
+
+interface PasswordHasher <<port out>> {
+  + hash(plain: string) : Promise<string>
+  + compare(plain: string, hashed: string) : Promise<boolean>
+}
+note bottom of PasswordHasher : ports/outbound/password_hasher.ts\n(puerto propio de users, igual al de auth)
+
+interface PermissionChecker <<port out>> {
+  + hasPermission(userId: number, permission: string) : Promise<boolean>
+}
+note bottom of PermissionChecker : ports/outbound/permission_checker.ts\nmain.ts lo construye con iam.iamService.hasPermission
+
+interface AdminGuard <<port out>> {
+  + isLastAdmin(userId: number) : Promise<boolean>
+}
+note bottom of AdminGuard : ports/outbound/admin_guard.ts\nmain.ts lo construye con iam.iamService.isLastAdmin
+
+interface UserService <<port in>> {
+  + getById(userId: number) : Promise<User | null>
+  + getStats(input: { userId }) : Promise<UserStats>
+  + changePassword(input: { userId; currentPassword; newPassword }) : Promise<AccountResult>
+  + deleteAccount(input: { userId; password }) : Promise<AccountResult>
+}
+note bottom of UserService : src/domains/users/ports/inbound/user_service.ts\nAccountResult { success: boolean; message: string }
+
+' ---------- casos de uso (src/domains/users/application/*.ts) ----------
+class makeGetUser <<use case>> {
+  deps: userRepository
+  + (userId: number) : Promise<User | null>
+}
+note bottom of makeGetUser : application/get_user.ts
+class makeGetUserStats <<use case>> {
+  deps: statsRepository, permissionChecker
+  + ({ userId }) : Promise<UserStats>
+}
+note bottom of makeGetUserStats : application/get_user_stats.ts\nExige el permiso 'stats.read' (STATS_READ).
+class makeChangePassword <<use case>> {
+  deps: userRepository, accountRepository, passwordHasher
+  + ({ userId, currentPassword, newPassword }) : Promise<AccountResult>
+}
+note bottom of makeChangePassword : application/change_password.ts\nRevoca los códigos de recuperación pendientes.
+class makeDeleteAccount <<use case>> {
+  deps: userRepository, accountRepository, passwordHasher, adminGuard
+  + ({ userId, password }) : Promise<AccountResult>
+}
+note bottom of makeDeleteAccount : application/delete_account.ts\nNo deja borrar al único ADMIN.
+
+makeGetUser ..> UserRepository
+makeGetUserStats ..> UserStatsRepository
+makeGetUserStats ..> PermissionChecker
+makeGetUserStats ..> PermissionDeniedError : lanza
+makeChangePassword ..> UserRepository
+makeChangePassword ..> AccountRepository
+makeChangePassword ..> PasswordHasher
+makeChangePassword ..> accountDomainService
+makeDeleteAccount ..> UserRepository
+makeDeleteAccount ..> AccountRepository
+makeDeleteAccount ..> PasswordHasher
+makeDeleteAccount ..> AdminGuard
+UserRepository ..> User
+UserRepository ..> NewUser
+UserStatsRepository ..> UserStats
+
+' ---------- adaptadores de salida ----------
+class postgresUserRepository <<adapter out>>
+note bottom of postgresUserRepository : adapters/outbound/postgres/user_repository.ts\nSQL sobre public.users con shared pool
+class postgresAccountRepository <<adapter out>>
+note bottom of postgresAccountRepository : adapters/outbound/postgres/account_repository.ts\nTransacciones sobre users, user_tokens, translations, usage_events\ny public.user_roles / public.roles (en plural).
+class postgresUserStatsRepository <<adapter out>>
+note bottom of postgresUserStatsRepository : adapters/outbound/postgres/user_stats_repository.ts
+class bcryptPasswordHasher <<adapter out>> {
+  - SALT_ROUNDS : 10
+}
+note bottom of bcryptPasswordHasher : adapters/outbound/security/password.ts
+
+postgresUserRepository ..|> UserRepository
+postgresAccountRepository ..|> AccountRepository
+postgresUserStatsRepository ..|> UserStatsRepository
+bcryptPasswordHasher ..|> PasswordHasher
+
+' ---------- adaptadores de entrada ----------
+class makeUserController <<adapter in>> {
+  deps: userService
+  + me(req, res)
+  + stats(req, res, next)
+  + changePassword(req, res, next)
+  + deleteAccount(req, res, next)
+}
+note bottom of makeUserController : adapters/inbound/http/user_controller.ts\nValida con zod (dto/account_request.ts: changePasswordBodySchema,\ndeleteAccountBodySchema). AccountError -> su httpStatus;\nPermissionDeniedError -> 403 PERMISSION_ERROR.
+class makeUserRoutes <<adapter in>> {
+  deps: userService, authMiddleware
+  + () : Router
+}
+note bottom of makeUserRoutes : adapters/inbound/http/routes.ts
+note right of makeUserRoutes
+  Rutas bajo /api/users (todas con JWT):
+  GET /stats
+  GET /me
+  DELETE /me
+  POST /me/password
+end note
+
+makeUserRoutes ..> makeUserController
+makeUserController ..> UserService
+
+' ---------- módulo ----------
+class makeUsersModule <<module>> {
+  + (deps: { authMiddleware; permissionChecker: PermissionChecker; adminGuard: AdminGuard }) : { userService: UserService; router: Router }
+}
+note bottom of makeUsersModule : src/domains/users/users.module.ts\nOJO: cmd/server/main.ts (497feef) lo llama con { authMiddleware } solamente:\npermissionChecker y adminGuard llegan undefined, así que GET /stats y\nDELETE /me fallarían con 500.
+
+makeUsersModule ..> postgresUserRepository
+makeUsersModule ..> postgresAccountRepository
+makeUsersModule ..> postgresUserStatsRepository
+makeUsersModule ..> bcryptPasswordHasher
+makeUsersModule ..> makeGetUser
+makeUsersModule ..> makeGetUserStats
+makeUsersModule ..> makeChangePassword
+makeUsersModule ..> makeDeleteAccount
+makeUsersModule ..> makeUserRoutes
+makeUsersModule ..> UserService : construye
+@enduml
