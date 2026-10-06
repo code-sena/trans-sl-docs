@@ -43,7 +43,7 @@ carries a change log per file so the work is visible as it evolves.
 
 | Metric | Value |
 |--------|-------|
-| Functional requirements | 79 (55 Must · 18 Should · 6 Could) |
+| Functional requirements | 79 (62 Must · 12 Should · 5 Could) |
 | Non-functional requirements | 10 |
 | User stories | 53 across 11 epics |
 | Total story points | 226 |

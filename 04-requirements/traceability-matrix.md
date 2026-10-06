@@ -1,8 +1,8 @@
 # Traceability Matrix
 
-> **Status:** 🟡 Living document — v0.2
-> **Last updated:** 2026-09-08
-> **Baseline:** 79 FR · 10 NFR · 53 HU · 30 tables
+> **Status:** 🟡 Living document — v0.3
+> **Last updated:** 2026-10-04
+> **Baseline:** 79 FR · 10 NFR · 53 HU · 29 tables (28 PostgreSQL + 1 MongoDB collection)
 
 > Traceability connects every line of code to its business justification.
 > It answers: "Why does this function exist?" and "Which HU covers this part of the system?"
@@ -13,13 +13,13 @@
 ## How to read this matrix
 
 ```
-SRS (RF/ERF) → FR → HU → Test case → Module → Tables
+SRS (RF/ERF) → FR → HU → Test case → Service → Tables
 
 If an FR has no HU:        it is not planned
 If an HU has no test:      it has no completeness criterion
 If a test has no code:     there is test debt
 If a table has no FR:      possible gold-plating   ← this is how GAP-01 was found
-If an FR has no table:     a requirement nobody can persist
+If an FR has no table:     either a requirement nobody can persist, or an explicit "no persistence" FR (§ 3)
 ```
 
 **Status legend**
@@ -34,6 +34,26 @@ If an FR has no table:     a requirement nobody can persist
 
 > At baseline every row is 🔴 Pending — the requirements exist, the code does not
 > yet. Rows advance at each Sprint Review.
+
+### Module → owning service
+
+Traduce Señas is a **microservices** architecture (see `09-microservices/`). The FR series are *functional modules* of the catalog; each one is owned
+by exactly one service. The data of a service lives in its own database; there are no foreign
+keys across services.
+
+| Module (FR series) | Owning service | Store |
+|--------------------|----------------|-------|
+| Identity (FR-0xx) | `iam-service` | PostgreSQL `iam` |
+| Authorization (FR-1xx) | `iam-service` | PostgreSQL `iam` |
+| Audit / Configuration (FR-9xx) — password policy is Identity since model v9 | `iam-service` | PostgreSQL `iam` |
+| Profile (FR-2xx) | `profile-service` | PostgreSQL `profile` |
+| Notification (FR-5xx) | `profile-service` | PostgreSQL `profile` |
+| Gamification (FR-8xx) ⚠️ | `profile-service` | PostgreSQL `profile` |
+| Lexicon (FR-3xx) | `lexicon-service` | PostgreSQL `lexicon` |
+| Translation (FR-4xx) | `recognition-service` | PostgreSQL `recognition` |
+| AI (FR-6xx) | `recognition-service` | PostgreSQL `recognition` + MongoDB `gesture_samples` |
+| Usage (FR-7xx) | `analytics-service` | PostgreSQL `analytics` |
+| Navigation (FR-95x) | Mobile app (UI) — events go to `analytics-service` | — |
 
 ---
 
@@ -65,6 +85,9 @@ develops it, and does every FR trace back to an SRS requirement?
 | — | Password policy | FR-905 … FR-907 | ✅ Covered (no explicit RF) |
 | — | Legal compliance Law 1581/2012 | FR-002, FR-602 | ✅ Covered (no explicit RF) |
 
+**Row count:** 20 rows = **15 SRS requirements** (RF1–RF7 + 8 ERF) + **1 proposed** (RF8, not in the
+SRS) + **4 cross-cutting** with no explicit RF.
+
 > **Note.** The last four rows are requirements that exist in the data model but
 > have no RF in the SRS. Unlike RF8 they are not gold-plating — they are
 > cross-cutting technical requirements every system needs. It is still worth
@@ -72,183 +95,227 @@ develops it, and does every FR trace back to an SRS requirement?
 
 ---
 
-## 2. FR → HU → Test → Module matrix
+## 2. FR → HU → Test → Service matrix
 
-### Identity
+### Identity — `iam-service`
 
-| FR | Description | HU | Test that verifies it | Module | Status |
-|----|-------------|----|-----------------------|--------|--------|
-| FR-001 | Registration with data + terms | HU-IAM-001 | `RegisterUser.spec.ts` | identity | 🔴 |
-| FR-002 | Terms acceptance record | HU-IAM-001 | `TermsAcceptance.spec.ts` | identity | 🔴 |
-| FR-003 | Verification with a 6-digit code | HU-IAM-002 | `EmailVerification.spec.ts` | identity | 🔴 |
-| FR-004 | Hashed, expiring, single-use tokens | HU-IAM-002 | `UserToken.spec.ts` | identity | 🔴 |
-| FR-005 | Login with email and password | HU-IAM-003 | `Login.spec.ts` | identity | 🔴 |
-| FR-006 | Progressive lockout | HU-IAM-004 | `LockoutEscalation.spec.ts` | identity | 🔴 |
-| FR-007 | Definitive block | HU-IAM-004 | `AccountBlock.spec.ts` | identity | 🔴 |
-| FR-008 | Google / Facebook login | HU-IAM-005 | `OAuthProvider.spec.ts` | identity | 🔴 |
-| FR-009 | Multiple linked providers | HU-IAM-005 | `ProviderLink.spec.ts` | identity | 🔴 |
-| FR-010 | Password recovery | HU-IAM-006 | `PasswordReset.spec.ts` | identity | 🔴 |
-| FR-011 | Session opening | HU-IAM-007 | `SessionLifecycle.spec.ts` | identity | 🔴 |
-| FR-012 | Refresh token rotation | HU-IAM-007 | `RefreshTokenRotation.spec.ts` | identity | 🔴 |
-| FR-013 | Logout with duration | HU-IAM-008 | `SessionLifecycle.spec.ts` | identity | 🔴 |
-| FR-014 | Deletion with anonymization | HU-IAM-009 | `AccountDeletion.spec.ts` | identity | 🔴 |
-| FR-015 | Account administration | HU-IAM-010 | `AdminUserManagement.spec.ts` | identity | 🔴 |
+| FR | Description | HU | Test that verifies it | Service | Status |
+|----|-------------|----|-----------------------|---------|--------|
+| FR-001 | Registration with data + terms | HU-IAM-001 | `RegisterUser.spec.ts` | iam-service | 🔴 |
+| FR-002 | Terms acceptance record | HU-IAM-001 | `TermsAcceptance.spec.ts` | iam-service | 🔴 |
+| FR-003 | Verification with a 6-digit code | HU-IAM-002 | `EmailVerification.spec.ts` | iam-service | 🔴 |
+| FR-004 | Hashed, expiring, single-use tokens | HU-IAM-002 | `UserToken.spec.ts` | iam-service | 🔴 |
+| FR-005 | Login with email and password | HU-IAM-003 | `Login.spec.ts` | iam-service | 🔴 |
+| FR-006 | Progressive lockout | HU-IAM-004 | `LockoutEscalation.spec.ts` | iam-service | 🔴 |
+| FR-007 | Definitive block | HU-IAM-004 | `AccountBlock.spec.ts` | iam-service | 🔴 |
+| FR-008 | Google / Facebook login | HU-IAM-005 | `OAuthProvider.spec.ts` | iam-service | 🔴 |
+| FR-009 | Multiple linked providers | HU-IAM-005 | `ProviderLink.spec.ts` | iam-service | 🔴 |
+| FR-010 | Password recovery | HU-IAM-006 | `PasswordReset.spec.ts` | iam-service | 🔴 |
+| FR-011 | Session opening | HU-IAM-007 | `SessionLifecycle.spec.ts` | iam-service | 🔴 |
+| FR-012 | Refresh token rotation | HU-IAM-007 | `RefreshTokenRotation.spec.ts` | iam-service | 🔴 |
+| FR-013 | Logout with duration | HU-IAM-008 | `SessionLifecycle.spec.ts` | iam-service | 🔴 |
+| FR-014 | Deletion with anonymization | HU-IAM-009 | `AccountDeletion.spec.ts` | iam-service | 🔴 |
+| FR-015 | Account administration | HU-IAM-010 | `AdminUserManagement.spec.ts` | iam-service | 🔴 |
 
-### Authorization
+### Authorization — `iam-service`
 
-| FR | Description | HU | Test that verifies it | Module | Status |
-|----|-------------|----|-----------------------|--------|--------|
-| FR-101 | RBAC with multiple roles | HU-AUTHZ-001 | `RoleAssignment.spec.ts` | authorization | 🔴 |
-| FR-102 | Permissions independent of roles | HU-AUTHZ-001 | `PermissionModel.spec.ts` | authorization | 🔴 |
-| FR-103 | Administration access denied | HU-AUTHZ-002 | `AdminAccessControl.spec.ts` | authorization | 🔴 |
-| FR-104 | Role in use cannot be deleted | HU-AUTHZ-002 | `RoleDeletion.spec.ts` | authorization | 🔴 |
+| FR | Description | HU | Test that verifies it | Service | Status |
+|----|-------------|----|-----------------------|---------|--------|
+| FR-101 | RBAC with multiple roles | HU-AUTHZ-001 | `RoleAssignment.spec.ts` | iam-service | 🔴 |
+| FR-102 | Permissions independent of roles | HU-AUTHZ-001 | `PermissionModel.spec.ts` | iam-service | 🔴 |
+| FR-103 | Administration access denied | HU-AUTHZ-002 | `AdminAccessControl.spec.ts` | iam-service | 🔴 |
+| FR-104 | Role in use cannot be deleted | HU-AUTHZ-002 | `RoleDeletion.spec.ts` | iam-service | 🔴 |
 
-### Profile
+### Profile — `profile-service`
 
-| FR | Description | HU | Test that verifies it | Module | Status |
-|----|-------------|----|-----------------------|--------|--------|
-| FR-201 | View and edit profile | HU-PROF-001 | `ProfileUpdate.spec.ts` | profile | 🔴 |
-| FR-202 | Change password | HU-PROF-002 | `ChangePassword.spec.ts` | profile | 🔴 |
-| FR-203 | Light / dark theme | HU-PROF-003 | `Preferences.spec.ts` | profile | 🔴 |
-| FR-204 | Interface language | HU-PROF-004 | `Preferences.spec.ts` | profile | 🔴 |
-| FR-205 | Notification switch | HU-PROF-005 | `Preferences.spec.ts` | profile | 🔴 |
-| FR-206 | Default preferences on creation | HU-PROF-003 | `DefaultPreferences.spec.ts` | profile | 🔴 |
+| FR | Description | HU | Test that verifies it | Service | Status |
+|----|-------------|----|-----------------------|---------|--------|
+| FR-201 | View and edit profile | HU-PROF-001 | `ProfileUpdate.spec.ts` | profile-service | 🔴 |
+| FR-202 | Change password | HU-PROF-002 | `ChangePassword.spec.ts` | profile-service (credential stored by iam-service) | 🔴 |
+| FR-203 | Light / dark theme | HU-PROF-003 | `Preferences.spec.ts` | profile-service | 🔴 |
+| FR-204 | Interface language | HU-PROF-004 | `Preferences.spec.ts` | profile-service | 🔴 |
+| FR-205 | Notification switch | HU-PROF-005 | `Preferences.spec.ts` | profile-service | 🔴 |
+| FR-206 | Default preferences on creation | HU-PROF-003 | `DefaultPreferences.spec.ts` | profile-service (on `iam.UserRegistered`) | 🔴 |
 
-### Lexicon
+### Lexicon — `lexicon-service`
 
-| FR | Description | HU | Test that verifies it | Module | Status |
-|----|-------------|----|-----------------------|--------|--------|
-| FR-301 | Catalog by category | HU-LEX-001 | `LexiconBrowse.spec.ts` | lexicon | 🔴 |
-| FR-302 | Search by name | HU-LEX-002 | `LexiconSearch.spec.ts` | lexicon | 🔴 |
-| FR-303 | Detail with multimedia | HU-LEX-003 | `SignDetail.spec.ts` | lexicon | 🔴 |
-| FR-304 | Alphabet with no duplicate letters | HU-LEX-004 | `Alphabet.spec.ts` | lexicon | 🔴 |
-| FR-305 | Language-independent stable code | HU-LEX-005 | `SignCode.spec.ts` | lexicon | 🔴 |
-| FR-306 | Localization per language | HU-LEX-005 | `SignLocalization.spec.ts` | lexicon | 🔴 |
-| FR-307 | Sign administration | HU-LEX-006 | `SignAdmin.spec.ts` | lexicon | 🔴 |
-| FR-308 | Category administration | HU-LEX-006 | `CategoryAdmin.spec.ts` | lexicon | 🔴 |
-| FR-309 | Ordered resources | HU-LEX-007 | `MultimediaOrder.spec.ts` | lexicon | 🔴 |
-| FR-310 | Only ACTIVE signs are visible | HU-LEX-006 | `LexiconBrowse.spec.ts` | lexicon | 🔴 |
+| FR | Description | HU | Test that verifies it | Service | Status |
+|----|-------------|----|-----------------------|---------|--------|
+| FR-301 | Catalog by category | HU-LEX-001 | `LexiconBrowse.spec.ts` | lexicon-service | 🔴 |
+| FR-302 | Search by name | HU-LEX-002 | `LexiconSearch.spec.ts` | lexicon-service | 🔴 |
+| FR-303 | Detail with multimedia | HU-LEX-003 | `SignDetail.spec.ts` | lexicon-service | 🔴 |
+| FR-304 | Alphabet with no duplicate letters | HU-LEX-004 | `Alphabet.spec.ts` | lexicon-service | 🔴 |
+| FR-305 | Language-independent stable code | HU-LEX-005 | `SignCode.spec.ts` | lexicon-service | 🔴 |
+| FR-306 | Localization per language | HU-LEX-005 | `SignLocalization.spec.ts` | lexicon-service | 🔴 |
+| FR-307 | Sign administration | HU-LEX-006 | `SignAdmin.spec.ts` | lexicon-service | 🔴 |
+| FR-308 | Category administration | HU-LEX-006 | `CategoryAdmin.spec.ts` | lexicon-service | 🔴 |
+| FR-309 | Ordered resources | HU-LEX-007 | `MultimediaOrder.spec.ts` | lexicon-service | 🔴 |
+| FR-310 | Only ACTIVE signs are visible | HU-LEX-006 | `LexiconBrowse.spec.ts` | lexicon-service | 🔴 |
 
-### Translation
+### Translation — `recognition-service`
 
-| FR | Description | HU | Test that verifies it | Module | Status |
-|----|-------------|----|-----------------------|--------|--------|
-| FR-401 | Live camera translation | HU-TRA-001 | `TranslationE2E.spec.ts` (app) | translation | 🔴 |
-| FR-402 | Audio output | HU-TRA-002 | `AudioOutput.spec.ts` (app) | translation | 🔴 |
-| FR-403 | Persist with model and confidence | HU-TRA-003 | `TranslationPersistence.spec.ts` | translation | 🔴 |
-| FR-404 | Ordered signs of the translation | HU-TRA-003 | `TranslationSignsOrder.spec.ts` | translation | 🔴 |
-| FR-405 | Failed recognition feedback | HU-TRA-004 | `TranslationFailure.spec.ts` (app) | translation | 🔴 |
-| FR-406 | History newest first | HU-TRA-005 | `TranslationHistory.spec.ts` | translation | 🔴 |
-| FR-407 | Logical deletion of an entry | HU-TRA-006 | `HistoryDelete.spec.ts` | translation | 🔴 |
-| FR-408 | Model with history is undeletable | HU-TRA-003 | `ModelDeletionGuard.spec.ts` | translation | 🔴 |
+| FR | Description | HU | Test that verifies it | Service | Status |
+|----|-------------|----|-----------------------|---------|--------|
+| FR-401 | Live camera translation | HU-TRA-001 | `TranslationE2E.spec.ts` (app) | recognition-service | 🔴 |
+| FR-402 | Audio output | HU-TRA-002 | `AudioOutput.spec.ts` (app) | recognition-service | 🔴 |
+| FR-403 | Persist with model and confidence | HU-TRA-003 | `TranslationPersistence.spec.ts` | recognition-service | 🔴 |
+| FR-404 | Ordered signs of the translation | HU-TRA-003 | `TranslationSignsOrder.spec.ts` | recognition-service | 🔴 |
+| FR-405 | Failed recognition feedback | HU-TRA-004 | `TranslationFailure.spec.ts` (app) | recognition-service | 🔴 |
+| FR-406 | History newest first | HU-TRA-005 | `TranslationHistory.spec.ts` | recognition-service | 🔴 |
+| FR-407 | Logical deletion of an entry | HU-TRA-006 | `HistoryDelete.spec.ts` | recognition-service | 🔴 |
+| FR-408 | Model with history is undeletable | HU-TRA-003 | `ModelDeletionGuard.spec.ts` | recognition-service | 🔴 |
 
-### Notification
+### Notification — `profile-service`
 
-| FR | Description | HU | Test that verifies it | Module | Status |
-|----|-------------|----|-----------------------|--------|--------|
-| FR-501 | Administrable type catalog | HU-NOTIF-001 | `NotificationTypeAdmin.spec.ts` | notification | 🔴 |
-| FR-502 | Visual channel only ⭐ | HU-NOTIF-002 | `VisualChannelContract.spec.ts` | notification | 🔴 |
-| FR-503 | Device registration | HU-NOTIF-003 | `DeviceRegistration.spec.ts` | notification | 🔴 |
-| FR-504 | Scheduled notifications | HU-NOTIF-004 | `ScheduledNotification.spec.ts` | notification | 🔴 |
-| FR-505 | FAILED vs PENDING state | HU-NOTIF-005 | `DeliveryFailure.spec.ts` | notification | 🔴 |
-| FR-506 | Reference to the originating record | HU-NOTIF-006 | `NotificationReference.spec.ts` | notification | 🔴 |
-| FR-507 | Mark as read | HU-NOTIF-002 | `NotificationRead.spec.ts` | notification | 🔴 |
-| FR-508 | Master switch suppresses delivery | HU-PROF-005 | `NotificationOptOut.spec.ts` | notification | 🔴 |
-| FR-509 | Push requires a device | HU-NOTIF-003 | `PushDeviceConstraint.spec.ts` | notification | 🔴 |
+| FR | Description | HU | Test that verifies it | Service | Status |
+|----|-------------|----|-----------------------|---------|--------|
+| FR-501 | Administrable type catalog | HU-NOTIF-001 | `NotificationTypeAdmin.spec.ts` | profile-service | 🔴 |
+| FR-502 | Visual channel only ⭐ | HU-NOTIF-002 | `VisualChannelContract.spec.ts` | profile-service | 🔴 |
+| FR-503 | Device registration | HU-NOTIF-003 | `DeviceRegistration.spec.ts` | profile-service | 🔴 |
+| FR-504 | Scheduled notifications | HU-NOTIF-004 | `ScheduledNotification.spec.ts` | profile-service | 🔴 |
+| FR-505 | FAILED vs PENDING state | HU-NOTIF-005 | `DeliveryFailure.spec.ts` | profile-service | 🔴 |
+| FR-506 | Reference to the originating record | HU-NOTIF-006 | `NotificationReference.spec.ts` | profile-service | 🔴 |
+| FR-507 | Mark as read | HU-NOTIF-002 | `NotificationRead.spec.ts` | profile-service | 🔴 |
+| FR-508 | Master switch suppresses delivery | HU-PROF-005 | `NotificationOptOut.spec.ts` | profile-service | 🔴 |
+| FR-509 | Push requires a device | HU-NOTIF-003 | `PushDeviceConstraint.spec.ts` | profile-service | 🔴 |
 
-### AI
+### AI — `recognition-service`
 
-| FR | Description | HU | Test that verifies it | Module | Status |
-|----|-------------|----|-----------------------|--------|--------|
-| FR-601 | Capture grouped by session | HU-AI-001 | `SampleCapture.spec.ts` | ai | 🔴 |
-| FR-602 | Demonstrable consent ⚖️ | HU-AI-002 | `ConsentRequired.spec.ts` | ai | 🔴 |
-| FR-603 | Discard a full session | HU-AI-001 | `SessionDiscard.spec.ts` | ai | 🔴 |
-| FR-604 | Validation before training | HU-AI-003 | `SampleValidation.spec.ts` | ai | 🔴 |
-| FR-605 | Model registry with metrics | HU-AI-004 | `ModelRegistry.spec.ts` | ai | 🔴 |
-| FR-606 | Exactly one active model | HU-AI-005 | `SingleActiveModel.spec.ts` | ai | 🔴 |
-| FR-607 | Samples in MongoDB, decoupled | HU-AI-001 | `SampleRepository.spec.ts` | ai | 🔴 |
+| FR | Description | HU | Test that verifies it | Service | Status |
+|----|-------------|----|-----------------------|---------|--------|
+| FR-601 | Capture grouped by session | HU-AI-001 | `SampleCapture.spec.ts` | recognition-service | 🔴 |
+| FR-602 | Demonstrable consent ⚖️ | HU-AI-002 | `ConsentRequired.spec.ts` | recognition-service | 🔴 |
+| FR-603 | Discard a full session | HU-AI-001 | `SessionDiscard.spec.ts` | recognition-service | 🔴 |
+| FR-604 | Validation before training | HU-AI-003 | `SampleValidation.spec.ts` | recognition-service | 🔴 |
+| FR-605 | Model registry with metrics | HU-AI-004 | `ModelRegistry.spec.ts` | recognition-service | 🔴 |
+| FR-606 | Exactly one active model | HU-AI-005 | `SingleActiveModel.spec.ts` | recognition-service | 🔴 |
+| FR-607 | Samples in MongoDB, decoupled | HU-AI-001 | `SampleRepository.spec.ts` | recognition-service | 🔴 |
 
-### Usage
+### Usage — `analytics-service`
 
-| FR | Description | HU | Test that verifies it | Module | Status |
-|----|-------------|----|-----------------------|--------|--------|
-| FR-701 | Section entry event | HU-USG-001 | `UsageEvent.spec.ts` | usage | 🔴 |
-| FR-702 | Functional events | HU-USG-001 | `UsageEventTypes.spec.ts` | usage | 🔴 |
-| FR-703 | Most visited sections | HU-USG-002 | `SectionStats.spec.ts` | usage | 🔴 |
-| FR-704 | Sessions and average duration | HU-USG-003 | `SessionStats.spec.ts` | usage | 🔴 |
-| FR-705 | Events survive deletion | HU-USG-004 | `StatsSurviveDeletion.spec.ts` | usage | 🔴 |
-| FR-706 | Statistics require permission | HU-AUTHZ-002 | `AdminAccessControl.spec.ts` | usage | 🔴 |
+| FR | Description | HU | Test that verifies it | Service | Status |
+|----|-------------|----|-----------------------|---------|--------|
+| FR-701 | Section entry event | HU-USG-001 | `UsageEvent.spec.ts` | analytics-service | 🔴 |
+| FR-702 | Functional events | HU-USG-001 | `UsageEventTypes.spec.ts` | analytics-service | 🔴 |
+| FR-703 | Most visited sections | HU-USG-002 | `SectionStats.spec.ts` | analytics-service | 🔴 |
+| FR-704 | Sessions and average duration | HU-USG-003 | `SessionStats.spec.ts` | analytics-service (session facts come from iam-service) | 🔴 |
+| FR-705 | Events survive deletion | HU-USG-004 | `StatsSurviveDeletion.spec.ts` | analytics-service | 🔴 |
+| FR-706 | Statistics require permission | HU-AUTHZ-002 | `AdminAccessControl.spec.ts` | analytics-service | 🔴 |
 
-### Gamification ⚠️
+### Gamification ⚠️ — `profile-service`
 
-| FR | Description | HU | Test that verifies it | Module | Status |
-|----|-------------|----|-----------------------|--------|--------|
-| FR-801 | Achievement catalog | HU-GAM-001 | `AchievementCatalog.spec.ts` | gamification | ⏸ Blocked |
-| FR-802 | Progress tracking | HU-GAM-002 | `AchievementProgress.spec.ts` | gamification | ⏸ Blocked |
-| FR-803 | Unlock exactly once | HU-GAM-002 | `AchievementUnlock.spec.ts` | gamification | ⏸ Blocked |
-| FR-804 | Unlock notification | HU-GAM-003 | `AchievementNotification.spec.ts` | gamification | ⏸ Blocked |
-| FR-805 | Consult achievements | HU-GAM-004 | `UserAchievements.spec.ts` | gamification | ⏸ Blocked |
+| FR | Description | HU | Test that verifies it | Service | Status |
+|----|-------------|----|-----------------------|---------|--------|
+| FR-801 | Achievement catalog | HU-GAM-001 | `AchievementCatalog.spec.ts` | profile-service | ⏸ Blocked |
+| FR-802 | Progress tracking | HU-GAM-002 | `AchievementProgress.spec.ts` | profile-service | ⏸ Blocked |
+| FR-803 | Unlock exactly once | HU-GAM-002 | `AchievementUnlock.spec.ts` | profile-service | ⏸ Blocked |
+| FR-804 | Unlock notification | HU-GAM-003 | `AchievementNotification.spec.ts` | profile-service | ⏸ Blocked |
+| FR-805 | Consult achievements | HU-GAM-004 | `UserAchievements.spec.ts` | profile-service | ⏸ Blocked |
 
 > **Blocker:** RF8 does not exist in the SRS. See § Gaps, GAP-01.
 
-### Audit and configuration
+### Audit and configuration — `iam-service`
 
-| FR | Description | HU | Test that verifies it | Module | Status |
-|----|-------------|----|-----------------------|--------|--------|
-| FR-901 | Audit with before/after values | HU-AUD-001 | `AuditLog.spec.ts` | audit | 🔴 |
-| FR-902 | Trail survives deletion | HU-AUD-001 | `AuditSurvivesDeletion.spec.ts` | audit | 🔴 |
-| FR-903 | Technical error log | HU-AUD-002 | `ErrorLog.spec.ts` | audit | 🔴 |
-| FR-904 | Classification by error type | HU-AUD-002 | `ErrorTypeClassification.spec.ts` | audit | 🔴 |
-| FR-905 | Configurable password policy | HU-CFG-001 | `PasswordPolicyAdmin.spec.ts` | configuration | 🔴 |
-| FR-906 | Validation against the active policy | HU-CFG-001 | `PasswordValidation.spec.ts` | configuration | 🔴 |
-| FR-907 | Historical policies preserved | HU-CFG-001 | `PolicyHistory.spec.ts` | configuration | 🔴 |
+| FR | Description | HU | Test that verifies it | Service | Status |
+|----|-------------|----|-----------------------|---------|--------|
+| FR-901 | Audit with before/after values | HU-AUD-001 | `AuditLog.spec.ts` | iam-service | 🔴 |
+| FR-902 | Trail survives deletion | HU-AUD-001 | `AuditSurvivesDeletion.spec.ts` | iam-service | 🔴 |
+| FR-903 | Technical error log | HU-AUD-002 | `ErrorLog.spec.ts` | iam-service | 🔴 |
+| FR-904 | Classification by error type | HU-AUD-002 | `ErrorTypeClassification.spec.ts` | iam-service | 🔴 |
+| FR-905 | Configurable password policy | HU-CFG-001 | `PasswordPolicyAdmin.spec.ts` | iam-service | 🔴 |
+| FR-906 | Validation against the active policy | HU-CFG-001 | `PasswordValidation.spec.ts` | iam-service | 🔴 |
+| FR-907 | Historical policies preserved | HU-CFG-001 | `PolicyHistory.spec.ts` | iam-service | 🔴 |
 
-### Navigation
+### Navigation — mobile app (UI)
 
-| FR | Description | HU | Test that verifies it | Module | Status |
-|----|-------------|----|-----------------------|--------|--------|
-| FR-951 | Navigation between sections | HU-NAV-001 | `Navigation.spec.ts` (app) | ui | 🔴 |
-| FR-952 | No dead-end screens | HU-NAV-001 | `Navigation.spec.ts` (app) | ui | 🔴 |
+| FR | Description | HU | Test that verifies it | Service | Status |
+|----|-------------|----|-----------------------|---------|--------|
+| FR-951 | Navigation between sections | HU-NAV-001 | `Navigation.spec.ts` (app) | mobile app (events → analytics-service) | 🔴 |
+| FR-952 | No dead-end screens | HU-NAV-001 | `Navigation.spec.ts` (app) | mobile app | 🔴 |
 
 ---
 
 ## 3. FR → tables matrix
 
 The check nobody usually runs: does each FR have somewhere to store its data,
-and does each table have a requirement justifying it?
+and does each table have a requirement justifying it? Tables are grouped by the service
+that owns them (database per service; no foreign keys across services).
+
+### `iam-service` (PostgreSQL `iam`)
 
 | Table | FRs that justify it | Status |
 |-------|---------------------|--------|
-| `users` | FR-001 … FR-007, FR-014, FR-015, FR-201 | ✅ Justified |
+| `users` | FR-001 … FR-007, FR-014, FR-015, FR-201, FR-202 | ✅ Justified |
 | `user_auth_providers` | FR-008, FR-009 | ✅ Justified |
 | `user_sessions` | FR-011, FR-013, FR-704 | ✅ Justified |
 | `refresh_tokens` | FR-012 | ✅ Justified |
 | `user_tokens` | FR-003, FR-004, FR-010 | ✅ Justified |
+| `password_policies` | FR-905 … FR-907 | ✅ Justified — **Identity domain since model v9** (DATA-12) |
 | `roles` | FR-101, FR-104 | ✅ Justified |
 | `permissions` | FR-102 | ✅ Justified |
 | `user_roles` | FR-101 | ✅ Justified |
 | `role_permissions` | FR-102, FR-103 | ✅ Justified |
+| `audit_logs` | FR-901, FR-902 | ✅ Justified |
+| `error_logs` | FR-903, FR-904 | ✅ Justified |
+
+### `profile-service` (PostgreSQL `profile`)
+
+| Table | FRs that justify it | Status |
+|-------|---------------------|--------|
 | `user_preferences` | FR-203 … FR-206, FR-508 | ✅ Justified |
+| `notification_types` | FR-501 | ✅ Justified |
+| `user_devices` | FR-503, FR-509 | ✅ Justified |
+| `notifications` | FR-502, FR-504 … FR-507, FR-804 | ✅ Justified (FR-804 conditional on RF8) |
+| `achievements` | FR-801 | ⚠️ **GAP-01: depends on RF8** |
+| `user_achievements` | FR-802, FR-803, FR-805 | ⚠️ **GAP-01: depends on RF8** |
+
+### `lexicon-service` (PostgreSQL `lexicon`)
+
+| Table | FRs that justify it | Status |
+|-------|---------------------|--------|
 | `categories` | FR-301, FR-308 | ✅ Justified |
 | `sign_lexicon` | FR-301, FR-304, FR-305, FR-307, FR-310 | ✅ Justified |
-| `sign_localizations` | FR-306 | ✅ Justified |
-| `sign_translations` | — | ❌ **GAP-02: duplicate of `sign_localizations`** |
+| `sign_localizations` | FR-302, FR-306 | ✅ Justified |
 | `multimedia_resources` | FR-303, FR-309 | ✅ Justified |
+
+> `sign_translations` (GAP-02, duplicate of `sign_localizations`) was already removed from the v8
+> model and no longer appears here.
+
+### `recognition-service` (PostgreSQL `recognition` + MongoDB)
+
+| Table | FRs that justify it | Status |
+|-------|---------------------|--------|
 | `translations` | FR-403, FR-406, FR-407 | ✅ Justified |
 | `translation_signs` | FR-404 | ✅ Justified |
 | `ai_models` | FR-403, FR-408, FR-605, FR-606 | ✅ Justified |
 | `gesture_samples` (MongoDB) | FR-601 … FR-604, FR-607 | ✅ Justified |
-| `notification_types` | FR-501 | ✅ Justified |
-| `user_devices` | FR-503, FR-509 | ✅ Justified |
-| `notifications` | FR-502, FR-504 … FR-507 | ✅ Justified |
-| `usage_events` | FR-701, FR-702, FR-703, FR-705, FR-951 | ✅ Justified |
-| `achievements` | FR-801 | ⚠️ **GAP-01: depends on RF8** |
-| `user_achievements` | FR-802, FR-803, FR-805 | ⚠️ **GAP-01: depends on RF8** |
-| `audit_logs` | FR-901, FR-902 | ✅ Justified |
-| `error_logs` | FR-903, FR-904 | ✅ Justified |
-| `password_policies` | FR-905 … FR-907 | ✅ Justified — **Identity domain since model v9** (DATA-12) |
 
-**Result:** 26 of 28 tables justified. 1 duplicate (GAP-02), 2 conditional on RF8 (GAP-01).
+### `analytics-service` (PostgreSQL `analytics`)
+
+| Table | FRs that justify it | Status |
+|-------|---------------------|--------|
+| `usage_events` | FR-701, FR-702, FR-703, FR-705, FR-951 | ✅ Justified |
+| `usage_daily_stats` | FR-703 (rollup cache) | ⚠️ **GAP-11: no FR text for the rollup** (DATA-03) |
+| `session_daily_stats` | FR-704 (rollup cache) | ⚠️ **GAP-11: no FR text for the rollup** (DATA-03) |
+
+### FRs with no table of their own
+
+These FRs are intentionally not persisted by a table of their own. They are not gaps.
+
+| FR | Reason |
+|----|--------|
+| FR-401 | Live camera capture and inference on the client; the resulting translation is persisted through FR-403 |
+| FR-402 | Audio output is a UI behaviour; the delivery mode is recorded by FR-403 (`translations.output_mode`) |
+| FR-405 | Visual feedback of a failed recognition (UI); the failure is counted as `TRANSLATION_FAILED` through FR-702 |
+| FR-706 | Access-control rule (permission `stats.read`, aggregated output, INV-012); enforced over `role_permissions` and `usage_events`, stores nothing |
+| FR-952 | UI rule (no dead-end screens); stores nothing |
+
+### Result
+
+- **29 tables** (28 PostgreSQL + 1 MongoDB collection): **25 justified**, 2 conditional on RF8
+  (GAP-01), 2 rollup tables whose FR text is missing (GAP-11).
+- **79 FRs**: **74 persisted** in a table (listed above) and **5 with no persistence** (FR-401, FR-402,
+  FR-405, FR-706, FR-952).
 
 ---
 
@@ -360,22 +427,24 @@ and does each table have a requirement justifying it?
 | ID | Gap type | Description | Required action | Owner | Priority |
 |----|----------|-------------|-----------------|-------|----------|
 | **GAP-01** | Table without an FR | `achievements` and `user_achievements` exist in the model with no SRS requirement behind them. In a traceability review this reads as gold-plating | **Decision.** Approve RF8 and add it to the SRS, **or** remove both tables, their two `Ref`s, the `Gamification` TableGroup, the FR-800 series and EP-009. There is no third option: either the requirement exists or the tables do not | Team + instructor | **High** |
-| **GAP-02** | Duplicate table | `sign_translations` and `sign_localizations` are the same table twice — same columns, same unique index `(sign_id, ui_language)`, same explanatory note copied across. `sign_localizations` is the one in the `TableGroup`; `sign_translations` is orphaned, the leftover of a rename | Remove the `Table sign_translations` block and the line `Ref: sign_translations.sign_id > sign_lexicon.sign_id`. Keep `sign_localizations`: it is in the TableGroup and its `(ui_language, name)` index is what FR-302 search needs | Juan Mauricio | **High** |
-| **GAP-03** | Non-existent table cited | The traceability comment at the end of the DBML cites `password_reset_tokens`. That table does not exist — `user_tokens` does both jobs through its `token_type` enum | In the RF1 line of the comment, replace `password_reset_tokens` with `user_tokens` | Juan Mauricio | Medium |
-| **GAP-04** | Incorrect statement | The DBML states RF2 is "solo UI, sin persistencia", but every section entry is persisted as `SECTION_VIEW` in `usage_events` — that is what makes RF6 possible, and the whole reason the `usage_section` enum exists | Change the RF2 line to: "sin tablas propias; cada entrada a una sección se registra como SECTION_VIEW en usage_events (insumo de RF6)" | Juan Mauricio | Low |
-| **GAP-05** | Constraints declared but not written | The DBML lists six constraints delegated to `migrations/002_constraints.sql` and ends with `// ...`. Four more that the requirements demand are missing: `multimedia_resources.position >= 1` (FR-309), `password_policies.min_length <= max_length` (FR-905), a single active `password_policies` row (FR-905), and `achievements.target_count > 0` (FR-801, if RF8 is approved) | Complete the comment list and **write `migrations/002_constraints.sql`**. A constraint that lives only in a comment is a comment: the database will accept `confidence = 47.3` until the DDL says otherwise | Juan Mauricio | **High** |
+| **GAP-02** | Duplicate table | `sign_translations` and `sign_localizations` were the same table twice. ✅ **Already removed from the v8 model** (see `06-data/domains/04-lexicon.md`); no longer in § 3. Recorded so the fix is not undone | None — keep `sign_localizations` (its `(ui_language, name)` index serves FR-302) | Juan Mauricio | Closed |
+| **GAP-03** | Non-existent table cited | The traceability comment at the end of the DBML cited `password_reset_tokens`. ✅ **Closed in v9** — it now cites `user_tokens` | None | Juan Mauricio | Closed |
+| **GAP-04** | Incorrect statement | The DBML stated RF2 is "solo UI, sin persistencia", but every section entry is persisted as `SECTION_VIEW` in `usage_events`. ✅ **Closed in v9** | None | Juan Mauricio | Closed |
+| **GAP-05** | Constraints declared but not written | The DBML lists six constraints delegated to `migrations/002_constraints.sql` and ends with `// ...`. Four more that the requirements demand are missing: `multimedia_resources.position >= 1` (FR-309), `password_policies.min_length <= max_length` (FR-905), a single active `password_policies` row (FR-905), and `achievements.target_count > 0` (FR-801, if RF8 is approved) | Complete the comment list and **write `migrations/002_constraints.sql`**. A constraint that lives only in a comment is a comment: the database will accept `confidence = 47.3` until the DDL says otherwise. In the microservices layout each service carries its own migrations | Juan Mauricio | **High** |
 | **GAP-06** | Nullable field that should not be | `translations.model_id` is nullable, but FR-403 requires every translation to record the model that produced it and FR-408 relies on that link. Nullable means a translation can exist with no traceability, defeating the field's stated purpose. Likely reason: translations queued while the connection was down | **Decision.** Make it `not null` and resolve the active model before insert — whichever side runs inference knows which version it used. Alternatively keep it nullable and document exactly what `NULL` means, plus a backfill job | Team | Medium |
 | **GAP-07** | Enum values with no consumer | `reference_entity` declares `CATEGORY`, `AI_MODEL` and `USER`, which no FR produces. `usage_section.ACHIEVEMENTS` depends on GAP-01 | Low impact — an unused enum value costs nothing at runtime. Either document them as reserved extension points or trim them, so a future reader does not hunt for code that does not exist | Juan Mauricio | Low |
 | **GAP-08** | RF without an explicit SRS entry | Audit, error handling, password policy and Law 1581 compliance have tables and FRs but no RF in the SRS. Unlike GAP-01 these are not gold-plating — they are cross-cutting technical requirements every system needs — but the traceability does not close cleanly without them | Name them explicitly in the SRS as cross-cutting requirements | Team | Medium |
 | **GAP-09** | FR without a test | Every FR is at 🔴 Pending — no test exists yet | Write the test alongside each HU, never after | Team | Expected at baseline |
 | **GAP-10** | Overloaded sprints | Sprints 4, 5 and 6 exceed 40 points with velocity still unmeasured | Measure real velocity in Sprint 1 and rebalance from Sprint 4 onwards | Team | Medium |
+| **GAP-11** | Tables without an FR | `usage_daily_stats` and `session_daily_stats` (`06-data/domains/08-usage.md`, DATA-03) are rollup caches with no requirement text of their own, and `02-domain/domain-map.md` says Usage Analytics "owns no aggregated data". By the matrix rule a table with no FR does not enter the model | Add an FR (or extend FR-703/FR-704) stating the rollup as a cache with a recompute job, and fix the domain map sentence | Team | Medium |
+| **GAP-12** | Stale counts in this matrix | Through v0.2 the baseline said 30 tables and § 3 listed 28 rows (including the already-removed `sign_translations`); the model v9 has 29. The "17/17 SRS" and "77/79 persisted" figures in § 7 were also wrong, and 17 FRs were reported as missing from § 3 although most were covered by ranges | ✅ Fixed in v0.3 (SRS 15/15, 74/79 persisted + 5 explicit no-persistence, 25/29 tables) | Documentation | Closed |
+| **GAP-13** | Monolith wording outside the matrix | `04-requirements/non-functional.md` and `_template-hu.md` still say "modular monolith" / "module in the monolith"; the architecture decision is microservices. `non-functional.md` also needs the service owner per NFR (e.g. NFR-008 now means one image per service) | ✅ Resolved in branch `chore/docs-microservices-architecture` (2026-10-04) | Documentation | Closed |
+| **GAP-14** | Cross-service flows without an FR | FR-202 (change password: `profile-service` UI, credential in `iam-service`), FR-206 (default preferences on `iam.UserRegistered`), FR-704 (session facts from `iam-service`, rollup in `analytics-service`) and FR-804 (unlock notification via events) cross a service boundary, but no FR or HU states the event or call that links them | Record the event/REST contract in the HU acceptance criteria and in `09-microservices/` | Team | Medium |
 
 ### Immediate work, no decision required
 
-**GAP-02, GAP-03 and GAP-04** are three edits to the DBML that close the
-traceability without changing a single design decision. **GAP-05** is pending
-work, not a decision. Only **GAP-01** and **GAP-06** need the team and the
-instructor to decide.
+**GAP-05** is pending work, not a decision. **GAP-11** and **GAP-14** only need a requirement
+sentence. Only **GAP-01** and **GAP-06** need the team and the instructor to decide.
 
 ### What the model gets right
 
@@ -389,19 +458,18 @@ well built:
 - **No audio-only notification channel** — accessibility encoded as an enum constraint rather than a guideline cannot be violated by accident
 - **Refresh token rotation with `replaced_by_token_id`** — makes reuse of a spent token detectable, which is the point of rotation and is frequently omitted
 
-
 ---
 
 ## 7. Coverage summary
 
 | Check | Result |
 |-------|--------|
-| SRS requirements with at least one FR | 17 / 17 ✅ |
+| SRS requirements with at least one FR | 15 / 15 ✅ (RF1–RF7 + 8 ERF). Not counted: RF8 (proposed, not in the SRS) and 4 cross-cutting rows with no RF |
 | FRs with at least one HU | 79 / 79 ✅ |
 | HUs with a defined test case | 53 / 53 ✅ |
 | Tests implemented | 0 / 53 🔴 (expected at baseline) |
-| Tables justified by an FR | 26 / 28 ⚠️ (GAP-01, GAP-02) |
-| FRs with a table that persists them | 77 / 79 ✅ (FR-951, FR-952 are UI, correctly without their own table) |
+| Tables justified by an FR | 25 / 29 ⚠️ (GAP-01 ×2, GAP-11 ×2) |
+| FRs with a table that persists them | 74 / 79 ✅ (the other 5 — FR-401, FR-402, FR-405, FR-706, FR-952 — have no persistence by design, see § 3) |
 | NFRs with a defined verification method | 10 / 10 ✅ |
 | NFRs verified | 0 / 10 🔴 (expected at baseline) |
 
@@ -412,7 +480,7 @@ well built:
 1. When an HU is created → add its row in § 2 and § 5
 2. When a test is written → note the file in "Test that verifies it"
 3. When an HU is completed → change the status to ✅ in both sections
-4. When a table is added to the model → add it to § 3 with the FR that justifies it. **A table with no FR does not enter the model.**
+4. When a table is added to the model → add it to § 3 under its owning service with the FR that justifies it. **A table with no FR does not enter the model.**
 5. At each Sprint Planning → review § 6 gaps and assign actions
 6. At each Sprint Review → update § 7
 
@@ -424,6 +492,7 @@ well built:
 |---------|------|--------|--------|
 | v0.1 | 2026-09-08 | Generic template replaced with the real matrix. Added the SRS → FR section and the FR → tables section, which is what surfaced GAP-01 and GAP-02. | Juan Mauricio Suaza Solórzano |
 | v0.2 | 2026-09-08 | Test file names and tooling corrected to the real stack (Node/Express + Jest, not Java + JUnit). | Juan Mauricio Suaza Solórzano |
+| v0.3 | 2026-10-04 | "Module" column renamed to "Service" (iam, profile, lexicon, recognition, analytics) with a module → service table. § 3 regrouped by service; added FR-202, FR-302 and FR-804 to the tables that persist them; listed FR-401, FR-402, FR-405, FR-706 and FR-952 as explicit "no persistence". Added the `usage_daily_stats` and `session_daily_stats` rows; removed the already-dropped `sign_translations`. § 7 corrected (SRS 15/15, tables 25/29, FRs persisted 74/79). Closed GAP-02/03/04; added GAP-11 … GAP-14. | Documentation |
 
 ---
 
@@ -433,5 +502,6 @@ well built:
 - Functional requirements → `functional.md`
 - Non-functional requirements → `non-functional.md`
 - Data model → `06-data/` (`traduce_senas.dbml`, model v9) · per-domain detail in `06-data/domains/`
+- Services and ownership → `09-microservices/`
 - Testing strategy → `11-quality/testing-strategy.md`
 - DoD that determines when an HU is Done → `00-governance/definition-of-done.md`
