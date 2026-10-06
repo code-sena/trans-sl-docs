@@ -126,4 +126,4 @@ detached from the user's identity. See NFR8 and `scope.md`.
 - Scope boundaries → `01-context/scope.md`
 - Term definitions → `01-context/glossary.md`
 - Product vision and roadmap → `03-product/vision.md`
-- Documentation language rule → `05-architecture/decisions/records/ADR-001-idioma-documentacion.md`
+- Documentation language rule → `05-architecture/decisions/records/ADR-001-documentation-language.md`

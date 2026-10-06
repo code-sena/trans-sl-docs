@@ -12,7 +12,7 @@
 2. If it's not there: add it with its definition.
 3. If there is disagreement about the definition: discuss it as a team and update this document.
 
-Per [ADR-001](../05-architecture/decisions/records/ADR-001-idioma-documentacion.md), all
+Per [ADR-001](../05-architecture/decisions/records/ADR-001-documentation-language.md), all
 documentation and code are written in English while the business domain is Spanish. The
 **Canonical term** column below is therefore binding: it is the exact name to use in classes,
 variables, database columns and API fields. The **Spanish term** column records the word the

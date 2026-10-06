@@ -61,7 +61,7 @@ the reference you open while writing a query; the root files are the ones you re
     ├── 08-usage.md                  usage events and the two daily rollups
     ├── 09-gamification.md        ⏸ achievements — not built until RF8 exists
     ├── 10-audit.md                  audit trail and error log
-    └── 11-configuration.md       ⛔ dissolved in v9 — kept as the record of a reversed decision
+    └── 11-configuration.md       ⛔ dissolved in v9 — no file; reasoning in 01-identity.md
 ```
 
 **Every domain file has the same shape:** what the domain owns → the DDL of each table → a data
