@@ -1,0 +1,702 @@
+openapi: 3.0.3
+info:
+  title: Profile Service API
+  version: 1.0.0
+  description: |
+    Profile & Preferences, Notifications and Gamification (`06-profile-service`, port 3005,
+    PostgreSQL db `profile`). Data owned: `06-data/domains/03-profile`, `07-notification`,
+    `09-gamification` (`user_preferences`, `notification_types`, `user_devices`, `notifications`,
+    `achievements`, `user_achievements`).
+
+    Public paths served (through the gateway): `/api/profile/**`, `/api/notifications/**`,
+    `/api/achievements/**`.
+
+    ## Source (extraction status: pending)
+    The backend has no profile, notification or achievement module yet (only `GET /api/users/me`,
+    which belongs to iam-service). All endpoints are **planned** (`x-status: planned`) and derived from
+    `04-requirements/user-stories.md` (EP-003, EP-006, EP-009) and `06-data`; FR/HU references are in
+    `x-requirements`. Gamification (EP-009) is **pending approval of RF8**: if it is rejected, the
+    `/api/achievements` endpoints and their tables are removed.
+
+    ## Identity data
+    Account data (email, password, status) belongs to iam-service. This service keeps the profile data
+    it needs (display name, username) replicated from the event `iam.UserRegistered`, which also makes
+    it create the default preferences (ES, LIGHT, notifications enabled).
+
+    ## Accessibility
+    Every notification channel (PUSH, EMAIL, IN_APP) is visual; no audio-only channel exists (NFR-001).
+
+    ## Roles
+    The user manages only their own data (identified by the JWT `sub`). Catalog administration
+    (notification types, scheduled notifications, achievements) requires ADMIN.
+
+    ## Events
+    Consumes `iam.UserRegistered`, `recognition.TranslationProduced` (evaluates achievements).
+    Publishes `profile.AchievementUnlocked`, `profile.PreferencesChanged`.
+
+servers:
+  - url: http://localhost:3005
+    description: Local development (direct to the service)
+  - url: http://localhost:8080
+    description: Local development through the api-gateway
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Profile
+    description: Profile and preferences of the user
+  - name: Notifications
+    description: Visual notifications, devices and notification types
+  - name: Achievements
+    description: Gamification (pending RF8)
+  - name: Health
+    description: Service status
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: health
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  timestamp:
+                    $ref: './_shared.yaml#/components/schemas/Timestamp'
+                  dependencies:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        enum: [ok, degraded, down]
+                      rabbitmq:
+                        type: string
+                        enum: [ok, degraded, down]
+              example:
+                status: ok
+                timestamp: '2026-10-04T10:30:00Z'
+                dependencies:
+                  database: ok
+                  rabbitmq: ok
+        '503':
+          description: Service not available
+
+  # ───────────────────────────── Profile ─────────────────────────────
+  /api/profile/me:
+    get:
+      summary: My profile
+      operationId: getProfile
+      tags: [Profile]
+      x-status: planned
+      x-requirements: [FR-201, HU-PROF-001]
+      responses:
+        '200':
+          description: Profile with preferences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './_shared.yaml#/components/responses/NotFound'
+    patch:
+      summary: Edit my profile
+      operationId: updateProfile
+      tags: [Profile]
+      x-status: planned
+      x-requirements: [FR-201, FR-901, HU-PROF-001]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fullName:
+                  type: string
+                  maxLength: 255
+                username:
+                  type: string
+                  maxLength: 255
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '409':
+          description: Username already taken (`USERNAME_TAKEN`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+
+  /api/profile/preferences:
+    get:
+      summary: My preferences
+      operationId: getPreferences
+      tags: [Profile]
+      x-status: planned
+      x-requirements: [FR-203, FR-204, FR-205, FR-206, HU-PROF-003]
+      responses:
+        '200':
+          description: Preferences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preferences'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+    patch:
+      summary: Change theme, interface language or the notification master switch
+      description: Publishes `profile.PreferencesChanged`. Turning notifications off stops new deliveries but keeps the received history.
+      operationId: updatePreferences
+      tags: [Profile]
+      x-status: planned
+      x-requirements: [FR-203, FR-204, FR-205, FR-508, HU-PROF-003, HU-PROF-004, HU-PROF-005]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                uiLanguage:
+                  $ref: '#/components/schemas/UiLanguage'
+                theme:
+                  $ref: '#/components/schemas/Theme'
+                notificationsEnabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Preferences updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preferences'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+
+  # ───────────────────────────── Notifications ─────────────────────────────
+  /api/notifications:
+    get:
+      summary: My notifications
+      description: Newest first, with unread first-class state (`readAt`).
+      operationId: listNotifications
+      tags: [Notifications]
+      x-status: planned
+      x-requirements: [FR-502, FR-507, HU-NOTIF-002]
+      parameters:
+        - $ref: './_shared.yaml#/components/parameters/PageParam'
+        - $ref: './_shared.yaml#/components/parameters/LimitParam'
+        - name: unreadOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Page of notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta, unreadCount]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+                  meta:
+                    $ref: './_shared.yaml#/components/schemas/PaginatedMeta'
+                  unreadCount:
+                    type: integer
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+    post:
+      summary: Create or schedule a notification (ADMIN)
+      description: With `scheduledAt` it is stored PENDING and delivered at that moment. A PUSH notification requires `deviceId`.
+      operationId: createNotification
+      tags: [Notifications]
+      x-status: planned
+      x-requirements: [FR-503, FR-504, FR-505, HU-NOTIF-004, HU-NOTIF-005]
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNotificationRequest'
+      responses:
+        '201':
+          description: Notification stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+
+  /api/notifications/{id}/read:
+    parameters:
+      - $ref: './_shared.yaml#/components/parameters/IdParam'
+    patch:
+      summary: Mark a notification as read
+      operationId: markNotificationRead
+      tags: [Notifications]
+      x-status: planned
+      x-requirements: [FR-502, HU-NOTIF-002]
+      responses:
+        '200':
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './_shared.yaml#/components/responses/NotFound'
+
+  /api/notifications/devices:
+    post:
+      summary: Register a device for push
+      operationId: registerDevice
+      tags: [Notifications]
+      x-status: planned
+      x-requirements: [FR-503, FR-509, HU-NOTIF-003]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pushToken, platform]
+              properties:
+                pushToken:
+                  type: string
+                  maxLength: 255
+                platform:
+                  type: string
+                  enum: [ANDROID, IOS, WEB]
+      responses:
+        '201':
+          description: Device registered as active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+
+  /api/notifications/devices/{id}:
+    parameters:
+      - $ref: './_shared.yaml#/components/parameters/IdParam'
+    delete:
+      summary: Revoke a device
+      description: Sets `is_active` to false and stamps `revoked_at`.
+      operationId: revokeDevice
+      tags: [Notifications]
+      x-status: planned
+      x-requirements: [FR-509, HU-NOTIF-003]
+      responses:
+        '204':
+          description: Device revoked
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './_shared.yaml#/components/responses/NotFound'
+
+  /api/notifications/types:
+    get:
+      summary: Notification type catalog
+      operationId: listNotificationTypes
+      tags: [Notifications]
+      x-status: planned
+      x-requirements: [FR-501, HU-NOTIF-001]
+      responses:
+        '200':
+          description: Types
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NotificationType'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+
+  /api/notifications/types/{id}:
+    parameters:
+      - $ref: './_shared.yaml#/components/parameters/IdParam'
+    patch:
+      summary: Activate or withdraw a notification type (ADMIN)
+      description: A withdrawn type is no longer generated for any user; delivered notifications stay visible.
+      operationId: updateNotificationType
+      tags: [Notifications]
+      x-status: planned
+      x-requirements: [FR-501, HU-NOTIF-001]
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [isActive]
+              properties:
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Type updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationType'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared.yaml#/components/responses/NotFound'
+
+  # ───────────────────────────── Achievements ─────────────────────────────
+  /api/achievements:
+    get:
+      summary: My achievements and progress
+      description: Obtained ones with their date, pending ones with progress towards the target. Secret achievements hide name and description until unlocked.
+      operationId: listAchievements
+      tags: [Achievements]
+      x-status: planned
+      x-requirements: [FR-805, HU-GAM-004]
+      responses:
+        '200':
+          description: Achievements with the user's progress
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserAchievement'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+    post:
+      summary: Create an achievement (ADMIN)
+      operationId: createAchievement
+      tags: [Achievements]
+      x-status: planned
+      x-requirements: [FR-801, HU-GAM-001]
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAchievementRequest'
+      responses:
+        '201':
+          description: Achievement created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Achievement'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+
+  /api/achievements/{id}:
+    parameters:
+      - $ref: './_shared.yaml#/components/parameters/IdParam'
+    patch:
+      summary: Edit or deactivate an achievement (ADMIN)
+      operationId: updateAchievement
+      tags: [Achievements]
+      x-status: planned
+      x-requirements: [FR-801, HU-GAM-001]
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                targetCount:
+                  type: integer
+                  minimum: 1
+                points:
+                  type: integer
+                isSecret:
+                  type: boolean
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Achievement updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Achievement'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared.yaml#/components/responses/NotFound'
+
+components:
+  schemas:
+    UiLanguage:
+      type: string
+      enum: [ES, EN]
+    Theme:
+      type: string
+      enum: [LIGHT, DARK]
+
+    Preferences:
+      type: object
+      description: Row of `user_preferences`.
+      required: [uiLanguage, theme, notificationsEnabled]
+      properties:
+        uiLanguage:
+          $ref: '#/components/schemas/UiLanguage'
+        theme:
+          $ref: '#/components/schemas/Theme'
+        notificationsEnabled:
+          type: boolean
+        updatedAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+
+    Profile:
+      type: object
+      required: [userId, fullName, preferences]
+      properties:
+        userId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        fullName:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        preferences:
+          $ref: '#/components/schemas/Preferences'
+
+    NotificationChannel:
+      type: string
+      description: All channels are visual; none is audio-only.
+      enum: [PUSH, EMAIL, IN_APP]
+
+    NotificationStatus:
+      type: string
+      enum: [PENDING, SENT, FAILED, READ, CANCELLED]
+
+    NotificationType:
+      type: object
+      required: [id, code, name, isActive]
+      properties:
+        id:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        code:
+          type: string
+          example: LOGRO_DESBLOQUEADO
+        name:
+          type: string
+        description:
+          type: string
+        isActive:
+          type: boolean
+
+    Notification:
+      type: object
+      required: [id, typeId, channel, title, body, status, createdAt]
+      properties:
+        id:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        typeId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        deviceId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        channel:
+          $ref: '#/components/schemas/NotificationChannel'
+        title:
+          type: string
+          maxLength: 150
+        body:
+          type: string
+        referenceType:
+          type: string
+          enum: [TRANSLATION, SIGN, CATEGORY, ACHIEVEMENT, NOTIFICATION, AI_MODEL, USER]
+          description: Entity that originated the notification (logical reference, no foreign key).
+        referenceId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        status:
+          $ref: '#/components/schemas/NotificationStatus'
+        scheduledAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+        sentAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+        readAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+        createdAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+
+    CreateNotificationRequest:
+      type: object
+      required: [userId, typeId, title, body]
+      properties:
+        userId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        typeId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        channel:
+          $ref: '#/components/schemas/NotificationChannel'
+        deviceId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        title:
+          type: string
+          maxLength: 150
+        body:
+          type: string
+        referenceType:
+          type: string
+        referenceId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        scheduledAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+
+    Device:
+      type: object
+      required: [id, platform, isActive]
+      properties:
+        id:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        platform:
+          type: string
+          enum: [ANDROID, IOS, WEB]
+        isActive:
+          type: boolean
+        registeredAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+        revokedAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+
+    AchievementMetric:
+      type: string
+      enum: [TRANSLATIONS_COMPLETED, SIGNS_LEARNED, ALPHABET_COMPLETED, SESSIONS_COMPLETED]
+
+    Achievement:
+      type: object
+      required: [id, code, name, metric, targetCount, points, isActive]
+      properties:
+        id:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        code:
+          type: string
+          example: FIRST_TRANSLATION
+        name:
+          type: string
+        description:
+          type: string
+        metric:
+          $ref: '#/components/schemas/AchievementMetric'
+        targetCount:
+          type: integer
+        points:
+          type: integer
+          default: 10
+        iconReference:
+          type: string
+        isSecret:
+          type: boolean
+        isActive:
+          type: boolean
+
+    CreateAchievementRequest:
+      type: object
+      required: [code, name, description, metric, targetCount]
+      properties:
+        code:
+          type: string
+          maxLength: 50
+        name:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+        metric:
+          $ref: '#/components/schemas/AchievementMetric'
+        targetCount:
+          type: integer
+          minimum: 1
+        points:
+          type: integer
+          default: 10
+        iconReference:
+          type: string
+        isSecret:
+          type: boolean
+          default: false
+
+    UserAchievement:
+      type: object
+      description: An achievement joined with the user's row of `user_achievements`.
+      required: [achievement, currentCount]
+      properties:
+        achievement:
+          $ref: '#/components/schemas/Achievement'
+        currentCount:
+          type: integer
+        achievedAt:
+          allOf:
+            - $ref: './_shared.yaml#/components/schemas/Timestamp'
+          nullable: true
+          description: Null while in progress.
+
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared.yaml#/components/securitySchemes/bearerAuth'

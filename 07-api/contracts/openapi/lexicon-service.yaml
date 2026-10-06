@@ -1,0 +1,996 @@
+openapi: 3.0.3
+info:
+  title: Lexicon Service API
+  version: 1.0.0
+  description: |
+    Learning & Lexicon (`04-lexicon-service`, port 3003, PostgreSQL db `lexicon` + static media
+    `.glb`/`.png`). Data owned: `06-data/domains/04-lexicon` (`sign_lexicon`, `sign_localizations`,
+    `categories`, `multimedia_resources`).
+
+    Public paths served (through the gateway): `/api/lexicon/**`, including `/api/lexicon/media/**`.
+
+    ## Source (extraction status: in progress)
+    The 17 endpoints below are copied from the real routes of the backend module
+    `domains/lexicon/adapters/inbound/http/routes.ts` (mounted today at `/api/lexicon`), with the DTOs of
+    `dto/sign_request.ts` and the domain entities. This service keeps the lexicon response envelope
+    (`{success, message, data, meta}`) and error format (`{success: false, code, message}`) of the code,
+    declared as `LexiconResult` and `LexiconError` below. Ids follow the current code (integer
+    `lexiconId`, `categoryId`, `resourceId`); migration to UUID (`06-data`) is pending.
+
+    ## Access rules
+    - Browsing the catalog (signs, search, alphabet, categories, media) is **public**: the alphabet
+      screen works without a session.
+    - Every write and the `/admin/**` views require a JWT **and the ADMIN role**.
+    - Fixed routes (`/search`, `/alphabet`, `/categories`, `/admin/signs`) take precedence over `/{code}`.
+
+    ## Rules worth knowing
+    - `code` is the contract with the recognizer (the class the AI model predicts): pattern
+      `^[A-Z0-9_]{1,50}$`, never renamed once published (INV-018); retire a sign by deactivating it.
+    - A sign is always created as DRAFT; `status` in the body is ignored. It becomes visible
+      (ACTIVE) with `POST /{code}/publish`. Public listings only return ACTIVE signs (INV-019).
+    - Resource URLs stored as relative paths are returned as absolute URLs under `/api/lexicon/media`
+      (or `LEXICON_MEDIA_BASE_URL` when configured, for a CDN). Media is cached for 7 days.
+
+    ## Events published
+    `lexicon.SignPublished`, `lexicon.SignWithdrawn` (recognition-service refreshes its catalog).
+
+servers:
+  - url: http://localhost:3003
+    description: Local development (direct to the service)
+  - url: http://localhost:8080
+    description: Local development through the api-gateway
+
+security: []
+
+tags:
+  - name: Signs
+    description: Public catalog of signs
+  - name: Categories
+    description: Sign categories
+  - name: Admin
+    description: Content administration (ADMIN)
+  - name: Media
+    description: Static 3D models and thumbnails
+  - name: Health
+    description: Service status
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: health
+      tags: [Health]
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  timestamp:
+                    $ref: './_shared.yaml#/components/schemas/Timestamp'
+                  dependencies:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        enum: [ok, degraded, down]
+                      rabbitmq:
+                        type: string
+                        enum: [ok, degraded, down]
+              example:
+                status: ok
+                timestamp: '2026-10-04T10:30:00Z'
+                dependencies:
+                  database: ok
+                  rabbitmq: ok
+        '503':
+          description: Service not available
+
+  /api/lexicon/media/{path}:
+    get:
+      summary: Static media file (3D model or thumbnail)
+      description: Serves files from the media directory, for example `alfabeto/glb/A.glb`. Cached 7 days. Unknown files answer 404 with the lexicon error format.
+      operationId: getMedia
+      tags: [Media]
+      x-status: implemented
+      parameters:
+        - name: path
+          in: path
+          required: true
+          description: Path relative to the media directory (may contain slashes).
+          schema:
+            type: string
+          example: alfabeto/glb/A.glb
+      responses:
+        '200':
+          description: The file
+          content:
+            model/gltf-binary:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ───────────────────────────── Public catalog ─────────────────────────────
+  /api/lexicon:
+    get:
+      summary: List signs
+      description: Only ACTIVE signs. `meta` reports `limit` and `offset`.
+      operationId: listSigns
+      tags: [Signs]
+      x-status: implemented
+      x-requirements: [FR-301, HU-LEX-001]
+      parameters:
+        - $ref: '#/components/parameters/SignTypeParam'
+        - $ref: '#/components/parameters/SignLanguageParam'
+        - name: category
+          in: query
+          description: Category name
+          schema:
+            type: string
+        - name: q
+          in: query
+          description: Text search
+          schema:
+            type: string
+        - $ref: '#/components/parameters/UiLangParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/OffsetParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/SignList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create a sign (ADMIN)
+      description: The sign is always created as DRAFT. Needs at least a Spanish localization (`word` or `localizations`).
+      operationId: createSign
+      tags: [Admin]
+      x-status: implemented
+      x-requirements: [FR-305, FR-307, HU-LEX-006]
+      x-required-role: ADMIN
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSignRequest'
+            example:
+              code: GREETING_HELLO
+              type: WORD
+              category: Greetings
+              word: Hola
+              description: Greeting
+      responses:
+        '201':
+          $ref: '#/components/responses/SignOne'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/lexicon/search:
+    get:
+      summary: Search signs
+      description: Ordered by relevance. `q` is required.
+      operationId: searchSigns
+      tags: [Signs]
+      x-status: implemented
+      x-requirements: [FR-302, HU-LEX-002]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/SignTypeParam'
+        - $ref: '#/components/parameters/SignLanguageParam'
+        - $ref: '#/components/parameters/UiLangParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/OffsetParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/SignList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/lexicon/alphabet:
+    get:
+      summary: Alphabet
+      description: The signs of type LETTER in alphabetical order, with their 3D model and thumbnail.
+      operationId: getAlphabet
+      tags: [Signs]
+      x-status: implemented
+      x-requirements: [FR-304, HU-LEX-004]
+      parameters:
+        - $ref: '#/components/parameters/SignLanguageParam'
+        - $ref: '#/components/parameters/UiLangParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/SignList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/lexicon/categories:
+    get:
+      summary: List categories
+      description: Each category carries its count of ACTIVE signs.
+      operationId: listCategories
+      tags: [Categories]
+      x-status: implemented
+      x-requirements: [FR-301, HU-LEX-001]
+      responses:
+        '200':
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CategorySummary'
+    post:
+      summary: Create a category (ADMIN)
+      operationId: createCategory
+      tags: [Admin]
+      x-status: implemented
+      x-requirements: [FR-308, HU-LEX-006]
+      x-required-role: ADMIN
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/CategoryOne'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/lexicon/categories/{id}:
+    parameters:
+      - $ref: '#/components/parameters/CategoryIdParam'
+    patch:
+      summary: Update a category (ADMIN)
+      operationId: updateCategory
+      tags: [Admin]
+      x-status: implemented
+      x-requirements: [FR-308, HU-LEX-006]
+      x-required-role: ADMIN
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/CategoryOne'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      summary: Delete a category (ADMIN)
+      description: Rejected with `CATEGORY_IN_USE` when it still has signs.
+      operationId: deleteCategory
+      tags: [Admin]
+      x-status: implemented
+      x-requirements: [FR-308, HU-LEX-006]
+      x-required-role: ADMIN
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Category deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LexiconResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ───────────────────────────── Admin views ─────────────────────────────
+  /api/lexicon/admin/signs:
+    get:
+      summary: List signs including DRAFT and INACTIVE (ADMIN)
+      operationId: adminListSigns
+      tags: [Admin]
+      x-status: implemented
+      x-requirements: [FR-307, HU-LEX-006]
+      x-required-role: ADMIN
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SignTypeParam'
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/SignStatus'
+        - name: q
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/UiLangParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/OffsetParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/SignList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/lexicon/admin/signs/{code}:
+    parameters:
+      - $ref: '#/components/parameters/SignCodeParam'
+    get:
+      summary: Get a sign in any status (ADMIN)
+      operationId: adminGetSign
+      tags: [Admin]
+      x-status: implemented
+      x-requirements: [FR-307, HU-LEX-006]
+      x-required-role: ADMIN
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UiLangParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/SignOne'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ───────────────────────────── Sign by code ─────────────────────────────
+  /api/lexicon/{code}:
+    parameters:
+      - $ref: '#/components/parameters/SignCodeParam'
+    get:
+      summary: Sign detail
+      description: ACTIVE signs only. Includes `resources` (ordered) and `localizations`.
+      operationId: getSign
+      tags: [Signs]
+      x-status: implemented
+      x-requirements: [FR-303, HU-LEX-003]
+      parameters:
+        - $ref: '#/components/parameters/UiLangParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/SignOne'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      summary: Update a sign (ADMIN)
+      description: '`code` and `status` are not changeable here (INV-018); if sent they are ignored.'
+      operationId: updateSign
+      tags: [Admin]
+      x-status: implemented
+      x-requirements: [FR-307, HU-LEX-006]
+      x-required-role: ADMIN
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSignRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/SignOne'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      summary: Deactivate a sign (ADMIN)
+      description: 'Soft retirement: status changes to INACTIVE; the sign is not deleted. Publishes `lexicon.SignWithdrawn`.'
+      operationId: deactivateSign
+      tags: [Admin]
+      x-status: implemented
+      x-requirements: [FR-307, HU-LEX-006]
+      x-required-role: ADMIN
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/SignOne'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/lexicon/{code}/publish:
+    parameters:
+      - $ref: '#/components/parameters/SignCodeParam'
+    post:
+      summary: Publish a sign (ADMIN)
+      description: DRAFT to ACTIVE; the sign becomes visible to users. Publishes `lexicon.SignPublished`.
+      operationId: publishSign
+      tags: [Admin]
+      x-status: implemented
+      x-requirements: [FR-307, HU-LEX-006]
+      x-required-role: ADMIN
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/SignOne'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/lexicon/{code}/localizations/{lang}:
+    parameters:
+      - $ref: '#/components/parameters/SignCodeParam'
+      - name: lang
+        in: path
+        required: true
+        description: Interface language of the localization
+        schema:
+          $ref: '#/components/schemas/UiLanguage'
+    put:
+      summary: Create or replace the localization of a sign (ADMIN)
+      operationId: upsertLocalization
+      tags: [Admin]
+      x-status: implemented
+      x-requirements: [FR-305, FR-306, HU-LEX-005]
+      x-required-role: ADMIN
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocalizationRequest'
+            example:
+              name: Hello
+              meaning: Greeting
+      responses:
+        '200':
+          $ref: '#/components/responses/SignOne'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/lexicon/{code}/resources:
+    parameters:
+      - $ref: '#/components/parameters/SignCodeParam'
+    post:
+      summary: Attach a multimedia resource (ADMIN)
+      description: Rejected with `POSITION_TAKEN` if `displayOrder` is already used by another resource of the sign.
+      operationId: addResource
+      tags: [Admin]
+      x-status: implemented
+      x-requirements: [FR-309, HU-LEX-007]
+      x-required-role: ADMIN
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddResourceRequest'
+            example:
+              type: MODEL_3D
+              url: alfabeto/glb/A.glb
+              displayOrder: 1
+      responses:
+        '201':
+          description: Resource attached
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/LexiconResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MultimediaResource'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/lexicon/{code}/resources/{resourceId}:
+    parameters:
+      - $ref: '#/components/parameters/SignCodeParam'
+      - name: resourceId
+        in: path
+        required: true
+        schema:
+          type: integer
+    delete:
+      summary: Remove a multimedia resource (ADMIN)
+      operationId: removeResource
+      tags: [Admin]
+      x-status: implemented
+      x-requirements: [FR-309, HU-LEX-007]
+      x-required-role: ADMIN
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Resource removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LexiconResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    SignCodeParam:
+      name: code
+      in: path
+      required: true
+      description: Stable sign code (the class the AI model predicts)
+      schema:
+        type: string
+        pattern: '^[A-Z0-9_]{1,50}$'
+      example: GREETING_HELLO
+    CategoryIdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    SignTypeParam:
+      name: type
+      in: query
+      schema:
+        $ref: '#/components/schemas/SignType'
+    SignLanguageParam:
+      name: language
+      in: query
+      description: Sign language (default LSC)
+      schema:
+        type: string
+        default: LSC
+    UiLangParam:
+      name: lang
+      in: query
+      description: Interface language for `word`, `description` and relevance (falls back to ES, then any)
+      schema:
+        $ref: '#/components/schemas/UiLanguage'
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+    OffsetParam:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+  schemas:
+    SignType:
+      type: string
+      enum: [LETTER, WORD, PHRASE]
+    SignStatus:
+      type: string
+      enum: [DRAFT, ACTIVE, INACTIVE]
+    ResourceType:
+      type: string
+      description: MODEL_3D is the alphabet `.glb`; IMAGE is the card thumbnail.
+      enum: [MODEL_3D, IMAGE, VIDEO, GIF]
+    UiLanguage:
+      type: string
+      enum: [ES, EN]
+
+    LexiconResult:
+      type: object
+      description: Envelope of every successful response of this service.
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          description: Operation-specific payload.
+        meta:
+          type: object
+          properties:
+            limit:
+              type: integer
+            offset:
+              type: integer
+
+    LexiconError:
+      type: object
+      description: Error format of this service (differs from the shared `ErrorResponse`).
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        code:
+          type: string
+          description: |
+            `VALIDATION_ERROR` (400), `SIGN_NOT_FOUND` (404), `CATEGORY_NOT_FOUND` (404),
+            `CODE_TAKEN` (409), `CATEGORY_IN_USE` (409), `CATEGORY_NAME_TAKEN` (409),
+            `LETTER_TAKEN` (409), `POSITION_TAKEN` (409), `NOT_FOUND` (404, media).
+          example: SIGN_NOT_FOUND
+        message:
+          type: string
+
+    MultimediaResource:
+      type: object
+      required: [resourceId, type, url, displayOrder]
+      properties:
+        resourceId:
+          type: integer
+        type:
+          $ref: '#/components/schemas/ResourceType'
+        url:
+          type: string
+          description: Absolute URL in responses (relative path in the database).
+          example: http://localhost:8080/api/lexicon/media/alfabeto/glb/A.glb
+        mimeType:
+          type: string
+          nullable: true
+        displayOrder:
+          type: integer
+        description:
+          type: string
+          nullable: true
+
+    Localization:
+      type: object
+      required: [uiLanguage, name]
+      properties:
+        uiLanguage:
+          $ref: '#/components/schemas/UiLanguage'
+        name:
+          type: string
+        meaning:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+
+    Category:
+      type: object
+      required: [categoryId, name]
+      properties:
+        categoryId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+
+    CategorySummary:
+      allOf:
+        - $ref: '#/components/schemas/Category'
+        - type: object
+          properties:
+            signCount:
+              type: integer
+              description: Counts ACTIVE signs only.
+
+    Sign:
+      type: object
+      required: [lexiconId, code, word, type, language, categoryId, category, animated, displayOrder, status, resources, createdAt, updatedAt]
+      properties:
+        lexiconId:
+          type: integer
+        code:
+          type: string
+        word:
+          type: string
+          description: Name in the requested interface language.
+        meaning:
+          type: string
+          nullable: true
+        type:
+          $ref: '#/components/schemas/SignType'
+        letter:
+          type: string
+          nullable: true
+          description: Only when `type` is LETTER.
+        language:
+          type: string
+          example: LSC
+        categoryId:
+          type: integer
+        category:
+          type: string
+          description: Category name.
+        description:
+          type: string
+          nullable: true
+        animated:
+          type: boolean
+          description: 'True if the 3D model has an animation (letters with movement: G, H, J, N-tilde, S, Z).'
+        displayOrder:
+          type: integer
+        status:
+          $ref: '#/components/schemas/SignStatus'
+        resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/MultimediaResource'
+        localizations:
+          type: array
+          description: Only in the detail of a sign.
+          items:
+            $ref: '#/components/schemas/Localization'
+        createdAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+        updatedAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+
+    CreateSignRequest:
+      type: object
+      description: '`status` is not accepted; every sign is born DRAFT.'
+      required: [code]
+      properties:
+        code:
+          type: string
+          pattern: '^[A-Z0-9_]{1,50}$'
+        type:
+          $ref: '#/components/schemas/SignType'
+        letter:
+          type: string
+          nullable: true
+        language:
+          type: string
+          default: LSC
+        category:
+          type: string
+          description: Category name (resolved to `categoryId`). Send this or `categoryId`.
+        categoryId:
+          type: integer
+        localizations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Localization'
+        word:
+          type: string
+          description: Shortcut for the ES localization name.
+        description:
+          type: string
+          nullable: true
+          description: Shortcut for the ES localization description.
+        animated:
+          type: boolean
+        displayOrder:
+          type: integer
+
+    UpdateSignRequest:
+      type: object
+      description: Partial update. Neither `code` nor `status` can be changed.
+      properties:
+        type:
+          $ref: '#/components/schemas/SignType'
+        letter:
+          type: string
+          nullable: true
+        language:
+          type: string
+        category:
+          type: string
+        categoryId:
+          type: integer
+        animated:
+          type: boolean
+        displayOrder:
+          type: integer
+        word:
+          type: string
+        description:
+          type: string
+          nullable: true
+
+    LocalizationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        meaning:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+
+    CategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+
+    AddResourceRequest:
+      type: object
+      required: [type, url]
+      properties:
+        type:
+          $ref: '#/components/schemas/ResourceType'
+        url:
+          type: string
+          description: Path relative to the media directory or absolute https URL.
+        mimeType:
+          type: string
+          nullable: true
+        displayOrder:
+          type: integer
+        description:
+          type: string
+          nullable: true
+
+  responses:
+    SignList:
+      description: List of signs (`data`) with pagination in `meta`
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/LexiconResult'
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Sign'
+    SignOne:
+      description: A sign
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/LexiconResult'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Sign'
+    CategoryOne:
+      description: A category
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/LexiconResult'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Category'
+    BadRequest:
+      description: Invalid input (`VALIDATION_ERROR`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LexiconError'
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: The user does not have the ADMIN role
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Sign, category or resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LexiconError'
+    Conflict:
+      description: Business rule conflict (code, letter, name or position already taken; category in use)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LexiconError'
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LexiconError'
+
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared.yaml#/components/securitySchemes/bearerAuth'

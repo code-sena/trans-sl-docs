@@ -1,0 +1,318 @@
+openapi: 3.0.3
+info:
+  title: Analytics Service API
+  version: 1.0.0
+  description: |
+    Usage Analytics (`05-analytics-service`, port 3004, PostgreSQL db `analytics`).
+    Data owned: `06-data/domains/08-usage` (`usage_events`, `usage_daily_stats`, `session_daily_stats`).
+
+    Public paths served (through the gateway): `/api/analytics/**`.
+
+    ## Source (extraction status: pending)
+    There is no analytics code in the backend yet. All endpoints are **planned** (`x-status: planned`)
+    and derived from `04-requirements/user-stories.md` (EP-008) and the `06-data` model; the FR/HU
+    that justify each one are in `x-requirements`.
+
+    ## Roles
+    Any authenticated user may record events about themselves. Reports (statistics) require ADMIN
+    (FR-706, HU-AUTHZ-002): an end user asking for them receives `403`.
+
+    ## Events
+    Consumes `recognition.TranslationProduced` and other domain events to record usage.
+    Events survive account deletion: `user_id` becomes null (FR-705).
+
+    ## Errors
+    All errors follow `ErrorResponse` from `_shared.yaml`.
+
+servers:
+  - url: http://localhost:3004
+    description: Local development (direct to the service)
+  - url: http://localhost:8080
+    description: Local development through the api-gateway
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Events
+    description: Usage event recording
+  - name: Reports
+    description: Usage statistics for administrators
+  - name: Health
+    description: Service status
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: health
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  timestamp:
+                    $ref: './_shared.yaml#/components/schemas/Timestamp'
+                  dependencies:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        enum: [ok, degraded, down]
+                      rabbitmq:
+                        type: string
+                        enum: [ok, degraded, down]
+              example:
+                status: ok
+                timestamp: '2026-10-04T10:30:00Z'
+                dependencies:
+                  database: ok
+                  rabbitmq: ok
+        '503':
+          description: Service not available
+
+  /api/analytics/events:
+    post:
+      summary: Record a usage event
+      description: The `user_id` comes from the JWT `sub`; it is never sent in the body.
+      operationId: recordEvent
+      tags: [Events]
+      x-status: planned
+      x-requirements: [FR-701, FR-702, FR-951, FR-952, HU-USG-001, HU-NAV-001]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordEventRequest'
+            example:
+              section: TRANSLATION
+              eventType: SECTION_VIEW
+              sessionId: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        '202':
+          description: Event accepted
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+
+  /api/analytics/sections:
+    get:
+      summary: Most visited sections (ADMIN)
+      description: Sections ordered by visit count over a date range.
+      operationId: getSectionStats
+      tags: [Reports]
+      x-status: planned
+      x-requirements: [FR-703, FR-706, HU-USG-002]
+      x-required-role: ADMIN
+      parameters:
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+      responses:
+        '200':
+          description: Visits per section
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SectionStat'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+
+  /api/analytics/sessions:
+    get:
+      summary: Sessions and average duration (ADMIN)
+      description: Sessions still open are excluded from the average.
+      operationId: getSessionStats
+      tags: [Reports]
+      x-status: planned
+      x-requirements: [FR-704, FR-706, HU-USG-003]
+      x-required-role: ADMIN
+      parameters:
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+      responses:
+        '200':
+          description: Session statistics per day and totals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStats'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+
+  /api/analytics/events/summary:
+    get:
+      summary: Event counts by type (ADMIN)
+      operationId: getEventSummary
+      tags: [Reports]
+      x-status: planned
+      x-requirements: [FR-702, FR-706]
+      x-required-role: ADMIN
+      parameters:
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+        - name: section
+          in: query
+          schema:
+            $ref: '#/components/schemas/UsageSection'
+      responses:
+        '200':
+          description: Daily counts (from `usage_daily_stats`)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DailyStat'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+
+components:
+  parameters:
+    FromParam:
+      name: from
+      in: query
+      required: true
+      description: Start date (inclusive, Colombia time zone)
+      schema:
+        type: string
+        format: date
+    ToParam:
+      name: to
+      in: query
+      required: true
+      description: End date (inclusive)
+      schema:
+        type: string
+        format: date
+
+  schemas:
+    UsageSection:
+      type: string
+      enum: [HOME, TRANSLATION, ALPHABET, LEXICON, HISTORY, PROFILE, SETTINGS, NOTIFICATIONS, ACHIEVEMENTS, ADMIN]
+
+    UsageEventType:
+      type: string
+      enum:
+        - SECTION_VIEW
+        - TRANSLATION_STARTED
+        - TRANSLATION_COMPLETED
+        - TRANSLATION_FAILED
+        - AUDIO_PLAYED
+        - SIGN_VIEWED
+        - SEARCH_PERFORMED
+        - HISTORY_ENTRY_DELETED
+        - PREFERENCE_CHANGED
+        - NOTIFICATION_OPENED
+
+    ReferenceEntity:
+      type: string
+      enum: [TRANSLATION, SIGN, CATEGORY, ACHIEVEMENT, NOTIFICATION, AI_MODEL, USER]
+
+    RecordEventRequest:
+      type: object
+      required: [section, eventType]
+      properties:
+        section:
+          $ref: '#/components/schemas/UsageSection'
+        eventType:
+          $ref: '#/components/schemas/UsageEventType'
+        sessionId:
+          allOf:
+            - $ref: './_shared.yaml#/components/schemas/UUID'
+          description: Session issued by iam-service (logical reference, no foreign key).
+        referenceType:
+          $ref: '#/components/schemas/ReferenceEntity'
+        referenceId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+
+    SectionStat:
+      type: object
+      required: [section, visits]
+      properties:
+        section:
+          $ref: '#/components/schemas/UsageSection'
+        visits:
+          type: integer
+        uniqueUsers:
+          type: integer
+
+    DailyStat:
+      type: object
+      description: Row of `usage_daily_stats`. `uniqueUsers` is valid only at this granularity (it cannot be summed across days).
+      required: [statDate, section, eventType, eventCount]
+      properties:
+        statDate:
+          type: string
+          format: date
+        section:
+          $ref: '#/components/schemas/UsageSection'
+        eventType:
+          $ref: '#/components/schemas/UsageEventType'
+        eventCount:
+          type: integer
+        uniqueUsers:
+          type: integer
+
+    SessionStats:
+      type: object
+      required: [totalSessions, avgDurationMinutes, daily]
+      properties:
+        totalSessions:
+          type: integer
+        avgDurationMinutes:
+          type: number
+        daily:
+          type: array
+          description: Rows of `session_daily_stats`.
+          items:
+            type: object
+            properties:
+              statDate:
+                type: string
+                format: date
+              sessionCount:
+                type: integer
+              uniqueUsers:
+                type: integer
+              totalDurationSeconds:
+                type: integer
+                format: int64
+              avgDurationSeconds:
+                type: integer
+
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared.yaml#/components/securitySchemes/bearerAuth'
