@@ -1,0 +1,289 @@
+' Fuente: backendTS@497feef (origin/develop, 2026-10-05), generado 2026-10-06
+@startuml class-backend-patterns
+title Backend Traduce Señas - diagrama de clases por patrones (backendTS@497feef)
+top to bottom direction
+skinparam nodesep 20
+skinparam ranksep 30
+skinparam wrapWidth 300
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam class {
+  BackgroundColor White
+  BorderColor #2C3E50
+  ArrowColor #2C3E50
+}
+skinparam package {
+  BackgroundColor #F8F9FA
+  BorderColor #ADB5BD
+  FontStyle bold
+}
+
+' Misma estructura de paquetes que el diagrama original (DiagramaCL.puml).
+' <<implementado>> = existe en backendTS@497feef (se indica el archivo).
+' <<propuesta>>    = patrón del diseño original SIN código todavía (gris y borde discontinuo).
+' El backend principal es funcional (objetos literales y funciones fábrica): sus "patrones"
+' son equivalencias aproximadas. lexicon-service sí tiene clases reales para eventos.
+' Ver ../../class-diagram-review.md
+
+legend right
+  <<implementado>> : existe en backendTS@497feef
+  <<propuesta>> : patrón del diseño original, aún sin código
+  Rutas relativas a la raíz del repo backendTS
+endlegend
+
+' ══════════════════════════════════════════
+' SINGLETON
+' ══════════════════════════════════════════
+package "«Singleton»" #EAF4FB {
+
+  class pool <<implementado>> {
+    pg.Pool
+  }
+  note bottom of pool : src/shared/database/postgres.ts\nInstancia única por módulo de Node (no hay getInstance).\nEquivalencia aproximada a DatabaseConnection.\nlexicon-service no la usa: crea su pool en cmd/main.ts con makePgPool.
+
+  class config <<implementado>> {
+    + port : number
+    + db : { host, port, user, password, database }
+    + jwt : { secret: string, expiresIn: '1d' }
+    + mailer : { service: 'gmail', user, pass }
+  }
+  note bottom of config : src/shared/config/config.ts\nSolo configuración del servidor. Idioma y tema NO están en el código\n(ConfiguracionApp se descarta; ver user_preferences en el DBML).
+
+  pool ..> config
+}
+
+' ══════════════════════════════════════════
+' FACTORY METHOD
+' ══════════════════════════════════════════
+package "«Factory Method»" #FFF3E0 {
+
+  class makeCreateTranslation <<implementado>> {
+    deps: translationRepository
+    + (input) : Promise<TranslationResult>
+  }
+  note bottom of makeCreateTranslation : src/domains/translations/application/create_translation.ts\nValida, convierte type e inserta; no ramifica por tipo.\nEquivalencia aproximada, no Factory Method de GoF.
+
+  class makeIamModule <<implementado>>
+  class makeAuthModule <<implementado>>
+  class makeUsersModule <<implementado>>
+  class makeTranslationsModule <<implementado>>
+  class makeAnalyticsModule <<implementado>>
+  class makeIaModule <<implementado>>
+  note bottom of makeIaModule : src/domains/<dominio>/<dominio>.module.ts\nCada makeXModule() es la raíz de composición del dominio:\narma casos de uso, adaptadores y router.\nEl resto de casos de uso sigue la forma makeX(deps) en application/*.ts.\nSon funciones fábrica, no la jerarquía de clases GoF.
+
+  class createEventPublisher <<implementado>> {
+    + (rabbitmqUrl: string) : ClosableEventPublisher
+  }
+  note bottom of createEventPublisher : services/lexicon-service/src/shared/events/create_event_publisher.ts\nFábrica simple: RabbitMqEventPublisher si hay RABBITMQ_URL,\nsi no InMemoryEventPublisher. Es lo más cercano a una fábrica GoF.
+
+  abstract class TraduccionFactory <<propuesta>> #E0E0E0;line:808080;line.dashed;text:555555 {
+    + {abstract} crearTraduccion() : Traduccion
+    + procesarTraduccion() : Traduccion
+  }
+  class TraduccionSenaTextoFactory <<propuesta>> #E0E0E0;line:808080;line.dashed;text:555555 {
+    + crearTraduccion() : Traduccion
+  }
+  note bottom of TraduccionSenaTextoFactory : Sin código. makeCreateTranslation hace una tarea parecida.\nSe quitaron TextoSena y VozSena (fuera del MVP).
+
+  abstract class NotificacionFactory <<propuesta>> #E0E0E0;line:808080;line.dashed;text:555555 {
+    + {abstract} crearNotificacion() : INotificacion
+    + enviarNotificacion() : void
+  }
+  class NotificacionPushFactory <<propuesta>> #E0E0E0;line:808080;line.dashed;text:555555 {
+    + crearNotificacion() : INotificacion
+  }
+  interface INotificacion <<propuesta>> #E0E0E0;line:808080;line.dashed;text:555555 {
+    + enviar() : void
+    + cancelar() : void
+  }
+  note bottom of NotificacionPushFactory : Sin código ni tabla. Solo existe el permiso notifications.manage (iam)\ny las tablas notifications y user_devices en el DBML (class-backend-planned.puml).
+
+  TraduccionSenaTextoFactory --|> TraduccionFactory
+  NotificacionPushFactory --|> NotificacionFactory
+  NotificacionFactory ..> INotificacion
+}
+
+' ══════════════════════════════════════════
+' OBSERVER (publicar / suscribir)
+' ══════════════════════════════════════════
+package "«Observer»" #EAF6EE {
+
+  interface EventPublisher <<implementado>> {
+    + publish(type: string, payload: unknown) : Promise<void>
+  }
+  interface ClosableEventPublisher <<implementado>> {
+    + close() : Promise<void>
+  }
+  class RabbitMqEventPublisher <<implementado>> {
+    - url : string
+    + publish(type: string, payload: unknown) : Promise<void>
+    + close() : Promise<void>
+  }
+  class InMemoryEventPublisher <<implementado>> {
+    + published : EventEnvelope[]
+    + publish(type: string, payload: unknown) : Promise<void>
+    + close() : Promise<void>
+  }
+  note bottom of RabbitMqEventPublisher : services/lexicon-service/src/shared/events/\nPublica lexicon.SignPublished y lexicon.SignWithdrawn en el exchange\n'traduce.events' (topic). Es el lado "sujeto" del Observer, vía broker.\nNingún servicio se suscribe todavía (no hay consumidores en el código).
+  ClosableEventPublisher --|> EventPublisher
+  RabbitMqEventPublisher ..|> ClosableEventPublisher
+  InMemoryEventPublisher ..|> ClosableEventPublisher
+
+  interface IObserver <<propuesta>> #E0E0E0;line:808080;line.dashed;text:555555 {
+    + actualizar(evento : String, datos : Object) : void
+  }
+  class NotificacionObserver <<propuesta>> #E0E0E0;line:808080;line.dashed;text:555555 {
+    + actualizar(evento : String, datos : Object) : void
+    + enviar() : void
+    + marcarLeida() : void
+  }
+  class makeRecordUsageEvent <<implementado>> {
+    deps: usageEventRepository
+    + (RecordUsageEventInput) : Promise<void>
+  }
+  note bottom of makeRecordUsageEvent : src/domains/analytics/application/record_usage_event.ts\nSustituye a EventoUsoObserver: el cliente llama POST /events y se guarda\nen public.usage_events. No es un observador (llamada directa),\ny en 497feef el router de analytics no está montado.
+  NotificacionObserver ..|> IObserver
+  EventPublisher ..> IObserver : sin suscriptores aún
+}
+
+' ══════════════════════════════════════════
+' COMMAND
+' ══════════════════════════════════════════
+package "«Command»" #F3E5F5 {
+
+  interface ICommand <<propuesta>> #E0E0E0;line:808080;line.dashed;text:555555 {
+    + ejecutar() : void
+    + deshacer() : void
+  }
+  class ComandoCambiarIdioma <<propuesta>> #E0E0E0;line:808080;line.dashed;text:555555 {
+    - usuario : User
+    - idiomaAnterior : String
+    - idiomaNuevo : String
+    + ejecutar() : void
+    + deshacer() : void
+  }
+  class ComandoCambiarTema <<propuesta>> #E0E0E0;line:808080;line.dashed;text:555555 {
+    - usuario : User
+    - temaAnterior : String
+    - temaNuevo : String
+    + ejecutar() : void
+    + deshacer() : void
+  }
+  class InvokerPerfil <<propuesta>> #E0E0E0;line:808080;line.dashed;text:555555 {
+    - historial : List<ICommand>
+    + ejecutarComando(cmd : ICommand) : void
+    + deshacerUltimo() : void
+  }
+  note bottom of InvokerPerfil : Sin código. Idioma y tema solo existen en Liquibase (002_create_users.xml)\ny como user_preferences en el DBML.\nEl cambio de contraseña existe como caso de uso normal (makeChangePassword,\nPOST /api/users/me/password), sin deshacer: deshacerlo sería un riesgo de seguridad.
+
+  ComandoCambiarIdioma ..|> ICommand
+  ComandoCambiarTema ..|> ICommand
+  InvokerPerfil o-- ICommand
+}
+
+' ══════════════════════════════════════════
+' DOMINIO (entidades reales; son interface de TypeScript)
+' ══════════════════════════════════════════
+package "Dominio" #FAFAFA {
+
+  class User <<implementado>> {
+    + userId : number
+    + name : string
+    + email : string
+    + password : string | null
+    + status : UserStatus
+    + emailVerifiedAt : Date | null
+    + termsAccepted : boolean
+    + termsAcceptedAt : Date | null
+    + createdAt : Date
+  }
+  note bottom of User : src/domains/users/domain/entity.ts\nTabla public.users. UserStatus = ACTIVE | INACTIVE | BLOCKED.
+
+  class UserToken <<implementado>> {
+    + tokenId : number
+    + userId : number
+    + tokenType : UserTokenType
+    + tokenHash : string
+    + attempts : number
+    + expiresAt : Date
+    + usedAt : Date | null
+    + revokedAt : Date | null
+    + createdAt : Date
+  }
+  note bottom of UserToken : src/domains/auth/domain/entity.ts\nTabla public.user_tokens (sustituye a password_reset_token).\nUserTokenType = EMAIL_VERIFICATION | PASSWORD_RESET.
+
+  class Role <<implementado>> {
+    + roleId : number
+    + name : string
+    + description : string | null
+    + permissions : string[]
+  }
+  note bottom of Role : src/domains/iam/domain/entity.ts\nTablas roles, permissions, role_permissions, user_roles.\nRoles: USER, LINGUIST, ADMIN.
+
+  class Translation <<implementado>> {
+    + translationId : number
+    + userId : number | null
+    + inputText : string
+    + outputText : string
+    + type : TranslationType
+    + confidence : number | null
+    + source : string | null
+    + isDeleted : boolean
+    + createdAt : Date
+  }
+  note bottom of Translation : src/domains/translations/domain/entity.ts\nTabla public.translations. Borrado lógico (isDeleted).\nTranslationType = texto_sena | sena_texto | voz_sena (el MVP usa sena_texto).
+
+  class UsageEvent <<implementado>> {
+    + userId : number | null
+    + sessionId : number | null
+    + section : UsageSection
+    + eventType : UsageEventType
+    + referenceType : string | null
+    + referenceId : number | null
+  }
+  note bottom of UsageEvent : src/domains/analytics/domain/entity.ts (NewUsageEvent)\nTabla public.usage_events (append-only).
+
+  class SignTemplate <<implementado>> {
+    + templateId : number
+    + label : string
+    + kind : TemplateKind
+    + features : number[][]
+    + source : string
+    + createdBy : number | null
+    + createdAt : Date
+  }
+  note bottom of SignTemplate : src/domains/ia/domain/entity.ts\nTabla public.sign_templates. Plantilla DTW (no es el léxico de señas).
+
+  class Sign <<implementado>> {
+    + lexiconId : number
+    + code : string
+    + type : SignType
+    + letter : string | null
+    + language : string
+    + categoryId : number
+    + status : SignStatus
+    + resources : MultimediaResource[]
+  }
+  note bottom of Sign : services/lexicon-service/src/domain/entity.ts\nBase de datos PROPIA del servicio (sign_lexicon, sign_localizations,\nmultimedia_resource, categories). Sin FK hacia users.
+
+  User "0..1" <.. "0..*" Translation : userId (FK, nullable)
+  User "1" <.. "0..*" UserToken : userId (FK)
+  User "*" .. "1..*" Role : user_roles
+  User "0..1" <.. "0..*" UsageEvent : userId (anonimizable)
+  User "0..1" <.. "0..*" SignTemplate : createdBy (FK, nullable)
+}
+
+makeCreateTranslation ..> Translation : crea
+makeRecordUsageEvent ..> UsageEvent : crea
+RabbitMqEventPublisher ..> Sign : publica cambios de
+ComandoCambiarIdioma ..> User
+ComandoCambiarTema ..> User
+' Maquetación: apilar paquetes
+config -[hidden]down- makeCreateTranslation
+makeTranslationsModule -[hidden]down- TraduccionSenaTextoFactory
+INotificacion -[hidden]down- EventPublisher
+makeRecordUsageEvent -[hidden]down- ICommand
+InvokerPerfil -[hidden]down- User
+@enduml
