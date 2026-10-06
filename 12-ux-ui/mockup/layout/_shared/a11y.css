@@ -1,0 +1,86 @@
+/* ===== Capa de accesibilidad (NFR-001 / RNF9) sobre el diseño de Claude Design =====
+   No cambia la estructura: corrige contraste, tamaños de texto, foco y áreas táctiles.
+   Igual que theme.css, actúa sobre los estilos en línea ya serializados por React (rgb). */
+
+/* ---- Foco visible en todo lo interactivo ---- */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: 3px solid #7C3AED !important; outline-offset: 2px !important;
+}
+html[data-accent="green"] a:focus-visible, html[data-accent="green"] button:focus-visible, html[data-accent="green"] input:focus-visible {
+  outline-color: #23704A !important;
+}
+
+/* ---- Enlace para saltar al contenido (lo inserta a11y.js) ---- */
+.a11y-skip { position: absolute; left: 8px; top: -60px; z-index: 1000; padding: 10px 16px; border-radius: 10px; background: #1F2937; color: #fff; font: 700 16px/1.2 system-ui, sans-serif; text-decoration: none; }
+.a11y-skip:focus { top: 8px; }
+
+/* ---- Botón primario: el degradado lila claro daba ~2:1 con texto blanco ---- */
+[style*="linear-gradient(135deg, rgb(190, 158, 244), rgb(212, 194, 243))"],
+[style*="linear-gradient(135deg,#BE9EF4,#D4C2F3)"] {
+  background: linear-gradient(135deg, #7E5AD0, #6D28D9) !important;
+}
+[style*="background: rgb(190, 158, 244)"], [style*="background-color: rgb(190, 158, 244)"], [style*="background:#BE9EF4"], [style*="background-color: #BE9EF4"] {
+  background: #7E5AD0 !important; background-color: #7E5AD0 !important;
+}
+html[data-accent="green"] [style*="linear-gradient(135deg, rgb(190, 158, 244), rgb(212, 194, 243))"],
+html[data-accent="green"] [style*="background: rgb(190, 158, 244)"], html[data-accent="green"] [style*="background-color: rgb(190, 158, 244)"] {
+  background: linear-gradient(135deg, #23704A, #1B5E3D) !important;
+}
+
+/* ---- Texto en color de acento: #9B77E6 sobre blanco = 3.4:1 -> #7E5AD0 (4.9:1) ---- */
+html:not([data-theme="dark"]) [style*="color: rgb(155, 119, 230)"], html:not([data-theme="dark"]) [style*="color:#9B77E6"] { color: #7E5AD0 !important; }
+html:not([data-theme="dark"]) [style*="color: rgb(139, 92, 246)"], html:not([data-theme="dark"]) [style*="color:#8B5CF6"] { color: #6D28D9 !important; }
+html[data-accent="green"]:not([data-theme="dark"]) [style*="color: rgb(155, 119, 230)"],
+html[data-accent="green"]:not([data-theme="dark"]) [style*="color: rgb(139, 92, 246)"],
+html[data-accent="green"]:not([data-theme="dark"]) [style*="color: rgb(76, 175, 129)"] { color: #23704A !important; }
+
+/* ---- Texto gris claro (subtítulos, fechas, ayudas): 2.5-3:1 -> 4.8:1 ---- */
+html:not([data-theme="dark"]) [style*="color: rgb(156, 163, 175)"], html:not([data-theme="dark"]) [style*="color:#9CA3AF"],
+html:not([data-theme="dark"]) [style*="color: rgb(180, 174, 194)"], html:not([data-theme="dark"]) [style*="color:#B4AEC2"],
+html:not([data-theme="dark"]) [style*="color: rgb(166, 160, 180)"], html:not([data-theme="dark"]) [style*="color:#A6A0B4"],
+html:not([data-theme="dark"]) [style*="color: rgb(139, 132, 155)"], html:not([data-theme="dark"]) [style*="color:#8B849B"],
+html:not([data-theme="dark"]) [style*="color: rgb(139, 127, 166)"], html:not([data-theme="dark"]) [style*="color:#8B7FA6"] { color: #6B7280 !important; }
+html:not([data-theme="dark"]) [style*="color: rgb(91, 84, 112)"] { color: #4B5563 !important; }
+
+/* ---- Estado: rojo y verde usados como texto ---- */
+html:not([data-theme="dark"]) [style*="color: rgb(239, 68, 68)"], html:not([data-theme="dark"]) [style*="color:#EF4444"] { color: #B91C1C !important; }
+html:not([data-theme="dark"]) [style*="color: rgb(16, 185, 129)"], html:not([data-theme="dark"]) [style*="color:#10B981"] { color: #047857 !important; }
+[style*="background: rgb(239, 68, 68)"], [style*="background:#EF4444"] { background: #B91C1C !important; }
+
+/* ---- Placeholders ---- */
+input::placeholder { color: #6B7280 !important; opacity: 1; }
+html[data-theme="dark"] input::placeholder { color: #A1A1B3 !important; }
+
+/* ---- Tamaño mínimo de texto: nada por debajo de 14 px (RNF2) ---- */
+[style*="font-size: 10px"], [style*="font-size:10px"],
+[style*="font-size: 11px"], [style*="font-size:11px"],
+[style*="font-size: 12px"], [style*="font-size:12px"],
+[style*="font-size: 12.5px"], [style*="font-size:12.5px"],
+[style*="font-size: 13px"], [style*="font-size:13px"] { font-size: 14px !important; }
+[style*="font-size: 14px"], [style*="font-size:14px"] { font-size: 15px !important; }
+[style*="font-size: 15px"], [style*="font-size:15px"] { font-size: 16px !important; }
+p, label, li { line-height: 1.5; }
+
+/* ---- Áreas táctiles: botones y controles de al menos 44 px ---- */
+button, [role="button"], select { min-height: 44px; }
+input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; }
+
+/* ---- Login: en pantallas angostas o con zoom, las dos tarjetas se apilan ---- */
+@media (max-width: 900px) {
+  [style*="grid-template-columns: 1fr 420px"], [style*="grid-template-columns:1fr 420px"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ---- Movimiento reducido ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+h1, h2, h3 { overflow-wrap: break-word; }
+
+/* ---- Texto solo para lectores de pantalla (encabezado de una pagina sin titulo visible) ---- */
+.a11y-only {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}

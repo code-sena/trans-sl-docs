@@ -1,0 +1,144 @@
+/* ===== Global app theme: dark mode + accent swap =====
+   Applied via <html data-theme> / <html data-accent> (theme-boot.js).
+   Browsers serialize inline hex colors to rgb(...) in the style attribute,
+   so selectors match the rgb() forms. Stylesheet !important beats inline.
+   Elements inside .ts-userblock are left untouched.
+   Dark palette — TraduceSeña:
+   #0F0F14 fondo · #1A1A24 secundario · #23232E tarjetas · #32323F bordes
+   #6A5ACD morado · #9575CD morado claro · #8E7BFF acento/enlace
+   #E6E6EA texto · #A1A1B3 texto sec · #4CAF81 éxito */
+
+/* ---------- DARK: page ground (outer wrapper) ---------- */
+html[data-theme="dark"] [style*="width: 100%"][style*="background: rgb(255, 255, 255)"] { background: #0F0F14 !important; }
+html[data-theme="dark"] body { background: #0F0F14 !important; }
+
+/* ---------- DARK: surfaces (cards, bars, tinted panels) ---------- */
+html[data-theme="dark"] [style*="background: rgb(255, 255, 255)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"] [style*="background: rgb(251, 250, 254)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"] [style*="background: rgb(249, 247, 253)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"] [style*="background: rgb(243, 240, 251)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"] [style*="background: rgb(235, 229, 248)"]:not(.ts-userblock):not(.ts-userblock *) {
+  background: #23232E !important;
+}
+
+/* ---------- DARK: hero / secondary gradients ---------- */
+html[data-theme="dark"] [style*="rgb(251, 250, 254)"][style*="linear-gradient"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"] [style*="rgb(243, 239, 251)"][style*="linear-gradient"]:not(.ts-userblock):not(.ts-userblock *) {
+  background: #1A1A24 !important;
+}
+
+/* ---------- DARK: header bar ---------- */
+html[data-theme="dark"] header[style] { background: rgba(15,15,20,0.92) !important; border-bottom-color: #32323F !important; }
+
+/* ---------- DARK: borders / dividers ---------- */
+html[data-theme="dark"] [style*="rgb(238, 233, 250)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"] [style*="rgb(241, 238, 249)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"] [style*="rgb(227, 219, 247)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"] [style*="rgb(234, 228, 247)"]:not(.ts-userblock):not(.ts-userblock *) {
+  border-color: #32323F !important;
+}
+
+/* ---------- DARK: text ---------- */
+html[data-theme="dark"] [style*="color: rgb(31, 41, 55)"]:not(.ts-userblock):not(.ts-userblock *) { color: #E6E6EA !important; }
+html[data-theme="dark"] [style*="color: rgb(55, 65, 81)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"] [style*="color: rgb(75, 85, 99)"]:not(.ts-userblock):not(.ts-userblock *) { color: #E6E6EA !important; }
+html[data-theme="dark"] [style*="color: rgb(107, 114, 128)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"] [style*="color: rgb(91, 84, 112)"]:not(.ts-userblock):not(.ts-userblock *) { color: #A1A1B3 !important; }
+html[data-theme="dark"] [style*="color: rgb(156, 163, 175)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"] [style*="color: rgb(180, 174, 194)"]:not(.ts-userblock):not(.ts-userblock *) { color: #A1A1B3 !important; }
+
+/* tinted lavender chips -> readable on dark */
+html[data-theme="dark"] [style*="background: rgb(237, 233, 254)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"] [style*="background: rgb(239, 235, 253)"]:not(.ts-userblock):not(.ts-userblock *) {
+  background: rgba(106,90,205,0.20) !important;
+}
+
+/* ---------- DARK: accents (purple) + avatar ---------- */
+html[data-theme="dark"] [style*="color: rgb(124, 58, 237)"]:not(.ts-userblock):not(.ts-userblock *) { color: #8E7BFF !important; }
+html[data-theme="dark"] [style*="color: rgb(109, 40, 217)"]:not(.ts-userblock):not(.ts-userblock *) { color: #9575CD !important; }
+html[data-theme="dark"] [style*="rgb(238, 232, 251)"][style*="linear-gradient"]:not(.ts-userblock):not(.ts-userblock *) { background: linear-gradient(160deg,#23232E,#1A1A24) !important; }
+
+/* ---------- ACCENT SWAP: purple -> green ---------- */
+html[data-accent="green"] [style*="color: rgb(155, 119, 230)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="color: rgb(126, 90, 208)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="color: rgb(109, 40, 217)"]:not(.ts-userblock):not(.ts-userblock *) { color: #4CAF81 !important; }
+
+html[data-accent="green"] [style*="background: rgb(190, 158, 244)"]:not(.ts-userblock):not(.ts-userblock *) { background: #4CAF81 !important; }
+html[data-accent="green"] [style*="background: rgb(124, 58, 237)"]:not(.ts-userblock):not(.ts-userblock *) { background: #4CAF81 !important; border-color: #4CAF81 !important; box-shadow: 0 4px 12px rgba(76,175,129,0.3) !important; }
+
+/* icon/accent purples -> green */
+html[data-accent="green"] [style*="color: rgb(124, 58, 237)"]:not(.ts-userblock):not(.ts-userblock *) { color: #4CAF81 !important; }
+html[data-accent="green"] [style*="color: rgb(139, 92, 246)"]:not(.ts-userblock):not(.ts-userblock *) { color: #4CAF81 !important; }
+html[data-accent="green"] [style*="color: rgb(142, 123, 255)"]:not(.ts-userblock):not(.ts-userblock *) { color: #4CAF81 !important; }
+html[data-accent="green"] [style*="color: rgb(149, 117, 205)"]:not(.ts-userblock):not(.ts-userblock *) { color: #3E9E72 !important; }
+
+/* soft lavender fills (icon tiles, chips, active pills) -> soft green */
+html[data-accent="green"] [style*="background: rgb(237, 233, 254)"]:not([data-app-icon]):not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="background: rgb(239, 235, 253)"]:not([data-app-icon]):not(.ts-userblock):not(.ts-userblock *) { background: #DCF5EA !important; }
+html[data-accent="green"] [style*="background: rgb(244, 241, 252)"]:not(.ts-userblock):not(.ts-userblock *) { background: #EAF7F0 !important; }
+
+/* active nav pill border + text */
+html[data-accent="green"] [style*="border: 1px solid rgb(238, 233, 250)"][style*="rgb(237, 233, 254)"]:not(.ts-userblock):not(.ts-userblock *) { color: #2E8B60 !important; }
+
+/* solid gradient buttons -> green gradient */
+html[data-accent="green"] [style*="linear-gradient(135deg, rgb(139, 92, 246), rgb(124, 58, 237))"]:not(.ts-userblock):not(.ts-userblock *) { background: linear-gradient(135deg, #4CAF81, #2E8B60) !important; }
+
+/* dark-mode accents also green */
+html[data-theme="dark"][data-accent="green"] [style*="color: rgb(124, 58, 237)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"][data-accent="green"] [style*="color: rgb(139, 92, 246)"]:not(.ts-userblock):not(.ts-userblock *) { color: #4CAF81 !important; }
+
+/* ---------- GREEN: full purple coverage (session) ---------- */
+/* remaining accent text purples */
+html[data-accent="green"] [style*="color: rgb(190, 158, 244)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="color: rgb(167, 139, 250)"]:not(.ts-userblock):not(.ts-userblock *) { color: #4CAF81 !important; }
+
+/* solid accent backgrounds (buttons, badges, dots, toggles) */
+html[data-accent="green"] [style*="background: rgb(109, 40, 217)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="background: rgb(139, 92, 246)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="background: rgb(155, 119, 230)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="background: rgb(167, 139, 250)"]:not(.ts-userblock):not(.ts-userblock *) { background: #4CAF81 !important; }
+
+/* soft fills (hover states, chips) */
+html[data-accent="green"] [style*="background: rgb(241, 235, 252)"]:not([data-app-icon]):not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="background: rgb(245, 243, 250)"]:not([data-app-icon]):not(.ts-userblock):not(.ts-userblock *) { background: #EAF7F0 !important; }
+
+/* purple borders -> green borders */
+html[data-accent="green"] [style*="rgb(196, 181, 253)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="rgb(214, 201, 245)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="rgb(231, 222, 248)"]:not(.ts-userblock):not(.ts-userblock *) { border-color: #A6E5CC !important; }
+
+/* accent gradients (avatars, buttons, logos) -> green gradient */
+html[data-accent="green"] [style*="linear-gradient(135deg, rgb(167, 139, 250), rgb(124, 58, 237))"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="linear-gradient(135deg, rgb(167, 139, 250), rgb(139, 92, 246))"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="linear-gradient(135deg, rgb(147, 51, 234), rgb(124, 58, 237))"]:not(.ts-userblock):not(.ts-userblock *) { background: linear-gradient(135deg, #4CAF81, #2E8B60) !important; }
+
+/* chart / bar / progress gradients (any direction) -> green gradient */
+html[data-accent="green"] [style*="linear-gradient(180deg, rgb(190, 158, 244), rgb(155, 119, 230))"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="linear-gradient(rgb(190, 158, 244), rgb(155, 119, 230))"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-accent="green"] [style*="linear-gradient(90deg, rgb(190, 158, 244), rgb(155, 119, 230))"]:not(.ts-userblock):not(.ts-userblock *) { background: linear-gradient(180deg, #4CAF81, #2E8B60) !important; }
+/* solid bar fill inside track */
+html[data-accent="green"] [style*="background: rgb(139, 92, 246)"]:not(.ts-userblock):not(.ts-userblock *) { background: #4CAF81 !important; }
+
+/* ---------- DARK + GREEN: soft fills/borders use dark green tints ---------- */
+html[data-theme="dark"][data-accent="green"] [style*="background: rgb(237, 233, 254)"]:not([data-app-icon]):not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"][data-accent="green"] [style*="background: rgb(239, 235, 253)"]:not([data-app-icon]):not(.ts-userblock):not(.ts-userblock *) { background: rgba(76,175,129,0.20) !important; }
+html[data-theme="dark"][data-accent="green"] [style*="background: rgb(244, 241, 252)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"][data-accent="green"] [style*="background: rgb(241, 235, 252)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"][data-accent="green"] [style*="background: rgb(245, 243, 250)"]:not(.ts-userblock):not(.ts-userblock *) { background: rgba(76,175,129,0.12) !important; }
+html[data-theme="dark"][data-accent="green"] [style*="rgb(196, 181, 253)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"][data-accent="green"] [style*="rgb(214, 201, 245)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"][data-accent="green"] [style*="rgb(231, 222, 248)"]:not(.ts-userblock):not(.ts-userblock *) { border-color: rgba(76,175,129,0.35) !important; }
+
+/* ---------- DARK + PURPLE: soft lavender fills use dark purple tints ---------- */
+html[data-theme="dark"]:not([data-accent="green"]) [style*="background: rgb(244, 241, 252)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"]:not([data-accent="green"]) [style*="background: rgb(241, 235, 252)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"]:not([data-accent="green"]) [style*="background: rgb(245, 243, 250)"]:not(.ts-userblock):not(.ts-userblock *) { background: rgba(106,90,205,0.12) !important; }
+html[data-theme="dark"]:not([data-accent="green"]) [style*="rgb(196, 181, 253)"]:not(.ts-userblock):not(.ts-userblock *),
+html[data-theme="dark"]:not([data-accent="green"]) [style*="rgb(214, 201, 245)"]:not(.ts-userblock):not(.ts-userblock *) { border-color: rgba(106,90,205,0.35) !important; }
+
+/* ---------- APP ICON tile: bg follows accent + theme (session only) ---------- */
+[data-app-icon] { background: #EDE9FE !important; }
+html[data-accent="green"] [data-app-icon] { background: #DCF5EA !important; }
+html[data-theme="dark"] [data-app-icon] { background: rgba(139,92,246,0.22) !important; }
+html[data-theme="dark"][data-accent="green"] [data-app-icon] { background: rgba(76,175,129,0.22) !important; }
+html[data-theme="dark"] [data-app-icon] img { filter: invert(1) brightness(1.6) !important; }

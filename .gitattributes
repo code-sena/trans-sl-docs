@@ -1,0 +1,14 @@
+# Fin de linea normalizado: sin esto, los archivos cambian enteros al pasar de Windows a otra maquina.
+* text=auto eol=lf
+
+# Binarios: nunca se tocan.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.woff2 binary
+*.pdf binary
+*.docx binary
+*.xlsx binary
+
+# Los guiones de PowerShell se ejecutan en Windows.
+*.ps1 text eol=crlf
