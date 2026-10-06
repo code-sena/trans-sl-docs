@@ -1,0 +1,177 @@
+' Fuente: backendTS@497feef (origin/develop, 2026-10-05), generado 2026-10-06
+@startuml class-backend-ia
+title Backend Traduce Señas - dominio ia: plantillas de señas (backendTS@497feef)
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+left to right direction
+
+' ---------- dominio ----------
+enum TemplateKind <<entity>> {
+  static
+  motion
+}
+note bottom of TemplateKind : src/domains/ia/domain/entity.ts\nTEMPLATE_KINDS = ['static', 'motion'] as const
+
+interface SignTemplate <<entity>> {
+  + templateId : number
+  + label : string
+  + kind : TemplateKind
+  + features : number[][]
+  + source : string
+  + createdBy : number | null
+  + createdAt : Date
+}
+note bottom of SignTemplate : src/domains/ia/domain/entity.ts\nTabla public.sign_templates (migrations/002_sign_templates.sql), features en JSONB.\n'static': 1 frame de 63 valores. 'motion': 16 frames de 126.\nNo es el léxico de señas (eso vive en lexicon-service).
+SignTemplate --> TemplateKind
+
+interface NewSignTemplate <<entity>> {
+  + label : string
+  + kind : TemplateKind
+  + features : number[][]
+  + source? : string
+}
+note bottom of NewSignTemplate : src/domains/ia/domain/entity.ts
+
+note as NConst
+  Constantes en domain/entity.ts:
+  SEQ_LEN = 16, STATIC_DIM = 63 (una mano), MOTION_DIM = 126 (dos manos).
+  SEQ_LEN también está en domain/motion_template.ts (duplicado).
+end note
+
+class signTemplateDomainService <<domain service>> {
+  + ensureIsValid(input: Partial<NewSignTemplate>) : asserts input is NewSignTemplate
+}
+note bottom of signTemplateDomainService : src/domains/ia/domain/service.ts\nValida label, kind, número de frames y valores por frame.\nframesFor y dimFor son funciones privadas del archivo.
+class InvalidSignTemplateError <<error>>
+note bottom of InvalidSignTemplateError : src/domains/ia/domain/service.ts
+InvalidSignTemplateError --|> Error
+signTemplateDomainService ..> InvalidSignTemplateError : lanza
+
+class motion_template <<domain service>> {
+  + SEQ_LEN = 16 ; HAND_DIM = 63 ; FRAME_DIM = 126
+  + MAX_GESTURE_DISTANCE = 4.0 ; MIN_WORD_CONFIDENCE = 0.7
+  + normalizeLandmarks(landmarks: Landmark[]) : Float32Array
+  + normalizeTwoHands(dominant: Landmark[], other: Landmark[] | null) : Float32Array
+  + resampleSequence(features: Float32Array[]) : number[][] | null
+  + dtwDistance(a: number[][], b: number[][]) : number
+  + gestureConfidence(distance: number) : number
+}
+note bottom of motion_template : src/domains/ia/domain/motion_template.ts\nArchivo de funciones exportadas (copia 1:1 del motor del frontend), no un objeto.\nSolo lo importan los scripts de ia/training; el servidor no lo usa.
+interface Landmark <<entity>> {
+  + x : number
+  + y : number
+  + z : number
+}
+interface GestureTemplate <<entity>> {
+  + label : string
+  + frames : number[][]
+  + createdAt : string
+}
+note bottom of GestureTemplate : src/domains/ia/domain/motion_template.ts
+motion_template ..> Landmark
+motion_template ..> GestureTemplate
+
+' ---------- puertos ----------
+interface SignTemplateRepository <<port out>> {
+  + createMany(templates: NewSignTemplate[], createdBy: number | null) : Promise<SignTemplate[]>
+  + list(filter: { kind?: TemplateKind; label?: string }) : Promise<SignTemplate[]>
+  + remove(templateId: number) : Promise<{ templateId } | null>
+}
+note bottom of SignTemplateRepository : se define en src/domains/ia/domain/repository.ts\nre-export: ports/outbound/sign_template_repository.ts
+SignTemplateRepository ..> SignTemplate
+SignTemplateRepository ..> NewSignTemplate
+
+interface PermissionChecker <<port out>> {
+  + hasPermission(userId: number, permission: string) : Promise<boolean>
+}
+note bottom of PermissionChecker : ports/outbound/permission_checker.ts\nmain.ts lo construye con iam.iamService.hasPermission
+
+note as NPend
+  ports/outbound/ai_service.ts y gesture_repository.ts
+  solo contienen "export {};" (puertos vacíos, sin uso).
+  src/domains/ia/training/ tiene scripts TS y Python de
+  descarga del dataset LSC-54, conversión, medición DTW y
+  entrenamiento/exportación del modelo: no se dibujan
+  (no son parte del servidor).
+end note
+
+interface SignTemplateService <<port in>> {
+  + importMany(input: { templates: NewSignTemplate[]; userId: number | null }) : Promise<SignTemplateResult>
+  + list(input: { kind?: string; label?: string }) : Promise<SignTemplateResult>
+  + remove(input: { templateId: number }) : Promise<SignTemplateResult>
+}
+note bottom of SignTemplateService : src/domains/ia/ports/inbound/sign_template_service.ts\nSignTemplateResult { success: boolean; message?: string; data?: unknown }
+
+' ---------- casos de uso (src/domains/ia/application/*.ts) ----------
+class makeImportSignTemplates <<use case>> {
+  deps: signTemplateRepository
+  + ({ templates, userId }) : Promise<SignTemplateResult>
+}
+note bottom of makeImportSignTemplates : application/import_sign_templates.ts
+class makeListSignTemplates <<use case>> {
+  deps: signTemplateRepository
+  + ({ kind?, label? }) : Promise<SignTemplateResult>
+}
+note bottom of makeListSignTemplates : application/list_sign_templates.ts
+class makeDeleteSignTemplate <<use case>> {
+  deps: signTemplateRepository
+  + ({ templateId }) : Promise<SignTemplateResult>
+}
+note bottom of makeDeleteSignTemplate : application/delete_sign_template.ts
+
+makeImportSignTemplates ..> SignTemplateRepository
+makeImportSignTemplates ..> signTemplateDomainService
+makeListSignTemplates ..> SignTemplateRepository
+makeDeleteSignTemplate ..> SignTemplateRepository
+
+' ---------- adaptadores de salida ----------
+class postgresSignTemplateRepository <<adapter out>>
+note bottom of postgresSignTemplateRepository : adapters/outbound/postgres/sign_template_repository.ts\nSQL sobre public.sign_templates con shared pool (INSERT con UNNEST).
+postgresSignTemplateRepository ..|> SignTemplateRepository
+
+' ---------- adaptadores de entrada ----------
+class makeSignTemplateController <<adapter in>> {
+  deps: signTemplateService
+  + import(req, res)
+  + list(req, res)
+  + remove(req, res)
+}
+note bottom of makeSignTemplateController : adapters/inbound/http/sign_template_controller.ts\nAcepta { gestures: [{ label, frames }] } o { templates: [...] }.\nDTO: ImportTemplatesRequestDto { kind?, source?, gestures?, templates? }\n(adapters/inbound/http/dto/import_templates_request.ts). Errores -> 400.
+class makeRequirePermission <<adapter in>> {
+  + (checker: PermissionChecker) : (permission: string) => RequestHandler
+}
+note bottom of makeRequirePermission : adapters/inbound/http/require_permission.ts\nVa después de authMiddleware: 401 sin usuario, 403 sin permiso,\n500 si el checker falla.
+class makeSignTemplateRoutes <<adapter in>> {
+  deps: signTemplateService, authMiddleware, permissionChecker
+  + () : Router
+}
+note bottom of makeSignTemplateRoutes : adapters/inbound/http/routes.ts\nMODELS_MANAGE = 'models.manage'
+note right of makeSignTemplateRoutes
+  Rutas bajo /api/sign-templates:
+  GET /            (pública, sin JWT)
+  POST /           (JWT + permiso models.manage)
+  DELETE /:id      (JWT + permiso models.manage)
+end note
+
+makeSignTemplateRoutes ..> makeSignTemplateController
+makeSignTemplateRoutes ..> makeRequirePermission
+makeRequirePermission ..> PermissionChecker
+makeSignTemplateController ..> SignTemplateService
+
+' ---------- módulo ----------
+class makeIaModule <<module>> {
+  + (deps: { authMiddleware; permissionChecker: PermissionChecker }) : { signTemplateService: SignTemplateService; router: Router }
+}
+note bottom of makeIaModule : src/domains/ia/ia.module.ts\nOJO: cmd/server/main.ts (497feef) lo llama con { authMiddleware } solamente:\npermissionChecker llega undefined y POST/DELETE responderían 500.
+
+class makeAuthMiddleware <<adapter in>>
+note bottom of makeAuthMiddleware : de shared: src/shared/http/auth_middleware.ts
+
+makeIaModule ..> postgresSignTemplateRepository
+makeIaModule ..> makeImportSignTemplates
+makeIaModule ..> makeListSignTemplates
+makeIaModule ..> makeDeleteSignTemplate
+makeIaModule ..> makeSignTemplateRoutes
+makeIaModule ..> makeAuthMiddleware : recibe
+makeIaModule ..> SignTemplateService : construye
+@enduml
