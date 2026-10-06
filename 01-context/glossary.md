@@ -52,16 +52,16 @@ domain actually uses, so the translation is decided once, here, and never re-inv
 
 ## Technical terms of the project
 
-> ⚠ This section used to define microservice vocabulary — API Gateway, Circuit Breaker, Saga,
-> Dead Letter Queue, Bounded Context. Those terms came from the documentation framework this
-> repository was scaffolded from and describe an architecture TraduceSeñas explicitly rejected.
-> They have been removed. If you find them elsewhere in the repository, they are scaffold, not
-> decisions. See the Architecture section of `overview.md`.
+> Updated 2026-10-04: the product owner confirmed that TraduceSeñas is a **microservices**
+> architecture. The microservice vocabulary below applies to this project. See the Architecture
+> section of `overview.md` and `05-architecture/`.
 
 | Term | Definition |
 |------|-----------|
-| Modular monolith | The architecture of this system: one deployable project internally divided into modules with clear boundaries. Chosen over microservices because a three-person team gains nothing from independent deployment units and pays for them in operational complexity |
-| N-layer architecture | The internal division of the monolith: **presentation** (screens, components, navigation), **business** (translation, user, notifications, profile), **data** (API clients, repositories, local storage), **services** (recognition, auth, push) and **config**. A layer may call the one below it, never the one above |
+| Microservices | The architecture of this system: five domain services (`iam`, `recognition`, `lexicon`, `analytics`, `profile`) behind an API Gateway, each independently deployable, hexagonal inside, with its own database. Client calls go over REST through the gateway; services talk to each other with asynchronous domain events over RabbitMQ |
+| Database per service | Each service owns its data store (PostgreSQL databases `iam`, `recognition`, `lexicon`, `analytics`, `profile`; MongoDB `gesture_samples` in recognition). No foreign keys across services: cross-service references are logical IDs such as the `user_id` UUID issued by iam-service |
+| API Gateway | The single public entry point (`/api/**`, port 8080). It routes to the owning service, validates the JWT signature, applies rate limiting and CORS. It owns no data |
+| N-layer architecture | The internal division of the **mobile/web client**: **presentation** (screens, components, navigation), **business** (translation, user, notifications, profile), **data** (API clients, repositories, local storage), **services** (recognition, auth, push) and **config**. A layer may call the one below it, never the one above |
 | Layer boundary violation | Any code that skips or inverts the layer order — a screen that opens a repository directly, or business logic written inside a component. The most common defect this architecture is meant to prevent |
 | Singleton | Creational pattern used for `DatabaseConnection` and `ConfiguracionApp`, the two things that must exist exactly once. Duplicating the connection wastes resources and breaks transactions; duplicating the configuration means a language change in one module is invisible to the others |
 | Factory Method | Creational pattern used by `TraduccionFactory` and `NotificacionFactory`. Adding a translation type becomes a new subclass instead of another branch in a growing `if`/`switch` |

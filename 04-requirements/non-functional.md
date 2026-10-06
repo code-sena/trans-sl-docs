@@ -2,7 +2,7 @@
 
 > **Status:** 🟡 Living document — v0.2
 > **Last updated:** 2026-09-08
-> **Scope:** TraduceSeña 2.0 — React Native / Expo mobile app + Node/Express modular monolith organized by domains + PostgreSQL + MongoDB
+> **Scope:** TraduceSeña 2.0 — React Native / Expo mobile app + Node/Express microservices (iam, recognition, lexicon, analytics, profile + API Gateway) + PostgreSQL per service + MongoDB + RabbitMQ
 
 > NFRs define the **qualities of the system** — not what it does but how well it does it.
 > The golden rule: every NFR must have a metric. "The system must be fast" is not an NFR.
@@ -46,7 +46,7 @@ if the screen has not passed the accessibility checklist.
 
 ## NFR-002: Performance
 
-### Backend (Node/Express modular monolith)
+### Backend (Node/Express microservices behind the API Gateway)
 
 | Attribute | Metric | Test condition |
 |-----------|--------|---------------|
@@ -139,16 +139,17 @@ stability is prioritized.
 | Scenario | Expected behavior |
 |----------|-------------------|
 | Expected concurrent users | 500 concurrent, 5000 registered (target for the first production cut) |
-| Gradual load growth | Vertical scaling first; horizontal scaling requires externalizing session state |
+| Gradual load growth | Each service scales independently (recognition first); services are stateless, JWT carries the session |
 | Sudden spike (institutional launch, press) | Degrade gracefully: rate limit before falling over |
 | Lexicon growth | Up to 5000 signs without query degradation, guaranteed by the indexes defined in the model |
-| Gesture sample growth | MongoDB grows independently of the relational monolith — this is precisely why `gesture_samples` was decoupled |
+| Gesture sample growth | MongoDB (owned by recognition-service) grows independently of the PostgreSQL databases — this is precisely why `gesture_samples` was decoupled |
 | Usage event growth | `usage_events` is the highest-volume table; monthly partitioning by `created_at` is planned when it exceeds 10M rows |
 
-**Strategy:** the backend is a monolith organized by domains, not a set of
-microservices. Scaling is vertical in the first cut. Domain boundaries in the
-data model (`TableGroup`s with no cross-domain FK where it matters) are what
-would make a future extraction into services possible without rewriting.
+**Strategy:** the backend is a set of microservices with a database per service.
+Scaling is per service: the load-heavy `recognition-service` can run more
+instances without touching the others. Domain boundaries in the data model
+(`TableGroup`s, no cross-service FK) are what make that independence possible;
+asynchronous events over RabbitMQ absorb spikes between services.
 
 ---
 

@@ -39,15 +39,15 @@ This section captures domain knowledge **before** designing the architecture.
 | **Language** | English, for both prose and code |
 | **Identifiers** | `PascalCase` for entities and events (`TranslationSession`, `TranslationProduced`), `camelCase` for attributes |
 | **Event names** | Always past tense (`UserRegistered`, never `RegisterUser` nor `UserUpdated`) |
-| **System scale** | Modular monolith: each bounded context is a **backend module**, not an independent deployment |
-| **Database** | A single database, logically separated per context (its own schema or collection) |
-| **Event channel** | *In-process* (Node `EventEmitter` + an events table), not a message broker |
+| **System scale** | Microservices: each bounded context is hosted by one of five services (iam, recognition, lexicon, analytics, profile) behind an API Gateway |
+| **Database** | Database per service (PostgreSQL; MongoDB for `gesture_samples` in recognition). No foreign keys across services |
+| **Event channel** | Asynchronous domain events over RabbitMQ (topic exchange `traduce.events`, routing key `<service>.<event>`) |
 
-> **On scale:** this project is built by three people and ships as a mobile app
-> (React Native / Expo) against a Node/Express backend. The bounded contexts in this folder are
-> **logical** boundaries, not microservices. They are defined so that, if the system grows, each one can
-> be extracted without redoing the model — but documenting today a distributed architecture that does
-> not exist would be documenting fiction.
+> **On scale:** the product owner confirmed on 2026-10-04 that Traduce Señas is a microservices
+> architecture. The bounded contexts in this folder map to services as shown in the context map of
+> `domain-map.md`. Extraction status: the backend code still has the domain modules `auth`, `users`,
+> `translations`, `ia` and `lexicon` under `backend/src/domains/`, being split into those
+> services (pending / in progress per service).
 
 ---
 

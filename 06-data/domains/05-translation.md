@@ -4,6 +4,7 @@
 > **Tables:** `translations`, `translation_signs`
 > **Requirements:** RF3 · ERF3.1, ERF3.2 · ERF5.5 · RNF1
 
+**Owned by:** recognition-service (PostgreSQL db `recognition`)
 **Version:** v0.2 · **Last updated:** 2026-09-10 · **Source:** `traduce_senas.dbml` (v9)
 **Conventions:** [`../modeling-conventions.md`](../modeling-conventions.md) · **Constraints:** [`../constraints.md`](../constraints.md) · **Open items:** [`../open-items.md`](../open-items.md)
 

@@ -28,7 +28,7 @@
 
 > [Implementation constraints, performance considerations, required integrations]
 
-**Responsible module(s):** [module in the monolith — matches a TableGroup in the data model]
+**Responsible service(s):** [iam / recognition / lexicon / analytics / profile — matches the owning service of the TableGroup in the data model]
 **Endpoint(s) implemented:** [method + path]
 **Events generated:** [if applicable]
 **Required permissions:** [minimum role to perform this action]

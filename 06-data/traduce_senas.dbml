@@ -16,7 +16,7 @@
 //      separación Identity / Authorization, dominio Audit (incluye
 //      Error_Log), Refs ubicados junto a cada dominio y TableGroups
 //      con color al final del archivo. gesture_samples se desconecta del
-//      monolito (sin FK): pasa a vivir en su propia base MongoDB.
+//      esquema relacional (sin FK): pasa a vivir en su propia base MongoDB.
 //      Notification se profundiza: notification_types (catálogo,
 //      is_active administrado por el admin — sin preferencia por
 //      usuario/tipo, el único control individual sigue siendo
@@ -613,7 +613,7 @@ Ref: notifications.device_id > user_devices.device_id [delete: set null]
 // AI
 // ============================================================
 //
-// gesture_samples queda DESCONECTADA del monolito: vive en su
+// gesture_samples queda DESCONECTADA de PostgreSQL: vive en su
 // propia base de datos MongoDB (colección independiente), para
 // poder extender su esquema libremente (nuevos tipos de muestra,
 // metadatos del modelo, etc.) sin acoplarse al esquema relacional.
@@ -656,7 +656,7 @@ Table gesture_samples {
 }
 // sign_id  → Lexicon.sign_lexicon.sign_id
 // user_id  → Identity.users.user_id
-// Sin FK real: colección propia en MongoDB, fuera del monolito relacional.
+// Sin FK real: colección propia en MongoDB, propia de recognition-service, fuera de PostgreSQL.
 
 
 

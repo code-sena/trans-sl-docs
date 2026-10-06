@@ -4,6 +4,7 @@
 > **Tables:** `audit_logs`, `error_logs`
 > **Requirements:** no RF in the SRS (GAP-08) · FR-901 … FR-904 · RNF6 observability
 
+**Owned by:** iam-service (PostgreSQL db `iam`)
 **Version:** v0.2 · **Last updated:** 2026-09-10 · **Source:** `traduce_senas.dbml` (v9)
 **Conventions:** [`../modeling-conventions.md`](../modeling-conventions.md) · **Constraints:** [`../constraints.md`](../constraints.md) · **Open items:** [`../open-items.md`](../open-items.md)
 

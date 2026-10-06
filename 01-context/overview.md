@@ -53,19 +53,17 @@ everyday interactions that today have no coverage at all.
 
 ## Architecture
 
-TraduceSeñas is a **modular monolith organised in N layers** — presentation, business, data,
-external services and configuration — deployed as a single project, with the React Native client
-talking to the Node.js backend over a REST API.
+TraduceSeñas is a **microservices system**: five domain services — `iam`, `recognition`,
+`lexicon`, `analytics` and `profile` — behind an **API Gateway**. The React Native / web client
+(internally organised in N layers: presentation, business, data, external services and
+configuration) talks to the gateway over REST. Each service is hexagonal, has its own database
+(PostgreSQL, plus MongoDB for the training samples in recognition) and communicates with the
+others through asynchronous domain events over RabbitMQ. The decision was confirmed by the
+product owner on 2026-10-04; the full description lives in `05-architecture/`.
 
-**It is deliberately not a microservices system.** A three-person team on a six-month schedule
-gains nothing from independent deployment units and pays for them in operational complexity.
-Migrating to microservices is recorded as a future recommendation, to be reconsidered only if
-usage or team size grows substantially.
-
-> ⚠ This repository was scaffolded from a microservices governance framework. Its `09-microservices/`
-> section and parts of its scaffolding assume an architecture this project rejected. Where the two
-> disagree, the decision above wins. **An ADR recording this decision does not yet exist and must
-> be written** — see the open decisions table in `scope.md`.
+> **Extraction status:** the backend code today has the domain modules `auth`, `users`,
+> `translations`, `ia` and `lexicon`, each already hexagonal, which are being split into the
+> services above. Status per service: pending / in progress.
 
 ## Technology stack
 

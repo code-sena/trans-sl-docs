@@ -11,20 +11,26 @@
 
 ## ⚠️ Read this first
 
-**The scaffold this folder shipped with assumes microservices. This project is a modular monolith.**
+**Traduce Señas is a microservices architecture, and the rule is: database per service.**
 
-The original README opened with "each microservice owns its own data" and a database per service.
-Traduce Señas is one Node/Express backend, one React Native/Expo client and three developers. There are
-no services to give databases to. The principle behind the rule is kept, in the form that applies at
-this scale:
+Each service (iam, recognition, lexicon, analytics, profile) owns its own store, and the 10 domains of
+this model are distributed among them:
 
-> **Each bounded context owns its tables, and no module reads another module's tables directly.**
+| Service | Domains it owns | Store |
+|---------|-----------------|-------|
+| iam-service | 01-identity, 02-authorization, 10-audit | PostgreSQL db `iam` |
+| recognition-service | 05-translation, 06-ai | PostgreSQL db `recognition` + MongoDB `gesture_samples` |
+| lexicon-service | 04-lexicon | PostgreSQL db `lexicon` + static media |
+| analytics-service | 08-usage | PostgreSQL db `analytics` |
+| profile-service | 03-profile, 07-notification, 09-gamification | PostgreSQL db `profile` |
 
-The boundary is enforced by repositories, code review and a `GRANT` per schema instead of by a network
-hop — and that is what makes a later extraction into services possible without redoing the model.
+> **No service reads another service's tables, and there are no foreign keys across services.**
+> Cross-service references are logical IDs (for example the `user_id` UUID issued by iam-service),
+> and consistency between services is kept with asynchronous domain events over RabbitMQ.
 
-The rest of the scaffold's guidance — SQL vs NoSQL, Saga, Outbox, eventual consistency — describes
-problems this system does not have. It has been removed rather than left in place looking authoritative.
+The model of record (`traduce_senas.dbml`) still describes all 10 domains in one file; read each
+domain's "Owned by" line to know where it is deployed. Extraction status: the backend code is still
+being split from the original domain modules into these services (pending / in progress).
 
 ---
 
