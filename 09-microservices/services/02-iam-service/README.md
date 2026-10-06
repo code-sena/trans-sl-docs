@@ -70,7 +70,7 @@ The current JWT is HS256, expires in 1 day, has no refresh token, and carries `u
 from the `user_role` table on each request (`require_role`). Password hash: bcrypt (`adapters/outbound/security/password.ts`).
 The mail is sent with Nodemailer (`adapters/outbound/mailer`).
 
-## Target API (to be formalized in `07-api/contracts/openapi/auth-service.yaml`)
+## Target API (formalized in `07-api/contracts/openapi/iam-service.yaml`)
 
 | Area | Path prefix | Notes |
 |------|-------------|-------|
@@ -134,4 +134,4 @@ curl http://localhost:3001/health
 - [decisions.md](./decisions.md) — Design decisions
 - [runbook.md](./runbook.md) — Operation
 - Data model source → `06-data/domains/01-identity.md`, `02-authorization.md`, `10-audit.md`
-- API contract → `07-api/contracts/openapi/auth-service.yaml` (scaffold, to be realigned)
+- API contract → `07-api/contracts/openapi/iam-service.yaml`

@@ -230,4 +230,4 @@ const SECURITY_EVENTS = [
 - Security non-functional requirements → `04-requirements/non-functional.md`
 - ADR on authentication → `05-architecture/decisions/`
 - Security event observability → `13-operations/observability.md`
-- RBAC implemented in → `09-microservices/services/XX-auth-service/`
+- RBAC implemented in → `09-microservices/services/02-iam-service/`

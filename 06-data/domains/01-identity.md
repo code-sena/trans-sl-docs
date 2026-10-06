@@ -336,5 +336,5 @@ schema is a place to avoid deciding where something belongs.**
 - Roles and permissions, and the `security.policy.manage` permission → [`02-authorization.md`](02-authorization.md)
 - Preferences of the same user → [`03-profile.md`](03-profile.md)
 - The dissolved `Configuration` domain → no file of its own; the reasoning is in this document and in [`../models.md`](../models.md)
-- Auth contract → `07-api/contracts/openapi/auth-service.yaml`
+- Auth contract → `07-api/contracts/openapi/iam-service.yaml`
 - Hashing, secrets and why `max_length` is questionable → `00-governance/security-policy.md`

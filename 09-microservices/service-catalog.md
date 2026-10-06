@@ -211,5 +211,5 @@ both react to events of the other, but only for notifications and counters, neve
 - Domain boundaries → `02-domain/domain-map.md`
 - Events → `02-domain/domain-events.md`
 - Data model → `06-data/`
-- API contracts → `07-api/contracts/openapi/` (the existing `api-gateway.yaml` and `auth-service.yaml` are scaffold examples; they have to be realigned to the paths above)
+- API contracts → `07-api/contracts/openapi/` (one contract per service: `api-gateway.yaml`, `iam-service.yaml`, `recognition-service.yaml`, `lexicon-service.yaml`, `analytics-service.yaml`, `profile-service.yaml`)
 - Template for a new service → `09-microservices/_template/service/`
