@@ -1,431 +1,234 @@
 # Local Project Setup
 
-> This document ensures that any developer can have a functional local environment
-> in less than 1 hour. If it takes longer, the document is incomplete.
-> **Rule:** If you have to guess something or look elsewhere, add what's missing here.
+> Goal: any developer has the backend running locally in less than 1 hour.
+> **Rule:** if you have to guess something or look elsewhere, add what is missing here.
+
+**Based on:** Backend `2993301` (`origin/develop`): `README.md`, `docker-compose.yml`, `.env.example`, `package.json`, `scripts/run-tests.js`, `services/api-gateway/src/health.ts`. Frontend `origin/develop` (`6389a5c`): `package.json`, `src/app/config/api.config.ts`, `nginx.conf`.
+**Last updated:** 2026-10-16. For a guided first week (reading order, Git flow, FAQ) see [14-training/technical-onboarding.md](../14-training/technical-onboarding.md).
 
 ---
 
 ## Prerequisites
 
-### Universal tools (all stacks)
+| Tool | Minimum version | Verify with |
+|------|----------------|-------------|
+| Docker with Compose | Docker 24+, Compose 2.20+ | `docker --version`, `docker compose version` |
+| Git | 2.40+ | `git --version` |
+| Node.js | 20.x LTS (the Dockerfiles use `node:20-alpine`) | `node --version` |
+| npm | 10.x | `npm --version` |
 
-| Tool | Minimum version | Install from | Verify with |
-|------|----------------|--------------|-------------|
-| Docker | 24.0+ | docker.com | `docker --version` |
-| Docker Compose | 2.20+ | Included with Docker Desktop | `docker compose version` |
-| Git | 2.40+ | git-scm.com | `git --version` |
+Optional: the Expo Go app on a phone, Postman or Insomnia.
 
-### Backend and Frontend tools
-
-| Tool | Minimum version | Install from | Verify with |
-|------|----------------|--------------|-------------|
-| Node.js | 20.x (LTS) | nodejs.org | `node --version` |
-| npm | 10.x | Included with Node.js | `npm --version` |
-
-**Backend:** Express 5.2+ TypeScript 5.6+ on Node.js 20+
-**Frontend:** React Native (Expo 57) via Expo CLI
-
-**Recommended (not required):**
-- VS Code with ESLint and Prettier extensions
-- Postman or Insomnia for testing API endpoints
-- Expo Go app (iOS/Android) for testing the mobile app
+The Backend is an npm workspaces monorepo (`packages/shared`, `services/*`). The branch to work from is `develop`.
 
 ---
 
-## Local ports in use
-
-Verify these ports are free before starting. Traduce Señas runs 5 microservices + API Gateway:
-
-| Port | Service | Description |
-|------|---------|-------------|
-| 8080 | api-gateway | Main entry point (routing, JWT validation, rate limit) |
-| 3001 | iam-service | Identity & Access Management |
-| 3002 | recognition-service | Sign recognition & translation (core) |
-| 3003 | lexicon-service | Sign lexicon & learning |
-| 3004 | analytics-service | Usage analytics |
-| 3005 | profile-service | User profiles, notifications, achievements |
-| 5433 | PostgreSQL (iam) | Identity database |
-| 5434 | PostgreSQL (recognition) | Translation & AI database |
-| 5435 | PostgreSQL (lexicon) | Lexicon database |
-| 5436 | PostgreSQL (analytics) | Analytics database |
-| 5437 | PostgreSQL (profile) | Profile database |
-| 27017 | MongoDB | Gesture samples (recognition service) |
-| 5672 | RabbitMQ | Async messaging (domain events) |
-| 8081 | Frontend (Expo) | React Native development server (web) |
-| 19000 | Expo | Expo development server |
-| 19001 | Expo | Expo development server (tunnel) |
-
-**Check free ports:**
-```bash
-# Windows
-netstat -ano | findstr ":[PORT]"
-
-# macOS / Linux
-lsof -i :[PORT]
-```
-
----
-
-## Step-by-step installation
-
-### Step 1: Clone the repository
+## 1. Start the whole backend with Docker
 
 ```bash
-git clone https://github.com/sena-proyectos/traduce-senas.git
-cd traduce-senas
+cd Backend
+git checkout develop
+cp .env.example .env      # then edit .env (see below). Never commit .env
+docker compose up --build
 ```
 
-### Step 2: Environment variables — Backend services
+### Required variables in `.env`
 
-Each microservice runs from `backend/src/services/[service]/` and has its own `.env`.
+Docker Compose stops with an error if any of these four is empty:
 
-**For now (extraction in progress):** services run from the monorepo (backend/) with separate env sections.
+| Variable | What to put | Notes |
+|----------|-------------|-------|
+| `JWT_SECRET` | A random string of **32 characters or more** | The same secret is used by all services. Generate one: `openssl rand -hex 32` |
+| `POSTGRES_PASSWORD` | A password you choose | Used by the five PostgreSQL containers (user `postgres`) |
+| `MONGO_ROOT_PASSWORD` | A password you choose | MongoDB root user (default name `signa`) |
+| `RABBITMQ_PASSWORD` | A password you choose | RabbitMQ user (default name `signa`) |
 
-Example `backend/.env` (5 service ports + databases):
+Use your own values; never reuse a real password from another system and never put real values in a file that is committed.
 
-| Variable | Description | Value for local |
-|----------|-------------|----------------|
-| `API_GATEWAY_PORT` | Gateway public port | `8080` |
-| `IAM_SERVICE_PORT` | iam-service internal port | `3001` |
-| `RECOGNITION_SERVICE_PORT` | recognition-service internal port | `3002` |
-| `LEXICON_SERVICE_PORT` | lexicon-service internal port | `3003` |
-| `ANALYTICS_SERVICE_PORT` | analytics-service internal port | `3004` |
-| `PROFILE_SERVICE_PORT` | profile-service internal port | `3005` |
-| `IAM_DB_HOST` | iam service PostgreSQL | `localhost` |
-| `IAM_DB_PORT` | iam database port | `5433` |
-| `RECOGNITION_DB_HOST` | recognition service PostgreSQL | `localhost` |
-| `RECOGNITION_DB_PORT` | recognition database port | `5434` |
-| `MONGODB_URI` | MongoDB connection (gesture samples) | `mongodb://localhost:27017/gesture_samples` |
-| `RABBITMQ_URL` | RabbitMQ broker (domain events) | `amqp://guest:guest@localhost:5672` |
-| `JWT_SECRET` | Key for signing JWT | `openssl rand -base64 32` (generate one) |
+Optional variables:
 
-> **NEVER** commit `.env`. It is in `.gitignore`.
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MONGO_ROOT_USER`, `RABBITMQ_USER` | `signa` | Names of the MongoDB and RabbitMQ users |
+| `CORS_ORIGINS` | `http://localhost:8081,http://localhost:19006` | Web origins allowed to call the gateway (Expo web). Comma separated. The container runs in production mode: an empty value would allow none |
+| `EMAIL_USER`, `EMAIL_PASS` | empty | Gmail account that sends the verification and password-reset codes. Without them registration works but the code is not emailed (`verification_email_sent: false`) |
 
-### Step 3: Start databases locally
+The other variables in `.env.example` (ports, `*_DB_*`, rate limits, `LEXICON_MEDIA_*`) are only used when you run the services without Docker.
 
-Start PostgreSQL per service, MongoDB, and RabbitMQ:
+### Check that it works
 
-```bash
-# Start iam-service PostgreSQL (5433)
-docker run --name traduce-iam-db \
-  -e POSTGRES_USER=traduce_user \
-  -e POSTGRES_PASSWORD=dev_password \
-  -e POSTGRES_DB=iam \
-  -p 5433:5432 \
-  -d postgres:15-alpine
+Only the gateway is published to the network:
 
-# Start recognition-service PostgreSQL (5434)
-docker run --name traduce-recognition-db \
-  -e POSTGRES_USER=traduce_user \
-  -e POSTGRES_PASSWORD=dev_password \
-  -e POSTGRES_DB=recognition \
-  -p 5434:5432 \
-  -d postgres:15-alpine
-
-# Start lexicon-service PostgreSQL (5435)
-docker run --name traduce-lexicon-db \
-  -e POSTGRES_USER=traduce_user \
-  -e POSTGRES_PASSWORD=dev_password \
-  -e POSTGRES_DB=lexicon \
-  -p 5435:5432 \
-  -d postgres:15-alpine
-
-# Start analytics-service PostgreSQL (5436)
-docker run --name traduce-analytics-db \
-  -e POSTGRES_USER=traduce_user \
-  -e POSTGRES_PASSWORD=dev_password \
-  -e POSTGRES_DB=analytics \
-  -p 5436:5432 \
-  -d postgres:15-alpine
-
-# Start profile-service PostgreSQL (5437)
-docker run --name traduce-profile-db \
-  -e POSTGRES_USER=traduce_user \
-  -e POSTGRES_PASSWORD=dev_password \
-  -e POSTGRES_DB=profile \
-  -p 5437:5432 \
-  -d postgres:15-alpine
-
-# Start MongoDB (gesture samples for recognition service)
-docker run --name traduce-mongodb \
-  -p 27017:27017 \
-  -d mongo:6-alpine
-
-# Start RabbitMQ (domain events broker)
-docker run --name traduce-rabbitmq \
-  -e RABBITMQ_DEFAULT_USER=guest \
-  -e RABBITMQ_DEFAULT_PASS=guest \
-  -p 5672:5672 \
-  -p 15672:15672 \
-  -d rabbitmq:3-management-alpine
-
-# Verify all are running
-docker ps | grep traduce-
-```
-
-### Step 4: Install dependencies — Backend
-
-```bash
-cd backend
-npm install
-```
-
-### Step 5: Run database migrations
-
-```bash
-# Migrations are in backend/DB/traduce_senas/ (Liquibase)
-# The application applies them on startup. Just ensure the DB is running.
-# Verify by connecting:
-psql -h localhost -p 5433 -U traduce_user -d traduce_senas
-```
-
-### Step 6: Start the Backend services
-
-**Current status (2026-10-04):** Services are being extracted from the monorepo. For now, start all services from one terminal:
-
-```bash
-cd backend
-npm run dev:all
-# Or individually (in separate terminals):
-npm run dev:iam
-npm run dev:recognition
-npm run dev:lexicon
-npm run dev:analytics
-npm run dev:profile
-npm run dev:gateway
-```
-
-Expected output: all services log their startup (ports 3001–3005 + gateway on 8080). Verify:
 ```bash
 curl http://localhost:8080/health
-# Should respond with {alive: true}
 ```
 
-### Step 7: Install and start Frontend (React Native + Expo)
+Expected answer when every service is up (HTTP 200):
+
+```json
+{"status":"ok","services":{"iam":{"status":"up"},"recognition":{"status":"up"},"lexicon":{"status":"up"},"analytics":{"status":"up"},"profile":{"status":"up"}}}
+```
+
+If one service is down the gateway still answers 200, with `"status":"degraded"` and `"down"` for that service. The first start can show `degraded` for a few seconds while the databases and RabbitMQ become healthy; repeat the command.
+
+A quick functional check (the gateway forwards to iam-service; the body is validated before any email is sent):
+
+```bash
+curl -i -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" -d '{}'
+# 400 {"success":false,"code":"INVALID_BODY",...}  -> the request reached iam-service
+```
+
+To stop: `docker compose down`. Add `-v` to delete the data volumes (needed to re-run the SQL, see "Database schema").
+
+---
+
+## 2. Ports
+
+| Port | Component | Published to the host? |
+|------|-----------|------------------------|
+| 8080 | api-gateway | Yes, to the whole network (the only public entry point) |
+| 3001 | iam-service | No, only inside the Docker network |
+| 3002 | recognition-service | No |
+| 3003 | lexicon-service | No |
+| 3004 | analytics-service | No |
+| 3005 | profile-service | No |
+| 5433 / 5434 / 5435 / 5436 / 5437 | PostgreSQL of iam / recognition / lexicon / analytics / profile | Only on `127.0.0.1` |
+| 27017 | MongoDB (gesture samples of recognition-service) | Only on `127.0.0.1` |
+| 15672 | RabbitMQ management panel (user and password from `.env`) | Only on `127.0.0.1` |
+| 5672 | RabbitMQ AMQP | No |
+| 8081, 19006 | Expo web (Metro / webpack) | Development server of the Frontend, not part of the Compose |
+
+Because services 3001-3005 are not published, call everything through `http://localhost:8080/api/...`. If port 8080 or any of 5433-5437, 27017 or 15672 is busy, Compose fails to start that container; free the port or stop the other program (`netstat -ano | findstr :8080` on Windows, `lsof -i :8080` on macOS / Linux).
+
+---
+
+## 3. Database schema (SQL files)
+
+Each service owns its database (`iam`, `recognition`, `lexicon`, `analytics`, `profile`). The `.sql` files in `services/<service>/db/` are mounted **by name** in `/docker-entrypoint-initdb.d` of the matching PostgreSQL container:
+
+| Container | Files applied |
+|-----------|---------------|
+| `postgres-iam` | `000_users.sql`, `003_iam_roles_permissions.sql`, `005_auth_email_normalization_user_tokens.sql`, `006_users_status_email_verification.sql` |
+| `postgres-recognition` | `001_translations.sql`, `002_sign_templates.sql` |
+| `postgres-lexicon` | `003_lexicon.sql` (also seeds the alphabet) |
+| `postgres-analytics` | `001_usage_event.sql` |
+| `postgres-profile` | `001_profile.sql` (also seeds the achievements) |
+
+Two consequences:
+
+- PostgreSQL runs those files **only the first time the data volume is created**. To apply a new or changed file to an existing database, either apply it by hand
+  (`docker compose exec -T postgres-iam psql -U postgres -d iam < services/iam-service/db/<file>.sql`) or recreate the volumes with `docker compose down -v`.
+- A new `.sql` file does nothing until you add its line to the `volumes` of the right `postgres-*` service in `docker-compose.yml`.
+
+Each `db/` folder also contains Liquibase files (`master.xml`, `changelogs/`). Docker Compose does not use them.
+
+---
+
+## 4. Run without Docker (optional)
+
+```bash
+cd Backend
+npm install
+# for each service: copy services/<service>/.env.example to services/<service>/.env and fill it in
+npm run dev:all          # gateway + the 5 services with reload
+```
+
+You still need the PostgreSQL databases, and you must apply the `.sql` files of each service by hand (nothing creates the tables without Docker). With `RABBITMQ_URL` and `MONGO_URL` empty the services use in-memory events and samples (they are lost on restart; events do not cross processes). To run one service: `npm run dev -w @traduce/iam-service` (workspace names `@traduce/api-gateway`, `@traduce/iam-service`, `@traduce/recognition-service`, `@traduce/lexicon-service`, `@traduce/analytics-service`, `@traduce/profile-service`). All services need the same `JWT_SECRET`.
+
+---
+
+## 5. Tests and build
+
+Run from the Backend root:
+
+```bash
+npm install
+npm run build      # compiles @traduce/shared and every service with tsc
+npm test           # builds @traduce/shared, then runs every *.test.ts with node:test
+```
+
+`scripts/run-tests.js` looks for `*.test.ts` under `services/*/tests` and `packages/shared/tests`. There is no coverage report and no CI; run both commands before opening a pull request.
+
+---
+
+## 6. Frontend (React Native + Expo)
 
 In a new terminal:
 
 ```bash
-cd frontend
+cd Frontend
+git checkout develop
 npm install
-npm start
+npm start            # Expo dev server; or: npm run web / npm run android / npm run ios
+npm run typecheck    # tsc --noEmit
+npm test             # Jest unit tests (see 11-quality/testing-strategy.md)
 ```
 
-Follow Expo's prompts to run on web (`w`), Android, or iOS.
+There is no `lint` or `build` script in the Frontend.
 
-### Step 8: Verify it works
-
-**Backend (via API Gateway):**
-```bash
-curl http://localhost:8080/api/auth/register
-# Should respond with 400 (missing fields) or similar, not connection error
-```
-
-**Health check per service:**
-```bash
-curl http://localhost:8080/health                 # Gateway
-curl http://localhost:3001/health                 # iam-service
-curl http://localhost:3002/health                 # recognition-service
-curl http://localhost:3003/health                 # lexicon-service
-curl http://localhost:3004/health                 # analytics-service
-curl http://localhost:3005/health                 # profile-service
-```
-
-**Frontend (web):**
-- Open http://localhost:19001 (Expo tunnel) or http://localhost:8081 (web)
-- Verify it loads the login screen
-
----
-
-## Daily workflow
-
-```bash
-# At the start of the day
-git pull origin dev
-
-# Start all infrastructure (PostgreSQL x5, MongoDB, RabbitMQ)
-docker start traduce-iam-db traduce-recognition-db traduce-lexicon-db traduce-analytics-db traduce-profile-db traduce-mongodb traduce-rabbitmq
-
-# Backend microservices
-cd backend
-npm install  # If package.json changed
-npm run dev:all  # Starts all 5 services + gateway
-
-# Frontend (in a new terminal)
-cd frontend
-npm install  # If package.json changed
-npm start    # Starts Expo dev server
-
-# At the end of a task
-git add [specific files]
-git commit -m "type(scope): description"
-# See 00-governance/git-conventions.md for format
-```
+> **Which backend the app uses.** `src/app/config/api.config.ts` points to the deployed API, `https://traducesenas.tech/api`,
+> in development too. To work against your local backend, create `.env` in the Frontend root with
+> `EXPO_PUBLIC_API_URL=http://localhost:8080/api` (or `http://<your-LAN-IP>:8080/api` for a phone) and restart Expo; the value is
+> read at build time. The production web build uses the relative `/api`, and `nginx.conf` only serves the static files: Caddy
+> sends `/api` to the gateway.
 
 ---
 
 ## Common issues
 
-### "Port 3001–3005 or 5433–5437 already in use"
+### Compose says a variable is not defined
+
+`docker compose up` fails with `Define JWT_SECRET ...` (or `POSTGRES_PASSWORD`, `MONGO_ROOT_PASSWORD`, `RABBITMQ_PASSWORD`). Copy `.env.example` to `.env` **in the Backend root** and fill in the four variables. `JWT_SECRET` needs at least 32 characters or the services refuse to start.
+
+### Special characters in passwords
+
+The passwords of MongoDB and RabbitMQ are placed inside connection URLs (`MONGO_URL`, `RABBITMQ_URL`). Do not use `@ : / ? #` in `POSTGRES_PASSWORD`, `MONGO_ROOT_PASSWORD` or `RABBITMQ_PASSWORD`: the URL breaks and the service cannot connect (the gateway then reports `down` or `degraded`). Use letters, digits and characters such as `-` or `_`.
+
+### Changed a `.sql` file and nothing happened
+
+PostgreSQL only runs the initialisation files on an empty volume. See "Database schema" above.
+
+### `degraded` in `/health`
+
+Look at the service that says `down`: `docker compose logs <service>` (for example `docker compose logs iam-service`). Typical causes: its database is not healthy yet, a wrong password in `.env` after changing it without recreating the volume (`docker compose down -v`), or RabbitMQ not ready.
+
+### The verification email never arrives
+
+Without `EMAIL_USER` / `EMAIL_PASS` the codes are not sent. The registration response shows `verification_email_sent: false`. Set a Gmail account (an application password, not your normal password) in `.env` and restart `iam-service`.
+
+### The browser blocks the call (CORS)
+
+Add the origin of your web app to `CORS_ORIGINS` and restart the gateway. Native apps do not send `Origin` and do not need it.
+
+### The app cannot reach the backend
+
+By default the Frontend calls the deployed API, not your local gateway. See "Which backend the app uses" in section 6.
+
+### Expo hangs or crashes
 
 ```bash
-# Windows — Find process using port
-netstat -ano | findstr :3001
-# Then kill it:
-taskkill /PID [PID] /F
-
-# macOS/Linux
-lsof -i :3001
-kill -9 [PID]
-
-# Or stop all Traduce containers
-docker stop traduce-iam-db traduce-recognition-db traduce-lexicon-db traduce-analytics-db traduce-profile-db traduce-mongodb traduce-rabbitmq
-```
-
-### "PostgreSQL container not starting"
-
-```bash
-# Check if container exists but stopped
-docker ps -a | grep traduce-
-
-# Restart specific service database
-docker start traduce-iam-db
-
-# View logs
-docker logs traduce-iam-db
-
-# Remove and recreate (data will be lost)
-docker rm traduce-iam-db
-# Then re-run the docker run command from Step 3
-```
-
-### "Database connection refused"
-
-```bash
-# Verify PostgreSQL is running for each service
-docker ps | grep postgres
-
-# Test connection to iam service (5433)
-psql -h localhost -p 5433 -U traduce_user -d iam -c "SELECT 1"
-
-# Test connection to recognition service (5434)
-psql -h localhost -p 5434 -U traduce_user -d recognition -c "SELECT 1"
-```
-
-### "RabbitMQ or MongoDB not starting"
-
-```bash
-# Check RabbitMQ
-docker logs traduce-rabbitmq
-docker start traduce-rabbitmq
-
-# Check MongoDB
-docker logs traduce-mongodb
-docker start traduce-mongodb
-
-# Test RabbitMQ management UI
-open http://localhost:15672  # user: guest, pass: guest
-```
-
-### "JWT_SECRET not configured"
-
-```bash
-# Generate one and add to backend/.env
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-JWT_SECRET=<paste the output here>
-```
-
-### "Expo development server hangs or crashes"
-
-```bash
-# Clear Expo cache
-expo start --clear
-
-# Or fully reset
-rm -rf node_modules/.cache/expo
-npm install
-npm start
-```
-
-### "Backend migrations not applied"
-
-```bash
-# The application applies Liquibase migrations on startup
-# If they fail, check logs:
-docker logs traduce-postgres
-
-# Manually run a migration (pending — no SQL tool integrated yet)
-# See: backend/DB/traduce_senas/ for the migration scripts
-```
-
----
-
-## Utility commands
-
-### Backend (backend/ directory)
-
-```bash
-# Build
-npm run build               # Compile TypeScript to dist/
-
-# Tests (pending — test suite not yet configured)
-npm test                    # Run the backend test suite (node:test)
-
-# Development
-npm run dev                 # Start with nodemon (hot reload)
-
-# AI/Training domain (LSC-54 dataset)
-npm run ia:inspect-lsc54       # Inspect LSC-54 dataset
-npm run ia:download-lsc54      # Download LSC-54 dataset
-npm run ia:measure-lsc54       # Measure sign separability
-npm run ia:convert-lsc54       # Convert to sign templates
-npm run ia:upload-templates    # Upload templates to DB
-
-# Production
-npm run start                # Start compiled app (dist/cmd/server/main.js)
-npm run build:docker        # Build Docker image: node:20-alpine
-```
-
-### Frontend (frontend/ directory)
-
-```bash
-# Development
-npm start                   # Start Expo dev server
-npm run android             # Start on Android emulator
-npm run ios                 # Start on iOS simulator
-npm run web                 # Start web (localhost:8081 after Expo tunnel)
-
-# Build (pending — not yet configured)
-expo build:android          # Build APK
-expo build:ios              # Build IPA
+npx expo start -c       # clear the cache
 ```
 
 ---
 
 ## Useful local URLs
 
-| Service | URL | Credentials (local only) |
-|---------|-----|--------------------------|
-| **API Gateway** | http://localhost:8080/api | Public entry point |
-| **Gateway Health** | http://localhost:8080/health | GET (liveness) |
-| **iam-service** | http://localhost:3001 | Internal port |
-| **recognition-service** | http://localhost:3002 | Internal port |
-| **lexicon-service** | http://localhost:3003 | Internal port |
-| **analytics-service** | http://localhost:3004 | Internal port |
-| **profile-service** | http://localhost:3005 | Internal port |
-| Frontend (Expo web) | http://localhost:8081 | Auto-opens |
-| Expo tunnel | http://localhost:19001 | Auto-opens |
-| RabbitMQ Management | http://localhost:15672 | user: guest / pass: guest |
-| PostgreSQL (iam) | localhost:5433 | user: traduce_user / pass: dev_password |
-| PostgreSQL (recognition) | localhost:5434 | user: traduce_user / pass: dev_password |
-| MongoDB | localhost:27017 | (no auth in dev) |
-| API Gateway Endpoints | See `09-microservices/` | Service routing rules |
+| What | URL |
+|------|-----|
+| API entry point | `http://localhost:8080/api` |
+| Gateway health | `http://localhost:8080/health` |
+| Lexicon media | `http://localhost:8080/api/lexicon/media/alfabeto/glb/A.glb` |
+| RabbitMQ panel | `http://localhost:15672` (user and password from your `.env`) |
+| Expo web | `http://localhost:8081` |
 
 ---
 
 ## Correlations
 
 - Environment variables per environment → `10-devops/environments.md`
-- CI/CD pipeline → `10-devops/README.md`
+- Technical onboarding (first day and first week) → [14-training/technical-onboarding.md](../14-training/technical-onboarding.md)
+- Service catalog and ports → `09-microservices/service-catalog.md`
+- API contracts → `07-api/README.md`
 - Production troubleshooting → `09-microservices/services/XX/runbook.md`

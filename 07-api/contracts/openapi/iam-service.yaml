@@ -3,60 +3,66 @@ info:
   title: IAM Service API
   version: 1.0.0
   description: |
-    Identity & Access service (`02-iam-service`, port 3001, PostgreSQL db `iam`).
-    Owns the bounded contexts Identity & Access and Consent & Personal Data, plus the
-    cross-cutting audit trail. Data owned: `06-data/domains/01-identity`, `02-authorization`, `10-audit`.
+    Identity & Access service (`02-iam-service`, internal port 3001, PostgreSQL db `iam`).
+    Accounts, email verification, login, password reset, account self-service and roles / permissions (RBAC).
 
-    Public paths served (through the gateway): `/api/auth/**`, `/api/users/**`,
-    `/api/roles/**`, `/api/consents/**`.
+    **Based on:** Backend `2993301` (`origin/develop`, 2026-10-16), `services/iam-service`. Every path below exists in
+    the code; routes that are only planned are listed in `07-api/README.md` ("Planned, not implemented").
+
+    Public paths served through the gateway: `/api/auth/**`, `/api/users/**`, `/api/iam/**`.
+    Port 3001 is internal: Docker Compose does not publish it; use the gateway at `http://localhost:8080`.
 
     ## Authentication flow
-    1. `POST /api/auth/register` creates the account (status INACTIVE) and sends a 6-digit code.
-    2. `POST /api/auth/verify-code` activates the account.
-    3. `POST /api/auth/login` returns an access token (JWT, 1 h) and a refresh token (7 days).
-    4. Send `Authorization: Bearer <accessToken>` on every protected call.
-    5. `POST /api/auth/refresh` rotates the refresh token; `POST /api/auth/logout` closes the session.
+    1. `POST /api/auth/register` creates the account with status `INACTIVE`, assigns the `USER` role,
+       publishes `iam.UserRegistered` and emails a 6-digit code (valid 15 minutes, 5 attempts).
+    2. `POST /api/auth/verify-email` (email + code + password) activates the account. It does not log in.
+    3. `POST /api/auth/login` returns one JWT (`data.token`, HS256, 1 day by default). There is no refresh token.
+    4. Send `Authorization: Bearer <token>` on protected calls. The token carries `sub`, `email`, `roles`
+       and `permissions`; the roles are fixed when the token is signed.
+    5. Password recovery: `forgot-password` (code by email), optional `verify-code`, then `reset-password`.
+    6. Social login: `POST /api/auth/google` (Google ID token) or `POST /api/auth/facebook` (Facebook access token).
+       The service verifies the token with the provider and logs in, or creates the account as `ACTIVE`
+       without a password when the email is new. The answer has the same shape as `login`.
 
-    The service issues the JWT; the gateway validates its signature. The token carries
-    `sub` (user UUID) and `roles`. ADMIN is required where marked.
+    Roles in the seed: `USER`, `LINGUIST`, `ADMIN`. Role administration needs the permission `users.manage`.
 
-    ## Source of each endpoint (extraction status: in progress)
-    - **Implemented in code today** (backend `domains/auth` and `domains/users`): `register`, `login`,
-      `forgot-password`, `verify-code`, `reset-password`, `GET /users/me`. They are tagged `x-status: implemented`.
-      Today the code answers with an envelope `{success, message, data}`, numeric ids and a single `token`;
-      this contract describes the target shape (UUID ids, access + refresh tokens, `ErrorResponse`).
-    - **Planned** (derived from `04-requirements/user-stories.md` and `06-data`): everything tagged
-      `x-status: planned`; the FR-xxx / HU-xxx that justify it are listed in `x-requirements`.
-
-    ## Errors
-    All errors follow `ErrorResponse` from `_shared.yaml`.
+    ## Response format
+    Success: `{ "success": true, "message"?: string, "data"?: object }`.
+    Error: `{ "success": false, "code": string, "message": string }` (`ApiError` in `_shared.yaml`).
+    Business errors use the codes documented per operation. Unexpected errors return `500 INTERNAL_ERROR`.
+    Sensitive paths (`login`, `forgot-password`, `verify-code`, `reset-password`, `google`, `facebook`) are limited
+    by the gateway to 10 requests per minute per client by default (`AUTH_RATE_LIMIT_MAX`, `429 RATE_LIMITED`).
 
     ## Events published (RabbitMQ, exchange `traduce.events`)
-    `iam.UserRegistered`, `iam.AccountBlocked`, `iam.AccountDeleted` (see `02-domain/domain-events.md`).
+    - `iam.UserRegistered` `{ userId, email, name }`.
+    - `iam.UserDeleted` `{ userId, occurredAt }`, written to the `outbox_events` table in the same transaction that
+      erases the account and published by the outbox relay. profile-service, recognition-service and
+      analytics-service erase or unlink their own data when they receive it.
+
+    The service consumes no events.
 
 servers:
-  - url: http://localhost:3001
-    description: Local development (direct to the service)
   - url: http://localhost:8080
-    description: Local development through the api-gateway
+    description: Local development through the api-gateway (the only port published by Docker Compose). The service itself listens on port 3001 inside the network.
 
 security:
   - bearerAuth: []
 
 tags:
   - name: Auth
-    description: Registration, login, recovery and session management
+    description: Registration, email verification, login and password recovery
   - name: Users
-    description: Account of the authenticated user and user administration
-  - name: Roles
-    description: Roles, permissions and role assignment (ADMIN)
-  - name: Consents
-    description: Consent and personal data (Law 1581 of 2012)
+    description: Account of the authenticated user
+  - name: IAM
+    description: Roles, permissions and role assignment
   - name: Health
-    description: Service status
+    description: Service status (internal)
 
 paths:
   /health:
+    servers:
+      - url: http://localhost:3001
+        description: Internal port of the service (not routed by the gateway; the gateway has its own `/health`)
     get:
       summary: Health check
       operationId: health
@@ -64,23 +70,22 @@ paths:
       security: []
       responses:
         '200':
-          description: Service healthy
+          description: Service running
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthResponse'
-        '503':
-          description: Service not available
+                $ref: '#/components/schemas/ServiceHealth'
 
   # ───────────────────────────── Auth ─────────────────────────────
   /api/auth/register:
     post:
       summary: Register a new user
-      description: Creates the account with status INACTIVE and sends a 6-digit verification code by email. Terms acceptance is mandatory.
+      description: |
+        Creates the account as `INACTIVE` with the `USER` role and tries to email a verification code.
+        If the email cannot be sent the account is kept and `verification_email_sent` is `false`; ask for a new code with `resend-verification`.
       operationId: register
       tags: [Auth]
       security: []
-      x-status: implemented
       x-requirements: [FR-001, FR-002, HU-IAM-001]
       requestBody:
         required: true
@@ -91,32 +96,32 @@ paths:
             example:
               name: Maria Garcia
               email: maria@example.com
-              password: SecurePass123!
-              termsAccepted: true
-              termsVersion: '1.0'
+              password: <your-password>
       responses:
         '201':
-          description: Account created, verification code sent
+          description: Account created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
+                $ref: '#/components/schemas/RegisterResponse'
         '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
+          $ref: '#/components/responses/BadRequest'
         '409':
-          description: Email already registered (`EMAIL_ALREADY_EXISTS`)
+          description: The email already has an account (`EMAIL_ALREADY_EXISTS`)
           content:
             application/json:
               schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+                $ref: './_shared.yaml#/components/schemas/ApiError'
 
   /api/auth/login:
     post:
-      summary: Authenticate a user
+      summary: Log in
+      description: |
+        Returns the JWT. Wrong email or password gives the same `INVALID_CREDENTIALS` answer. Only after the
+        password is correct the account state is revealed: `ACCOUNT_BLOCKED` or `EMAIL_NOT_VERIFIED`.
       operationId: login
       tags: [Auth]
       security: []
-      x-status: implemented
       x-requirements: [FR-005, FR-006, FR-007, HU-IAM-003, HU-IAM-004]
       requestBody:
         required: true
@@ -124,80 +129,109 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: maria@example.com
+              password: <your-password>
       responses:
         '200':
           description: Login successful
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthResponse'
+                $ref: '#/components/schemas/LoginResponse'
         '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
+          $ref: '#/components/responses/BadRequest'
         '401':
-          description: Invalid credentials (`INVALID_CREDENTIALS`) or account not verified
+          description: Invalid credentials (`INVALID_CREDENTIALS`)
           content:
             application/json:
               schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+                $ref: './_shared.yaml#/components/schemas/ApiError'
         '403':
-          description: Account blocked (`ACCOUNT_BLOCKED`); only an administrator can restore it
+          description: Email not verified (`EMAIL_NOT_VERIFIED`) or account blocked (`ACCOUNT_BLOCKED`)
           content:
             application/json:
               schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
-        '423':
-          description: Account temporarily locked after failed attempts (1, 5 and 10 minute escalation)
-          content:
-            application/json:
-              schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
-  /api/auth/google:
+  /api/auth/verify-email:
     post:
-      summary: Register or log in with a Google account
-      description: Creates the account directly ACTIVE (email already verified) or links the provider to an existing account with the same email.
-      operationId: googleLogin
+      summary: Verify the email and activate the account
+      description: |
+        Needs the 6-digit code **and** the account password, so that whoever did not create the account cannot activate it.
+        Any failure (unknown email, account not `INACTIVE`, wrong or expired code, too many attempts, wrong password) gives the same `INVALID_CODE`.
+      operationId: verifyEmail
       tags: [Auth]
       security: []
-      x-status: planned
-      x-requirements: [FR-008, FR-009, HU-IAM-005]
+      x-requirements: [FR-003, FR-004, HU-IAM-002]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProviderLoginRequest'
+              $ref: '#/components/schemas/VerifyEmailRequest'
       responses:
         '200':
-          description: Login successful
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthResponse'
+          $ref: '#/components/responses/Message'
         '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
-        '401':
-          description: Invalid provider token
-          content:
-            application/json:
-              schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
-        '409':
-          description: Provider identity already linked to another account (`PROVIDER_ALREADY_LINKED`)
-          content:
-            application/json:
-              schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/BadRequest'
+
+  /api/auth/resend-verification:
+    post:
+      summary: Ask for a new verification code
+      description: |
+        Always answers 200 with the same message, whether or not the account exists or is pending. The code is sent in the background.
+        At most one code per 60 seconds and 5 per hour per account.
+      operationId: resendVerification
+      tags: [Auth]
+      security: []
+      x-requirements: [FR-003, HU-IAM-002]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/auth/forgot-password:
+    post:
+      summary: Request a password reset code
+      description: |
+        Always answers 200 with the same message. If the account exists and is not blocked, a 6-digit code (valid 15 minutes)
+        is emailed in the background, subject to the same 60 s / 5 per hour limits.
+      operationId: forgotPassword
+      tags: [Auth]
+      security: []
+      x-requirements: [FR-010, HU-IAM-006]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /api/auth/verify-code:
     post:
-      summary: Verify the email with the 6-digit code
-      description: Activates the account. The code expires in 15 minutes and is invalidated after 5 failed attempts.
+      summary: Check a password reset code
+      description: Validates the code without consuming it. A wrong code spends one of the 5 attempts of the current code.
       operationId: verifyCode
       tags: [Auth]
       security: []
-      x-status: implemented
-      x-requirements: [FR-003, FR-004, HU-IAM-002]
+      x-requirements: [FR-010, HU-IAM-006]
       requestBody:
         required: true
         content:
@@ -206,53 +240,19 @@ paths:
               $ref: '#/components/schemas/VerifyCodeRequest'
       responses:
         '200':
-          description: Code valid
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
+          $ref: '#/components/responses/Message'
         '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
-        '410':
-          description: Code expired or already used (`TOKEN_EXPIRED`, `TOKEN_ALREADY_USED`)
-          content:
-            application/json:
-              schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
-
-  /api/auth/forgot-password:
-    post:
-      summary: Request a password recovery code
-      description: Always answers with the same message, whether or not the email exists (prevents account enumeration).
-      operationId: forgotPassword
-      tags: [Auth]
-      security: []
-      x-status: implemented
-      x-requirements: [FR-010, HU-IAM-006]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ForgotPasswordRequest'
-      responses:
-        '200':
-          description: Request accepted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-        '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /api/auth/reset-password:
     post:
-      summary: Reset the password with the recovery code
-      description: Updates the password, marks the token as used and closes every active session.
+      summary: Set a new password with the reset code
+      description: Consumes the code. `newPassword` needs at least 8 characters and at most 72 bytes.
       operationId: resetPassword
       tags: [Auth]
       security: []
-      x-status: implemented
       x-requirements: [FR-010, HU-IAM-006]
       requestBody:
         required: true
@@ -262,292 +262,293 @@ paths:
               $ref: '#/components/schemas/ResetPasswordRequest'
       responses:
         '200':
-          description: Password updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
+          $ref: '#/components/responses/Message'
         '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
-        '410':
-          description: Token expired or already used
-          content:
-            application/json:
-              schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
-  /api/auth/refresh:
+  /api/auth/google:
     post:
-      summary: Renew the access token
-      description: Rotates the refresh token. Reusing a spent token revokes the whole session.
-      operationId: refreshToken
+      summary: Log in with Google
+      description: |
+        Verifies the Google ID token (audience in `GOOGLE_CLIENT_IDS`) and requires a verified email.
+        An existing account logs in; a new email creates an `ACTIVE` account without a password (role `USER`,
+        publishes `iam.UserRegistered`). A `BLOCKED` account gets `ACCOUNT_BLOCKED`; an account that never
+        verified its email gets `EMAIL_NOT_VERIFIED`.
+      operationId: googleLogin
       tags: [Auth]
       security: []
-      x-status: planned
-      x-requirements: [FR-011, FR-012, HU-IAM-007]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [refreshToken]
-              properties:
-                refreshToken:
-                  type: string
+              $ref: '#/components/schemas/GoogleLoginRequest'
       responses:
         '200':
-          description: Tokens renewed (the previous refresh token is no longer valid)
+          description: Logged in, or account created and logged in
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthResponse'
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
-          description: Refresh token invalid, expired or already used
+          description: Invalid token or unverified Google email (`INVALID_GOOGLE_TOKEN`)
           content:
             application/json:
               schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+        '403':
+          description: Email not verified (`EMAIL_NOT_VERIFIED`) or account blocked (`ACCOUNT_BLOCKED`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: Google login is not configured on the server (`GOOGLE_NOT_CONFIGURED`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
 
-  /api/auth/logout:
+  /api/auth/facebook:
     post:
-      summary: Close the session
-      description: Sets the session to CLOSED and revokes its refresh tokens.
-      operationId: logout
+      summary: Log in with Facebook
+      description: |
+        Verifies the Facebook access token with `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET`. Same account rules
+        as `POST /api/auth/google`. The Facebook account must share an email (`FACEBOOK_EMAIL_REQUIRED`).
+      operationId: facebookLogin
       tags: [Auth]
-      x-status: planned
-      x-requirements: [FR-013, HU-IAM-008]
+      security: []
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                refreshToken:
-                  type: string
-                allDevices:
-                  type: boolean
-                  default: false
-      responses:
-        '204':
-          description: Session closed
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-
-  /api/auth/jwks:
-    get:
-      summary: Public keys to verify tokens (JWKS)
-      description: Used by the api-gateway to validate the JWT signature.
-      operationId: getJwks
-      tags: [Auth]
-      security: []
-      x-status: planned
-      x-requirements: [ADR-002]
+              $ref: '#/components/schemas/FacebookLoginRequest'
       responses:
         '200':
-          description: JSON Web Key Set
+          description: Logged in, or account created and logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Invalid body (`VALIDATION_ERROR`) or the Facebook account shares no email (`FACEBOOK_EMAIL_REQUIRED`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+        '401':
+          description: Invalid token (`INVALID_FACEBOOK_TOKEN`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+        '403':
+          description: Email not verified (`EMAIL_NOT_VERIFIED`) or account blocked (`ACCOUNT_BLOCKED`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: Facebook login is not configured on the server (`FACEBOOK_NOT_CONFIGURED`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+
+  # ───────────────────────────── Users ─────────────────────────────
+  /api/users/stats:
+    get:
+      summary: User counters (administrator)
+      description: Needs the permission `stats.read`.
+      operationId: getUserStats
+      tags: [Users]
+      responses:
+        '200':
+          description: Counters
           content:
             application/json:
               schema:
                 type: object
+                required: [success, data]
                 properties:
-                  keys:
-                    type: array
-                    items:
-                      type: object
-                      description: JWK (RFC 7517)
-
-  # ───────────────────────────── Users ─────────────────────────────
-  /api/users/me:
-    get:
-      summary: Account of the authenticated user
-      operationId: getMe
-      tags: [Users]
-      x-status: implemented
-      x-requirements: [FR-201]
-      responses:
-        '200':
-          description: Current user
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/UserStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Missing permission (`PERMISSION_ERROR`)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserAccount'
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+
+  /api/users/me:
+    get:
+      summary: Get my account
+      operationId: getMe
+      tags: [Users]
+      x-requirements: [FR-201]
+      responses:
+        '200':
+          description: Basic data of the authenticated user
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/MeSummary'
         '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
+          $ref: '#/components/responses/Unauthorized'
         '404':
-          $ref: './_shared.yaml#/components/responses/NotFound'
+          $ref: '#/components/responses/NotFound'
     delete:
       summary: Delete my account
-      description: Marks the row as deleted and anonymizes personal data. Sessions, usage events and audit trail survive without identity. Publishes `iam.AccountDeleted`.
+      description: |
+        Erases the account permanently. An account with a password confirms with `password`; an account without
+        a password (created with Google or Facebook) confirms with the 6-digit `code` sent by
+        `POST /api/users/me/delete-code`. The only administrator cannot delete the account (`LAST_ADMIN`).
+
+        The account, its roles and its codes are erased in one transaction that also writes `iam.UserDeleted`
+        to the outbox; the other services erase or unlink their data when the event arrives. A JWT issued before
+        the deletion is rejected by those services with `401 ACCOUNT_DELETED`.
       operationId: deleteMe
       tags: [Users]
-      x-status: planned
-      x-requirements: [FR-014, HU-IAM-009]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteAccountRequest'
       responses:
-        '204':
-          description: Account deleted and anonymized
+        '200':
+          $ref: '#/components/responses/Message'
+        '400':
+          description: Invalid body (`VALIDATION_ERROR`) or wrong or expired deletion code (`INVALID_CODE`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
         '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Wrong password (`INVALID_PASSWORD`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The account belongs to the last administrator (`LAST_ADMIN`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+
+  /api/users/me/delete-code:
+    post:
+      summary: Send me a code to delete my account
+      description: |
+        Only for accounts without a password (created with Google or Facebook). Emails a 6-digit code to confirm
+        `DELETE /api/users/me`. One code per minute and a limited number per hour.
+      operationId: sendDeletionCode
+      tags: [Users]
+      responses:
+        '200':
+          $ref: '#/components/responses/Message'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The account has a password and must confirm with it (`HAS_PASSWORD`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+        '429':
+          description: Asked too soon (`CODE_COOLDOWN`) or too many codes in the last hour (`CODE_LIMIT`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
 
   /api/users/me/password:
-    put:
+    post:
       summary: Change my password
-      description: Requires the current password; closes the user's other sessions.
-      operationId: changePassword
+      description: |
+        The new password needs 8 to 72 bytes, an upper-case letter, a lower-case letter, a number and a symbol, and must differ from the current one.
+        Accounts without a password (social login) get `INVALID_PASSWORD`.
+      operationId: changeMyPassword
       tags: [Users]
-      x-status: planned
       x-requirements: [FR-202, FR-905, HU-PROF-002]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [currentPassword, newPassword]
-              properties:
-                currentPassword:
-                  type: string
-                newPassword:
-                  type: string
-                  description: Must satisfy the active password policy (`password_policies`).
+              $ref: '#/components/schemas/ChangePasswordRequest'
       responses:
-        '204':
-          description: Password changed
+        '200':
+          $ref: '#/components/responses/Message'
         '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
+          $ref: '#/components/responses/BadRequest'
         '401':
-          description: Wrong current password (`INVALID_CREDENTIALS`) or missing token
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Wrong current password (`INVALID_PASSWORD`)
           content:
             application/json:
               schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
-  /api/users:
+  # ───────────────────────────── IAM (RBAC) ─────────────────────────────
+  /api/iam/me/access:
     get:
-      summary: List users (ADMIN)
-      operationId: listUsers
-      tags: [Users]
-      x-status: planned
-      x-requirements: [FR-015, HU-IAM-010]
-      x-required-role: ADMIN
-      parameters:
-        - $ref: './_shared.yaml#/components/parameters/PageParam'
-        - $ref: './_shared.yaml#/components/parameters/LimitParam'
-        - name: status
-          in: query
-          schema:
-            $ref: '#/components/schemas/UserStatus'
-        - name: q
-          in: query
-          description: Search by email, username or full name
-          schema:
-            type: string
+      summary: My roles and permissions
+      description: Reads the current assignment from the database (the token keeps the values it was signed with).
+      operationId: getMyAccess
+      tags: [IAM]
       responses:
         '200':
-          description: Page of users
+          description: Roles and effective permissions
           content:
             application/json:
               schema:
                 type: object
-                required: [data, meta]
+                required: [success, data]
                 properties:
+                  success:
+                    type: boolean
                   data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/UserAccount'
-                  meta:
-                    $ref: './_shared.yaml#/components/schemas/PaginatedMeta'
+                    $ref: '#/components/schemas/Access'
         '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
+          $ref: '#/components/responses/Unauthorized'
 
-  /api/users/{id}/status:
-    parameters:
-      - $ref: './_shared.yaml#/components/parameters/IdParam'
-    patch:
-      summary: Activate, deactivate or unblock an account (ADMIN)
-      description: Unblocking resets `lockout_level` and `failed_login_attempts`. The change is written to the audit log.
-      operationId: updateUserStatus
-      tags: [Users]
-      x-status: planned
-      x-requirements: [FR-015, FR-901, HU-IAM-010]
-      x-required-role: ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [status]
-              properties:
-                status:
-                  $ref: '#/components/schemas/UserStatus'
-      responses:
-        '200':
-          description: Status updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserAccount'
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
-        '404':
-          $ref: './_shared.yaml#/components/responses/NotFound'
-
-  /api/users/{id}/roles/{roleId}:
-    parameters:
-      - $ref: './_shared.yaml#/components/parameters/IdParam'
-      - name: roleId
-        in: path
-        required: true
-        schema:
-          $ref: './_shared.yaml#/components/schemas/UUID'
-    put:
-      summary: Assign a role to a user (ADMIN)
-      operationId: assignRole
-      tags: [Roles]
-      x-status: planned
-      x-requirements: [FR-101, HU-AUTHZ-001]
-      x-required-role: ADMIN
-      responses:
-        '204':
-          description: Role assigned (idempotent)
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
-        '404':
-          $ref: './_shared.yaml#/components/responses/NotFound'
-    delete:
-      summary: Remove a role from a user (ADMIN)
-      operationId: revokeRole
-      tags: [Roles]
-      x-status: planned
-      x-requirements: [FR-101, HU-AUTHZ-001]
-      x-required-role: ADMIN
-      responses:
-        '204':
-          description: Role removed
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
-        '404':
-          $ref: './_shared.yaml#/components/responses/NotFound'
-
-  # ───────────────────────────── Roles ─────────────────────────────
-  /api/roles:
+  /api/iam/roles:
     get:
-      summary: List roles with their permissions (ADMIN)
+      summary: List roles with their permissions
+      description: Needs the permission `users.manage`.
       operationId: listRoles
-      tags: [Roles]
-      x-status: planned
+      tags: [IAM]
       x-requirements: [FR-101, FR-102, HU-AUTHZ-001]
-      x-required-role: ADMIN
       responses:
         '200':
           description: Roles
@@ -555,280 +556,198 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [data]
+                required: [success, data]
                 properties:
+                  success:
+                    type: boolean
                   data:
                     type: array
                     items:
                       $ref: '#/components/schemas/Role'
         '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
+          $ref: '#/components/responses/PermissionDenied'
+
+  /api/iam/users/{userId}/roles:
+    parameters:
+      - $ref: '#/components/parameters/UserIdParam'
     post:
-      summary: Create a role (ADMIN)
-      operationId: createRole
-      tags: [Roles]
-      x-status: planned
+      summary: Assign a role to a user
+      description: Needs the permission `users.manage`. Assigning a role the user already has is accepted.
+      operationId: assignRole
+      tags: [IAM]
       x-requirements: [FR-101, HU-AUTHZ-001]
-      x-required-role: ADMIN
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [name]
-              properties:
-                name:
-                  type: string
-                  maxLength: 50
-                  example: LINGUIST
-                description:
-                  type: string
-                  maxLength: 255
+              $ref: '#/components/schemas/AssignRoleRequest'
+            example:
+              roleName: LINGUIST
       responses:
-        '201':
-          description: Role created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Role'
+        '200':
+          $ref: '#/components/responses/Message'
         '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
+          $ref: '#/components/responses/BadRequest'
         '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
-
-  /api/roles/{id}:
-    parameters:
-      - $ref: './_shared.yaml#/components/parameters/IdParam'
-    delete:
-      summary: Delete a role (ADMIN)
-      operationId: deleteRole
-      tags: [Roles]
-      x-status: planned
-      x-requirements: [FR-103, HU-AUTHZ-002]
-      x-required-role: ADMIN
-      responses:
-        '204':
-          description: Role deleted
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
+          $ref: '#/components/responses/PermissionDenied'
         '404':
-          $ref: './_shared.yaml#/components/responses/NotFound'
+          $ref: '#/components/responses/NotFound'
+
+  /api/iam/users/{userId}/roles/{roleName}:
+    parameters:
+      - $ref: '#/components/parameters/UserIdParam'
+      - name: roleName
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 50
+        example: LINGUIST
+    delete:
+      summary: Revoke a role from a user
+      description: |
+        Needs the permission `users.manage`. The last `ADMIN` cannot lose the role (`LAST_ADMIN`) and every user keeps at least one role (`ROLE_REQUIRED`).
+        The user's existing tokens keep the old roles until they expire.
+      operationId: revokeRole
+      tags: [IAM]
+      x-requirements: [FR-101, HU-AUTHZ-001]
+      responses:
+        '200':
+          $ref: '#/components/responses/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
-          description: Role assigned to at least one user (`ROLE_IN_USE`)
+          description: Last administrator (`LAST_ADMIN`) or last role of the user (`ROLE_REQUIRED`)
           content:
             application/json:
               schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+                $ref: './_shared.yaml#/components/schemas/ApiError'
 
-  /api/roles/{id}/permissions:
+  /api/iam/roles/{roleId}:
     parameters:
-      - $ref: './_shared.yaml#/components/parameters/IdParam'
-    put:
-      summary: Replace the permissions of a role (ADMIN)
-      operationId: setRolePermissions
-      tags: [Roles]
-      x-status: planned
-      x-requirements: [FR-102, HU-AUTHZ-001]
-      x-required-role: ADMIN
-      requestBody:
+      - name: roleId
+        in: path
         required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [permissionIds]
-              properties:
-                permissionIds:
-                  type: array
-                  items:
-                    $ref: './_shared.yaml#/components/schemas/UUID'
-      responses:
-        '200':
-          description: Role updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Role'
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
-        '404':
-          $ref: './_shared.yaml#/components/responses/NotFound'
-
-  /api/roles/permissions:
-    get:
-      summary: List the permission catalog (ADMIN)
-      operationId: listPermissions
-      tags: [Roles]
-      x-status: planned
-      x-requirements: [FR-102]
-      x-required-role: ADMIN
-      responses:
-        '200':
-          description: Permissions
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [data]
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Permission'
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
-
-  # ───────────────────────────── Consents ─────────────────────────────
-  /api/consents:
-    get:
-      summary: List my consents
-      operationId: listMyConsents
-      tags: [Consents]
-      x-status: planned
-      x-requirements: [FR-002, NFR-005]
-      responses:
-        '200':
-          description: Consents granted or withdrawn by the user
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [data]
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Consent'
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-    post:
-      summary: Grant a consent
-      description: Records the acceptance of a terms document version (timestamp and version are mandatory).
-      operationId: grantConsent
-      tags: [Consents]
-      x-status: planned
-      x-requirements: [FR-002, NFR-005]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [purpose, termsVersion]
-              properties:
-                purpose:
-                  $ref: '#/components/schemas/ConsentPurpose'
-                termsVersion:
-                  type: string
-                  maxLength: 20
-                  example: '1.0'
-      responses:
-        '201':
-          description: Consent recorded
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Consent'
-        '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-
-  /api/consents/{id}:
-    parameters:
-      - $ref: './_shared.yaml#/components/parameters/IdParam'
+        schema:
+          type: integer
+          minimum: 1
     delete:
-      summary: Withdraw a consent
-      description: Right of deletion (Law 1581 of 2012). Publishes `iam.ConsentRevoked` so recognition-service can remove the related gesture samples.
-      operationId: withdrawConsent
-      tags: [Consents]
-      x-status: planned
-      x-requirements: [NFR-005, FR-603]
+      summary: Delete a role
+      description: Needs the permission `users.manage`. The seed roles are protected (`ROLE_PROTECTED`) and a role assigned to users cannot be deleted (`ROLE_IN_USE`).
+      operationId: deleteRole
+      tags: [IAM]
+      x-requirements: [FR-103, HU-AUTHZ-002]
       responses:
-        '204':
-          description: Consent withdrawn
+        '200':
+          $ref: '#/components/responses/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
         '404':
-          $ref: './_shared.yaml#/components/responses/NotFound'
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Role in use (`ROLE_IN_USE`) or protected (`ROLE_PROTECTED`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
 
 components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared.yaml#/components/securitySchemes/bearerAuth'
+
+  parameters:
+    UserIdParam:
+      name: userId
+      in: path
+      required: true
+      description: Numeric user id issued by this service
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 2147483647
+
   schemas:
-    HealthResponse:
+    ServiceHealth:
       type: object
-      required: [status]
+      required: [status, service]
       properties:
         status:
           type: string
           enum: [ok]
-        timestamp:
-          $ref: './_shared.yaml#/components/schemas/Timestamp'
-        dependencies:
-          type: object
-          properties:
-            database:
-              type: string
-              enum: [ok, degraded, down]
-            rabbitmq:
-              type: string
-              enum: [ok, degraded, down]
-      example:
-        status: ok
-        timestamp: '2026-10-04T10:30:00Z'
-        dependencies:
-          database: ok
-          rabbitmq: ok
+        service:
+          type: string
+          example: iam-service
 
-    MessageResponse:
+    Message:
       type: object
-      required: [success, message]
+      description: Success response that only carries a message
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+          example: Operación realizada
+
+    RegisterRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          description: Trimmed and lower-cased by the server
+        password:
+          type: string
+          description: At most 72 bytes (bcrypt limit); longer values are rejected, not truncated
+
+    RegisterResponse:
+      type: object
+      required: [success, message, data]
       properties:
         success:
           type: boolean
         message:
           type: string
-
-    RegisterRequest:
-      type: object
-      required: [name, email, password, termsAccepted]
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 255
-          description: Maps to `users.full_name`.
-        email:
-          type: string
-          format: email
-          maxLength: 255
-        password:
-          type: string
-          description: Must satisfy the active `password_policies` row.
-        username:
-          type: string
-          maxLength: 255
-          description: Planned (FR-001); not accepted by the current code.
-        birthDate:
-          type: string
-          format: date
-          description: Planned (FR-001); not accepted by the current code.
-        termsAccepted:
-          type: boolean
-          description: Must be true (FR-002). Stored as `terms_accepted_at`.
-        termsVersion:
-          type: string
-          maxLength: 20
+          example: Usuario registrado correctamente
+        data:
+          type: object
+          required: [user_id, name, email, status, verification_email_sent]
+          properties:
+            user_id:
+              type: integer
+            name:
+              type: string
+            email:
+              type: string
+              format: email
+            status:
+              type: string
+              enum: [INACTIVE]
+            verification_email_sent:
+              type: boolean
 
     LoginRequest:
       type: object
@@ -840,19 +759,26 @@ components:
         password:
           type: string
 
-    ProviderLoginRequest:
+    LoginResponse:
       type: object
-      required: [idToken]
+      required: [success, message, data]
       properties:
-        idToken:
+        success:
+          type: boolean
+        message:
           type: string
-          description: Identity token issued by the provider.
-        provider:
-          type: string
-          enum: [GOOGLE, FACEBOOK]
-          default: GOOGLE
+          example: Inicio de sesión exitoso
+        data:
+          type: object
+          required: [token, user]
+          properties:
+            token:
+              type: string
+              description: JWT (HS256, issuer `traduce-iam`, audience `traduce-api`; claims `sub`, `email`, `roles`, `permissions`)
+            user:
+              $ref: '#/components/schemas/UserSummary'
 
-    ForgotPasswordRequest:
+    EmailRequest:
       type: object
       required: [email]
       properties:
@@ -869,8 +795,21 @@ components:
           format: email
         code:
           type: string
-          pattern: '^[0-9]{6}$'
-          example: '482913'
+          pattern: '^\d{6}$'
+
+    VerifyEmailRequest:
+      type: object
+      required: [email, code, password]
+      properties:
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+          pattern: '^\d{6}$'
+        password:
+          type: string
+          description: Password of the account being verified
 
     ResetPasswordRequest:
       type: object
@@ -881,128 +820,165 @@ components:
           format: email
         code:
           type: string
+          pattern: '^\d{6}$'
         newPassword:
           type: string
+          minLength: 8
 
-    AuthResponse:
+    ChangePasswordRequest:
       type: object
-      required: [accessToken, refreshToken, expiresIn, user]
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          minLength: 1
+          maxLength: 256
+        newPassword:
+          type: string
+          maxLength: 256
+
+    DeleteAccountRequest:
+      type: object
+      description: Send `password` for accounts with a password, or `code` for accounts without one.
+      minProperties: 1
+      properties:
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+        code:
+          type: string
+          pattern: '^\d{6}$'
+          description: Code sent by `POST /api/users/me/delete-code`
+
+    GoogleLoginRequest:
+      type: object
+      required: [idToken]
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          description: Google ID token obtained by the client
+
+    FacebookLoginRequest:
+      type: object
+      required: [accessToken]
       properties:
         accessToken:
           type: string
-          description: JWT (1 hour). Claims include `sub` and `roles`.
-        refreshToken:
+          minLength: 1
+          maxLength: 2048
+          description: Facebook access token obtained by the client
+
+    AssignRoleRequest:
+      type: object
+      required: [roleName]
+      properties:
+        roleName:
           type: string
-          description: Opaque token (7 days), single use (rotation).
-        expiresIn:
-          type: integer
-          example: 3600
-        user:
-          $ref: '#/components/schemas/UserSummary'
+          minLength: 1
+          maxLength: 50
+          example: LINGUIST
 
     UserSummary:
       type: object
-      required: [id, email, roles]
+      required: [user_id, name, email]
       properties:
-        id:
-          $ref: './_shared.yaml#/components/schemas/UUID'
+        user_id:
+          type: integer
+        name:
+          type: string
         email:
           type: string
           format: email
-        name:
-          type: string
-        roles:
-          type: array
-          items:
-            type: string
-            example: ADMIN
 
-    UserStatus:
-      type: string
-      enum: [ACTIVE, INACTIVE, BLOCKED]
+    MeSummary:
+      allOf:
+        - $ref: '#/components/schemas/UserSummary'
+        - type: object
+          required: [has_password]
+          properties:
+            has_password:
+              type: boolean
+              description: false for accounts created with Google or Facebook; the hash is never returned
 
-    UserAccount:
+    UserStats:
       type: object
-      description: Account data (`users`). Never exposes `password_hash`.
-      required: [id, email, name, status]
+      required: [totalUsers, activeAccounts]
       properties:
-        id:
-          $ref: './_shared.yaml#/components/schemas/UUID'
-        name:
-          type: string
-        username:
-          type: string
-        email:
-          type: string
-          format: email
-        birthDate:
-          type: string
-          format: date
-          nullable: true
-        status:
-          $ref: '#/components/schemas/UserStatus'
-        emailVerifiedAt:
-          $ref: './_shared.yaml#/components/schemas/Timestamp'
+        totalUsers:
+          type: integer
+        activeAccounts:
+          type: integer
+          description: Accounts with status `ACTIVE`
+
+    Access:
+      type: object
+      required: [roles, permissions]
+      properties:
         roles:
           type: array
           items:
             type: string
-        createdAt:
-          $ref: './_shared.yaml#/components/schemas/Timestamp'
-        lastAccessAt:
-          $ref: './_shared.yaml#/components/schemas/Timestamp'
+          example: [USER]
+        permissions:
+          type: array
+          items:
+            type: string
+          example: [translation.create, lexicon.read]
 
     Role:
       type: object
-      required: [id, name]
+      required: [roleId, name, permissions]
       properties:
-        id:
-          $ref: './_shared.yaml#/components/schemas/UUID'
+        roleId:
+          type: integer
         name:
           type: string
           example: ADMIN
         description:
           type: string
+          nullable: true
         permissions:
           type: array
           items:
-            $ref: '#/components/schemas/Permission'
+            type: string
 
-    Permission:
-      type: object
-      required: [id, name]
-      properties:
-        id:
-          $ref: './_shared.yaml#/components/schemas/UUID'
-        name:
-          type: string
-          description: 'Format `resource:action`.'
-          example: lexicon:write
-        description:
-          type: string
-
-    ConsentPurpose:
-      type: string
-      description: Planned catalog; derived from NFR-005 (terms of use and biometric-adjacent data).
-      enum: [TERMS_OF_USE, PERSONAL_DATA_PROCESSING]
-
-    Consent:
-      type: object
-      required: [id, purpose, termsVersion, grantedAt]
-      properties:
-        id:
-          $ref: './_shared.yaml#/components/schemas/UUID'
-        purpose:
-          $ref: '#/components/schemas/ConsentPurpose'
-        termsVersion:
-          type: string
-        grantedAt:
-          $ref: './_shared.yaml#/components/schemas/Timestamp'
-        withdrawnAt:
-          allOf:
-            - $ref: './_shared.yaml#/components/schemas/Timestamp'
-          nullable: true
-
-  securitySchemes:
-    bearerAuth:
-      $ref: './_shared.yaml#/components/securitySchemes/bearerAuth'
+  responses:
+    Message:
+      description: Operation done; the body carries a message
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+    BadRequest:
+      description: Invalid body or business rule (`INVALID_BODY`, `VALIDATION_ERROR`, `INVALID_CODE`)
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ApiError'
+    Unauthorized:
+      description: Missing or invalid token (`UNAUTHORIZED`)
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ApiError'
+    PermissionDenied:
+      description: The token does not grant the permission (`PERMISSION_ERROR`)
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ApiError'
+    NotFound:
+      description: User or role not found (`NOT_FOUND`, `USER_NOT_FOUND`)
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ApiError'
+    TooManyRequests:
+      description: Rate limit of the gateway exceeded (`RATE_LIMITED`)
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ApiError'

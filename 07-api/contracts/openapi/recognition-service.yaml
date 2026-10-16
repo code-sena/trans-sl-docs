@@ -3,57 +3,60 @@ info:
   title: Recognition Service API
   version: 1.0.0
   description: |
-    Recognition & Translation (core) and AI model training (`03-recognition-service`, port 3002).
-    Stores: PostgreSQL db `recognition` (`06-data/domains/05-translation`, `06-ai`: `translations`,
-    `translation_signs`, `ai_models`, sign templates) and MongoDB `gesture_samples`
-    (samples recorded to train the model; no foreign keys to PostgreSQL).
+    Recognition & Translation service (`03-recognition-service`, internal port 3002, PostgreSQL db `recognition`
+    plus MongoDB collection `gesture_samples`). It stores the translation history, the sign templates used by the
+    recognizer in the client, and the gesture samples (landmarks only, never video).
 
-    Public paths served (through the gateway): `/api/translations/**`, `/api/recognition/**`,
-    `/api/models/**`, `/api/samples/**`.
+    **Based on:** Backend `2993301` (`origin/develop`, 2026-10-16), `services/recognition-service`. Every path below exists in
+    the code; routes that are only planned (`/api/models*`, sample validation, session deletion) are listed in
+    `07-api/README.md` ("Planned, not implemented").
 
-    ## Source of each endpoint (extraction status: in progress)
-    - **Implemented in code today** (backend `domains/translations` and `domains/ia`): history of
-      translations and sign templates. Tagged `x-status: implemented`. The code answers with the
-      envelope `{success, message, data}` and numeric ids; this contract uses UUID ids (target, `06-data`).
-      Sign templates are mounted today at `/api/sign-templates`; the target path is
-      `/api/recognition/sign-templates` (see `x-current-path`).
-    - **Planned** (from `04-requirements/user-stories.md`): models and gesture samples, tagged
-      `x-status: planned` with their FR/HU in `x-requirements`.
+    Public paths served through the gateway: `/api/translations/**`, `/api/recognition/**`, `/api/sign-templates/**`
+    (deprecated alias), `/api/samples/**`. Port 3002 is internal: use the gateway at `http://localhost:8080`.
 
-    ## Roles
-    Model registration, training and activation require ADMIN. Sample capture and validation are
-    intended for ADMIN (the LSC linguist role is an open item, see HU-AI-001).
+    ## Access rules
+    - `/api/translations/**`: any valid JWT. The user id always comes from the token, never from the body or the query.
+    - Sign templates: `GET` is public (the translation screen downloads them before login). `POST` and `DELETE`
+      need a JWT with the permission `models.manage`.
+    - `/api/samples/**`: JWT with the `ADMIN` role (the samples are biometric data, Law 1581 of 2012).
+    - Deleted accounts: saving a translation, creating or deleting a sign template and registering a sample with the JWT of
+      an account already deleted answers `401 ACCOUNT_DELETED` (`erased_users` is checked in the same transaction as the write).
 
-    ## Errors
-    All errors follow `ErrorResponse` from `_shared.yaml`.
+    ## Response format
+    Success: `{ "success": true, "message"?: string, "data"?: any }`.
+    Error: `{ "success": false, "code"?: string, "message": string }` (`ApiError` in `_shared.yaml`). The create, history and delete routes of `translations` and all `sign-templates` routes answer business errors with `400` and no `code` (including "not found"); the permission checks (`PERMISSION_ERROR`, `FORBIDDEN`) and `samples` do carry a `code`.
 
     ## Events
-    Publishes `recognition.TranslationProduced`, `recognition.RecognitionModelPublished`.
-    Consumes `lexicon.SignPublished` (refreshes its sign catalog).
+    Publishes `recognition.TranslationProduced` `{ translationId, userId, gloss, text, occurredAt }` after each saved translation.
+    Consumes `lexicon.SignPublished` and `lexicon.SignWithdrawn` (only logged for now), and `iam.UserDeleted`: deletes the
+    user's translations, records the user in `erased_users` and unlinks the gesture samples they recorded (the samples are kept
+    without the operator id).
+
+    ## Scope note
+    The `type` of a translation accepts `texto_sena`, `sena_texto` and `voz_sena`, although the MVP only covers sign to text (`sena_texto`).
 
 servers:
-  - url: http://localhost:3002
-    description: Local development (direct to the service)
   - url: http://localhost:8080
-    description: Local development through the api-gateway
+    description: Local development through the api-gateway (the only port published by Docker Compose). The service itself listens on port 3002 inside the network.
 
 security:
   - bearerAuth: []
 
 tags:
   - name: Translations
-    description: Translation history of the user
+    description: Translation history and statistics
   - name: Sign templates
-    description: Reference templates used by the recognizer
-  - name: Models
-    description: AI model registry, training and activation
+    description: Reference gestures used by the recognizer
   - name: Samples
-    description: Gesture samples (MongoDB) with demonstrable consent
+    description: Gesture samples for training (ADMIN)
   - name: Health
-    description: Service status
+    description: Service status (internal)
 
 paths:
   /health:
+    servers:
+      - url: http://localhost:3002
+        description: Internal port of the service (not routed by the gateway; the gateway has its own `/health`)
     get:
       summary: Health check
       operationId: health
@@ -61,22 +64,19 @@ paths:
       security: []
       responses:
         '200':
-          description: Service healthy
+          description: Service running
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthResponse'
-        '503':
-          description: Service not available
+                $ref: '#/components/schemas/ServiceHealth'
 
   # ───────────────────────────── Translations ─────────────────────────────
   /api/translations:
     post:
       summary: Save a translation
-      description: Persists a completed translation for the authenticated user (`user_id` comes from the JWT `sub`). Publishes `recognition.TranslationProduced`.
+      description: Saves the result of a recognition for the authenticated user and publishes `recognition.TranslationProduced`. If `inputText` is empty, `outputText` is used.
       operationId: createTranslation
       tags: [Translations]
-      x-status: implemented
       x-requirements: [FR-401, FR-403, FR-404, HU-TRA-001, HU-TRA-003]
       requestBody:
         required: true
@@ -85,39 +85,98 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateTranslationRequest'
             example:
-              inputText: ''
+              inputText: HOLA
               outputText: Hola
               type: sena_texto
-              confidence: 0.93
-              source: camera
+              confidence: 0.86
+              source: mediapipe
       responses:
         '201':
           description: Translation saved
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TranslationResult'
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                    example: Traduccion guardada
+                  data:
+                    $ref: '#/components/schemas/Translation'
         '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
+          $ref: '#/components/responses/BadRequest'
         '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/translations/stats:
+    get:
+      summary: Translation statistics (administrator)
+      description: Needs the permission `stats.read`. Dates are grouped in Colombia time (UTC-5). Missing days, weeks and months are filled with zero.
+      operationId: getTranslationStats
+      tags: [Translations]
+      responses:
+        '200':
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/TranslationStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Missing permission (`PERMISSION_ERROR`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+
+  /api/translations/me/stats:
+    get:
+      summary: My translation statistics
+      description: Counters of the authenticated user for the profile screen. Needs only a valid token.
+      operationId: getMyTranslationStats
+      tags: [Translations]
+      responses:
+        '200':
+          description: Counters
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/MyStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/translations/history:
     get:
-      summary: Translation history of the user
-      description: Newest first. Logically deleted entries are excluded.
+      summary: My translation history
+      description: Newest first. Deleted translations are not returned.
       operationId: listTranslations
       tags: [Translations]
-      x-status: implemented
       x-requirements: [FR-406, HU-TRA-005]
       parameters:
         - name: limit
           in: query
+          description: Page size (default 50, between 1 and 200)
           schema:
             type: integer
             minimum: 1
-            maximum: 100
-            default: 20
+            maximum: 200
+            default: 50
         - name: offset
           in: query
           schema:
@@ -126,63 +185,7 @@ paths:
             default: 0
       responses:
         '200':
-          description: History page
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TranslationListResult'
-        '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-
-  /api/translations/{id}:
-    parameters:
-      - $ref: './_shared.yaml#/components/parameters/IdParam'
-    delete:
-      summary: Delete a history entry
-      description: Logical deletion (`deleted_at`); only the owner can delete.
-      operationId: deleteTranslation
-      tags: [Translations]
-      x-status: implemented
-      x-requirements: [FR-407, HU-TRA-006]
-      responses:
-        '200':
-          description: Entry deleted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionResult'
-        '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-        '404':
-          $ref: './_shared.yaml#/components/responses/NotFound'
-
-  # ───────────────────────────── Sign templates ─────────────────────────────
-  /api/recognition/sign-templates:
-    get:
-      summary: List sign templates
-      description: Public, so the translation screen can download the templates before the user signs in.
-      operationId: listSignTemplates
-      tags: [Sign templates]
-      security: []
-      x-status: implemented
-      x-current-path: /api/sign-templates
-      x-requirements: [FR-401]
-      parameters:
-        - name: kind
-          in: query
-          schema:
-            $ref: '#/components/schemas/TemplateKind'
-        - name: label
-          in: query
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Templates
+          description: Translations of the authenticated user
           content:
             application/json:
               schema:
@@ -194,19 +197,78 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/SignTemplate'
+                      $ref: '#/components/schemas/Translation'
         '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/translations/{id}:
+    delete:
+      summary: Delete a translation from my history
+      description: Soft delete (`isDeleted = true`). A translation that does not exist or belongs to another user answers `400` ("Traduccion no encontrada"), not `404`.
+      operationId: deleteTranslation
+      tags: [Translations]
+      x-requirements: [FR-407, HU-TRA-006]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Translation deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                    example: Traduccion eliminada
+                  data:
+                    type: object
+                    properties:
+                      translationId:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ───────────────────────────── Sign templates ─────────────────────────────
+  /api/recognition/sign-templates:
+    get:
+      summary: List sign templates
+      description: Public. `static` templates are one frame of 63 values (one hand); `motion` templates are 16 frames of 126 values (two hands).
+      operationId: listSignTemplates
+      tags: [Sign templates]
+      security: []
+      x-requirements: [FR-401]
+      parameters:
+        - $ref: '#/components/parameters/TemplateKindParam'
+        - name: label
+          in: query
+          description: Filter by label
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/TemplateList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
     post:
-      summary: Import a batch of sign templates
+      summary: Import sign templates
       description: |
-        Accepts either `{ gestures: [{label, frames}] }` (format exported by the app and the dataset
-        converter) or `{ templates: [{label, kind, features}] }`.
-        `static` templates have 1 frame of 63 values; `motion` templates have 16 frames of 126 values.
+        Needs the permission `models.manage`. Accepts either `gestures` (the format exported by the app and produced by the dataset converter)
+        or `templates` (explicit). The whole batch is rejected if one template is invalid.
       operationId: importSignTemplates
       tags: [Sign templates]
-      x-status: implemented
-      x-current-path: /api/sign-templates
       x-requirements: [FR-401]
       requestBody:
         required: true
@@ -216,216 +278,158 @@ paths:
               $ref: '#/components/schemas/ImportTemplatesRequest'
       responses:
         '201':
-          description: Templates imported (`data` holds the created ids)
+          description: Templates imported; `data` lists the new ids
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ActionResult'
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                    example: 20 plantillas importadas
+                  data:
+                    type: array
+                    items:
+                      type: integer
         '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
+          $ref: '#/components/responses/BadRequest'
         '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/recognition/sign-templates/{id}:
-    parameters:
-      - $ref: './_shared.yaml#/components/parameters/IdParam'
     delete:
       summary: Delete a sign template
+      description: Needs the permission `models.manage`. An unknown id answers `400` ("Plantilla no encontrada").
       operationId: deleteSignTemplate
       tags: [Sign templates]
-      x-status: implemented
-      x-current-path: /api/sign-templates/{id}
       x-requirements: [FR-401]
+      parameters:
+        - $ref: '#/components/parameters/TemplateIdParam'
       responses:
         '200':
           description: Template deleted
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ActionResult'
-        '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-
-  # ───────────────────────────── Models ─────────────────────────────
-  /api/models:
-    get:
-      summary: List registered AI models
-      operationId: listModels
-      tags: [Models]
-      x-status: planned
-      x-requirements: [FR-605, HU-AI-004]
-      x-required-role: ADMIN
-      parameters:
-        - $ref: './_shared.yaml#/components/parameters/PageParam'
-        - $ref: './_shared.yaml#/components/parameters/LimitParam'
-      responses:
-        '200':
-          description: Page of models
-          content:
-            application/json:
-              schema:
                 type: object
-                required: [data, meta]
+                required: [success]
                 properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                    example: Plantilla eliminada
                   data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/AiModel'
-                  meta:
-                    $ref: './_shared.yaml#/components/schemas/PaginatedMeta'
+                    $ref: '#/components/schemas/SignTemplate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
+          $ref: '#/components/responses/Forbidden'
 
-  /api/models/active:
+  /api/sign-templates:
     get:
-      summary: Get the active model
-      description: Every device translates with the same version (exactly one model is active).
-      operationId: getActiveModel
-      tags: [Models]
-      x-status: planned
-      x-requirements: [FR-606, HU-AI-005]
+      summary: List sign templates (deprecated alias)
+      description: Same as `GET /api/recognition/sign-templates`. Kept for the current frontend; use the `/api/recognition/sign-templates` path.
+      operationId: listSignTemplatesLegacy
+      deprecated: true
+      tags: [Sign templates]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateKindParam'
+        - name: label
+          in: query
+          description: Filter by label
+          schema:
+            type: string
       responses:
         '200':
-          description: Active model
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AiModel'
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-        '404':
-          $ref: './_shared.yaml#/components/responses/NotFound'
-
-  /api/models/train:
+          $ref: '#/components/responses/TemplateList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
     post:
-      summary: Launch a training run (ADMIN)
-      description: Trains with validated samples only. When it finishes, the model is registered with its metrics (not yet active).
-      operationId: trainModel
-      tags: [Models]
-      x-status: planned
-      x-requirements: [FR-604, FR-605, HU-AI-003, HU-AI-004]
-      x-required-role: ADMIN
+      summary: Import sign templates (deprecated alias)
+      description: Same as `POST /api/recognition/sign-templates`.
+      operationId: importSignTemplatesLegacy
+      deprecated: true
+      tags: [Sign templates]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [version]
-              properties:
-                version:
-                  type: string
-                  maxLength: 50
-                  example: 1.1.0
-                description:
-                  type: string
-                  maxLength: 255
+              $ref: '#/components/schemas/ImportTemplatesRequest'
       responses:
-        '202':
-          description: Training accepted; the model appears in `GET /api/models` when finished
+        '201':
+          description: Templates imported; `data` lists the new ids
           content:
             application/json:
               schema:
                 type: object
+                required: [success, data]
                 properties:
-                  jobId:
-                    $ref: './_shared.yaml#/components/schemas/UUID'
-        '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
-        '409':
-          description: Version already exists
-
-  /api/models/{id}/activate:
-    parameters:
-      - $ref: './_shared.yaml#/components/parameters/IdParam'
-    post:
-      summary: Activate a model (ADMIN)
-      description: Deactivates the previous model atomically. Rejected if accuracy is below 0.85 (NFR-002). Publishes `recognition.RecognitionModelPublished`.
-      operationId: activateModel
-      tags: [Models]
-      x-status: planned
-      x-requirements: [FR-606, NFR-002, HU-AI-005]
-      x-required-role: ADMIN
-      responses:
-        '200':
-          description: Model activated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AiModel'
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
-        '404':
-          $ref: './_shared.yaml#/components/responses/NotFound'
-        '422':
-          description: Accuracy below the minimum (`ACCURACY_TOO_LOW`)
-          content:
-            application/json:
-              schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
-
-  # ───────────────────────────── Samples ─────────────────────────────
-  /api/samples:
-    get:
-      summary: List gesture samples (ADMIN)
-      operationId: listSamples
-      tags: [Samples]
-      x-status: planned
-      x-requirements: [FR-601, FR-604, HU-AI-001, HU-AI-003]
-      x-required-role: ADMIN
-      parameters:
-        - $ref: './_shared.yaml#/components/parameters/PageParam'
-        - $ref: './_shared.yaml#/components/parameters/LimitParam'
-        - name: signId
-          in: query
-          schema:
-            type: string
-          description: Logical reference to the lexicon sign (no foreign key).
-        - name: captureSessionId
-          in: query
-          schema:
-            $ref: './_shared.yaml#/components/schemas/UUID'
-        - name: isValidated
-          in: query
-          schema:
-            type: boolean
-      responses:
-        '200':
-          description: Page of samples
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [data, meta]
-                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/GestureSample'
-                  meta:
-                    $ref: './_shared.yaml#/components/schemas/PaginatedMeta'
+                      type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
+          $ref: '#/components/responses/Forbidden'
+
+  /api/sign-templates/{id}:
+    delete:
+      summary: Delete a sign template (deprecated alias)
+      description: Same as `DELETE /api/recognition/sign-templates/{id}`.
+      operationId: deleteSignTemplateLegacy
+      deprecated: true
+      tags: [Sign templates]
+      parameters:
+        - $ref: '#/components/parameters/TemplateIdParam'
+      responses:
+        '200':
+          description: Template deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/SignTemplate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ───────────────────────────── Samples ─────────────────────────────
+  /api/samples:
     post:
       summary: Register a gesture sample (ADMIN)
-      description: Consent timestamp and consent terms version are mandatory (Law 1581 of 2012); the sample cannot be stored without them.
+      description: |
+        Stores one repetition of a sign as landmark frames. Without consent data (date and terms version) the sample is rejected.
+        The sample is created with `isValidated = false`. Without `MONGO_URL` the samples are kept in memory and lost on restart.
       operationId: createSample
       tags: [Samples]
-      x-status: planned
       x-requirements: [FR-601, FR-602, HU-AI-001, HU-AI-002]
-      x-required-role: ADMIN
       requestBody:
         required: true
         content:
@@ -438,109 +442,87 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GestureSample'
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                    example: Muestra guardada
+                  data:
+                    $ref: '#/components/schemas/GestureSample'
         '400':
-          $ref: './_shared.yaml#/components/responses/BadRequest'
+          $ref: '#/components/responses/BadRequest'
         '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
-
-  /api/samples/{id}/validate:
-    parameters:
-      - $ref: './_shared.yaml#/components/parameters/IdParam'
-    post:
-      summary: Validate a sample (ADMIN)
-      description: Marks it validated with the reviewer identity and timestamp; only validated samples enter training.
-      operationId: validateSample
+          $ref: '#/components/responses/Forbidden'
+    get:
+      summary: List gesture samples (ADMIN)
+      description: Newest first, optionally for one sign.
+      operationId: listSamples
       tags: [Samples]
-      x-status: planned
-      x-requirements: [FR-604, HU-AI-003]
-      x-required-role: ADMIN
+      x-requirements: [FR-601, FR-604, HU-AI-001, HU-AI-003]
+      parameters:
+        - name: signCode
+          in: query
+          description: Sign code as in lexicon-service
+          schema:
+            type: string
       responses:
         '200':
-          description: Sample validated
+          description: Samples
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GestureSample'
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GestureSample'
         '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
-        '404':
-          $ref: './_shared.yaml#/components/responses/NotFound'
-
-  /api/samples/sessions/{captureSessionId}:
-    parameters:
-      - name: captureSessionId
-        in: path
-        required: true
-        schema:
-          $ref: './_shared.yaml#/components/schemas/UUID'
-    delete:
-      summary: Discard a whole capture session (ADMIN)
-      description: Removes every sample of the session in one operation and records it in the audit trail.
-      operationId: deleteCaptureSession
-      tags: [Samples]
-      x-status: planned
-      x-requirements: [FR-603, HU-AI-001, HU-AI-002]
-      x-required-role: ADMIN
-      responses:
-        '204':
-          description: Session discarded
-        '401':
-          $ref: './_shared.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './_shared.yaml#/components/responses/Forbidden'
-        '404':
-          $ref: './_shared.yaml#/components/responses/NotFound'
+          $ref: '#/components/responses/Forbidden'
 
 components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared.yaml#/components/securitySchemes/bearerAuth'
+
+  parameters:
+    TemplateIdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    TemplateKindParam:
+      name: kind
+      in: query
+      schema:
+        $ref: '#/components/schemas/TemplateKind'
+
   schemas:
-    HealthResponse:
+    ServiceHealth:
       type: object
-      required: [status]
+      required: [status, service]
       properties:
         status:
           type: string
           enum: [ok]
-        timestamp:
-          $ref: './_shared.yaml#/components/schemas/Timestamp'
-        dependencies:
-          type: object
-          properties:
-            postgres:
-              type: string
-              enum: [ok, degraded, down]
-            mongodb:
-              type: string
-              enum: [ok, degraded, down]
-            rabbitmq:
-              type: string
-              enum: [ok, degraded, down]
-      example:
-        status: ok
-        timestamp: '2026-10-04T10:30:00Z'
-        dependencies:
-          postgres: ok
-          mongodb: ok
-          rabbitmq: ok
-
-    ActionResult:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        message:
+        service:
           type: string
-        data:
-          description: Operation-specific payload.
+          example: recognition-service
 
     TranslationType:
       type: string
-      description: Direction of the translation (values used by the current code).
       enum: [texto_sena, sena_texto, voz_sena]
 
     CreateTranslationRequest:
@@ -549,32 +531,31 @@ components:
       properties:
         inputText:
           type: string
+          description: Gloss or source text; defaults to `outputText`
         outputText:
           type: string
-          description: Recognized or produced text (`translations.recognized_text`).
+          minLength: 1
         type:
           $ref: '#/components/schemas/TranslationType'
         confidence:
           type: number
           minimum: 0
           maximum: 1
-          nullable: true
         source:
           type: string
-          nullable: true
-        modelId:
-          allOf:
-            - $ref: './_shared.yaml#/components/schemas/UUID'
-          description: Planned (FR-403); id of the AI model that produced the translation.
+          maxLength: 20
+          description: Informative only (for example `mediapipe`, `knn`, `mock`, `manual`)
 
     Translation:
       type: object
-      required: [translationId, outputText, type, createdAt]
+      required: [translationId, inputText, outputText, type, isDeleted, createdAt]
       properties:
         translationId:
-          $ref: './_shared.yaml#/components/schemas/UUID'
+          type: integer
         userId:
-          $ref: './_shared.yaml#/components/schemas/UUID'
+          type: integer
+          nullable: true
+          description: Logical id of iam-service (no foreign key)
         inputText:
           type: string
         outputText:
@@ -587,51 +568,88 @@ components:
         source:
           type: string
           nullable: true
-        modelId:
-          $ref: './_shared.yaml#/components/schemas/UUID'
+        isDeleted:
+          type: boolean
         createdAt:
           $ref: './_shared.yaml#/components/schemas/Timestamp'
 
-    TranslationResult:
+    TranslationStats:
       type: object
-      required: [success]
+      required: [totalTranslations, activeUsers30d, daily, weekly, monthly]
       properties:
-        success:
-          type: boolean
-        message:
-          type: string
-        data:
-          $ref: '#/components/schemas/Translation'
-
-    TranslationListResult:
-      type: object
-      required: [success, data]
-      properties:
-        success:
-          type: boolean
-        data:
+        totalTranslations:
+          type: integer
+        activeUsers30d:
+          type: integer
+          description: Distinct users with a translation in the last 30 days
+        daily:
           type: array
+          description: Last 7 days, oldest first
           items:
-            $ref: '#/components/schemas/Translation'
+            type: object
+            required: [date, count]
+            properties:
+              date:
+                type: string
+                format: date
+              count:
+                type: integer
+        weekly:
+          type: array
+          description: Last 4 weeks, oldest first
+          items:
+            type: object
+            required: [weekStart, count]
+            properties:
+              weekStart:
+                type: string
+                format: date
+                description: Monday of the week
+              count:
+                type: integer
+        monthly:
+          type: array
+          description: Last 12 months, oldest first
+          items:
+            type: object
+            required: [month, count]
+            properties:
+              month:
+                type: string
+                example: 2026-10
+              count:
+                type: integer
+
+    MyStats:
+      type: object
+      required: [totalTranslations, distinctWords, activeDays]
+      properties:
+        totalTranslations:
+          type: integer
+        distinctWords:
+          type: integer
+        activeDays:
+          type: integer
+          description: Distinct calendar days (Colombia time) with a translation
 
     TemplateKind:
       type: string
+      description: '`static` = alphabet letter (1 frame x 63 values); `motion` = word (16 frames x 126 values)'
       enum: [static, motion]
 
     SignTemplate:
       type: object
-      required: [templateId, label, kind, features]
+      required: [templateId, label, kind, features, source, createdAt]
       properties:
         templateId:
-          $ref: './_shared.yaml#/components/schemas/UUID'
+          type: integer
         label:
           type: string
-          description: Sign `code` in lexicon-service.
         kind:
           $ref: '#/components/schemas/TemplateKind'
         features:
           type: array
-          description: '`static`: 1 frame of 63 values (one hand). `motion`: 16 frames of 126 values (two hands).'
+          description: Frames of landmark features
           items:
             type: array
             items:
@@ -640,18 +658,20 @@ components:
           type: string
           example: lsc54
         createdBy:
-          $ref: './_shared.yaml#/components/schemas/UUID'
+          type: integer
+          nullable: true
         createdAt:
           $ref: './_shared.yaml#/components/schemas/Timestamp'
 
     ImportTemplatesRequest:
       type: object
-      description: Send either `gestures` or `templates`.
+      description: Send `gestures` (with optional `kind` and `source`) or `templates`.
       properties:
         kind:
           $ref: '#/components/schemas/TemplateKind'
         source:
           type: string
+          description: Applied to every gesture (default `lsc54`)
         gestures:
           type: array
           items:
@@ -685,86 +705,99 @@ components:
               source:
                 type: string
 
-    AiModel:
-      type: object
-      description: Row of `ai_models`.
-      required: [modelId, version, trainedAt, sampleCount, signCount, isActive]
-      properties:
-        modelId:
-          $ref: './_shared.yaml#/components/schemas/UUID'
-        version:
-          type: string
-          example: 1.0.0
-        description:
-          type: string
-        trainedAt:
-          $ref: './_shared.yaml#/components/schemas/Timestamp'
-        trainedBy:
-          $ref: './_shared.yaml#/components/schemas/UUID'
-        signLanguage:
-          type: string
-          enum: [LSC]
-        sampleCount:
-          type: integer
-        signCount:
-          type: integer
-        accuracy:
-          type: number
-          minimum: 0
-          maximum: 1
-          nullable: true
-        storageReference:
-          type: string
-          description: Path or URL of the published `.tflite` file.
-        isActive:
-          type: boolean
-
     CreateSampleRequest:
       type: object
-      description: Document of the MongoDB collection `gesture_samples`.
-      required: [signId, captureSessionId, performedBy, consentGrantedAt, consentTermsVersion, storageReference]
+      required: [signCode, captureSessionId, performedBy, consentGrantedAt, consentTermsVersion, frames]
       properties:
-        signId:
+        signCode:
           type: string
-          description: Logical reference to the lexicon sign (no foreign key).
+          maxLength: 50
         captureSessionId:
-          $ref: './_shared.yaml#/components/schemas/UUID'
+          type: string
+          maxLength: 64
+          description: Groups the repetitions of one recording session
         performedBy:
           type: string
           maxLength: 150
-          description: Who physically performed the sign (may be an external collaborator without account).
+          description: Name of the person who signed
         consentGrantedAt:
-          $ref: './_shared.yaml#/components/schemas/Timestamp'
+          type: string
+          format: date-time
         consentTermsVersion:
           type: string
           maxLength: 20
-        sampleType:
-          type: string
-          enum: [VIDEO, LANDMARKS, IMAGE]
-          default: LANDMARKS
-        storageReference:
-          type: string
+        frames:
+          type: array
+          minItems: 1
+          maxItems: 64
+          description: Every frame has the same length, 63 or 126 numbers
+          items:
+            type: array
+            items:
+              type: number
 
     GestureSample:
-      allOf:
-        - $ref: '#/components/schemas/CreateSampleRequest'
-        - type: object
-          required: [sampleId, recordedBy, isValidated, createdAt]
-          properties:
-            sampleId:
-              $ref: './_shared.yaml#/components/schemas/UUID'
-            recordedBy:
-              $ref: './_shared.yaml#/components/schemas/UUID'
-              description: User id (from iam-service) who operated the interface; taken from the JWT `sub`.
-            isValidated:
-              type: boolean
-            validatedBy:
-              $ref: './_shared.yaml#/components/schemas/UUID'
-            validatedAt:
-              $ref: './_shared.yaml#/components/schemas/Timestamp'
-            createdAt:
-              $ref: './_shared.yaml#/components/schemas/Timestamp'
+      type: object
+      required: [sampleId, signCode, captureSessionId, recordedBy, performedBy, consentGrantedAt, consentTermsVersion, frames, isValidated, createdAt]
+      properties:
+        sampleId:
+          type: string
+          description: UUID generated by the service
+        signCode:
+          type: string
+        captureSessionId:
+          type: string
+        recordedBy:
+          type: integer
+          description: Administrator who operated the recording (iam user id)
+        performedBy:
+          type: string
+        consentGrantedAt:
+          type: string
+          format: date-time
+        consentTermsVersion:
+          type: string
+        frames:
+          type: array
+          items:
+            type: array
+            items:
+              type: number
+        isValidated:
+          type: boolean
+        createdAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
 
-  securitySchemes:
-    bearerAuth:
-      $ref: './_shared.yaml#/components/securitySchemes/bearerAuth'
+  responses:
+    TemplateList:
+      description: Sign templates
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [success, data]
+            properties:
+              success:
+                type: boolean
+              data:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SignTemplate'
+    BadRequest:
+      description: Invalid input or business error (`VALIDATION_ERROR` in samples; only `message` in translations and sign templates)
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ApiError'
+    Unauthorized:
+      description: Missing or invalid token (`UNAUTHORIZED`), or, on write routes, token of a deleted account (`ACCOUNT_DELETED`)
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ApiError'
+    Forbidden:
+      description: The token lacks the required role or permission (`FORBIDDEN`)
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ApiError'

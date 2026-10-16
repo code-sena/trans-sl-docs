@@ -15,66 +15,79 @@ services can work in parallel against an agreed contract.
 
 ## Contract index (`contracts/openapi/`)
 
-One OpenAPI 3.0.3 file per service. All of them reuse `_shared.yaml` (pagination, `ErrorResponse`,
-reusable parameters/responses and the `bearerAuth` security scheme) through `$ref`.
+> **Based on:** Backend `2993301` (`origin/develop`, 2026-10-16). Each contract lists only routes that exist in the code; every path and method was compared with the `routes.ts` files of each service.
 
-| Contract | Service | Local port | Public paths (under `/api`) | Endpoints* | Code status |
-|----------|---------|-----------|-----------------------------|------------|-------------|
-| [`api-gateway.yaml`](contracts/openapi/api-gateway.yaml) | api-gateway | 8080 | routing table and `GET /health` | 1 | edge component |
-| [`iam-service.yaml`](contracts/openapi/iam-service.yaml) | iam-service | 3001 | `/auth/**`, `/users/**`, `/roles/**`, `/consents/**` | 25 | extraction in progress (auth and users exist) |
-| [`recognition-service.yaml`](contracts/openapi/recognition-service.yaml) | recognition-service | 3002 | `/translations/**`, `/recognition/**`, `/models/**`, `/samples/**` | 15 | extraction in progress (translations and ia exist) |
-| [`lexicon-service.yaml`](contracts/openapi/lexicon-service.yaml) | lexicon-service | 3003 | `/lexicon/**` (including `/lexicon/media/**`) | 19 | extraction in progress (all endpoints exist) |
-| [`analytics-service.yaml`](contracts/openapi/analytics-service.yaml) | analytics-service | 3004 | `/analytics/**` | 5 | pending |
-| [`profile-service.yaml`](contracts/openapi/profile-service.yaml) | profile-service | 3005 | `/profile/**`, `/notifications/**`, `/achievements/**` | 16 | pending (gamification pending RF8) |
+One OpenAPI 3.0.3 file per component. They reuse `_shared.yaml` (`ApiError`, `Timestamp`, pagination and the `bearerAuth` security scheme) through `$ref`.
 
-\* Operations per file, `GET /health` included.
+| Contract | Service | Internal port | Public paths (under `/api`) | Operations* |
+|----------|---------|---------------|-----------------------------|-------------|
+| [`api-gateway.yaml`](contracts/openapi/api-gateway.yaml) | api-gateway | 8080 (published) | routing table and `GET /health` | 1 |
+| [`iam-service.yaml`](contracts/openapi/iam-service.yaml) | iam-service | 3001 | `/auth/**`, `/users/**`, `/iam/**` | 17 |
+| [`recognition-service.yaml`](contracts/openapi/recognition-service.yaml) | recognition-service | 3002 | `/translations/**`, `/recognition/sign-templates/**` (alias `/sign-templates/**`, deprecated), `/samples/**` | 14 |
+| [`lexicon-service.yaml`](contracts/openapi/lexicon-service.yaml) | lexicon-service | 3003 | `/lexicon/**` (including `/lexicon/media/**`) | 19 |
+| [`analytics-service.yaml`](contracts/openapi/analytics-service.yaml) | analytics-service | 3004 | `/analytics/**` | 6 |
+| [`profile-service.yaml`](contracts/openapi/profile-service.yaml) | profile-service | 3005 | `/profile/**`, `/notifications/**`, `/achievements/**` | 8 |
+
+\* Operations per file, `GET /health` included. In the service contracts `/health` is the internal endpoint of the service (not routed by the gateway).
 
 Support files: [`_shared.yaml`](contracts/openapi/_shared.yaml) (shared components) and
 [`_template-service.yaml`](contracts/openapi/_template-service.yaml) (starting point for a new service).
 
-`auth-service.yaml` is superseded by `iam-service.yaml` and must not be used.
-
 ### How to read an operation
 
-- `x-status: implemented` — the route exists in the backend today; the contract was written from the code.
-- `x-status: planned` — not in code yet; derived from `04-requirements/user-stories.md` and `06-data`.
 - `x-requirements` — the FR-xxx / HU-xxx that justify the operation.
-- `x-required-role: ADMIN` — the JWT must carry the ADMIN role (besides being valid).
-- `x-current-path` — path used today by the backend when it differs from the target path.
+- `deprecated: true` — the route still works but must not be used by new code (the `/api/sign-templates` alias).
+- The access rule of each operation (public, any valid JWT, a permission such as `stats.read`, or the `ADMIN` role) is written in its description and in the header of the file.
 
 ### Conventions common to every contract
 
-- Every service exposes `GET /health` (public).
-- Authentication: `Authorization: Bearer <accessToken>`, JWT issued by iam-service and validated by the
-  gateway. Services read `sub` and `roles` from the forwarded token.
-- Errors: `ErrorResponse` from `_shared.yaml`. The lexicon contract keeps the envelope of the current
-  code (`{success, code, message}`) and documents it as `LexiconError`.
-- Pagination: `?page=1&limit=20` (shared parameters). Lexicon and translation history still use
-  `limit`/`offset`, as in the code.
-- Local server in each file points at the service port; the gateway (`http://localhost:8080`) is also
-  listed because clients should always go through it.
-- No endpoint crosses a service database. References between services are logical ids (for example
-  `user_id` issued by iam-service); asynchronous integration uses domain events on RabbitMQ
-  (`02-domain/domain-events.md`).
+- Clients call the gateway only: `http://localhost:8080`. The service ports are internal (Docker Compose does not publish them).
+- Authentication: `Authorization: Bearer <token>`, JWT (HS256) issued by iam-service in `POST /api/auth/login` (`data.token`). The gateway rejects an invalid token if one is sent;
+  each service decides which routes need a session and checks roles and permissions from the token claims.
+- Success envelope: `{ "success": true, "message"?, "data"? }`. profile-service returns plain objects for profile, preferences and notifications (see its contract).
+- Errors: `{ "success": false, "code", "message" }` (`ApiError` in `_shared.yaml`). In recognition-service, the create, history and delete routes of `translations` and all `sign-templates` routes carry no `code` in business errors.
+- Pagination is not uniform: notifications use `page`/`limit` with `meta`; lexicon and translation history use `limit`/`offset`.
+- Ids are integers (`SERIAL`) in iam, recognition and lexicon; profile uses UUIDs for its own records. References between services are logical ids, never foreign keys.
+- Asynchronous integration uses domain events on RabbitMQ (`02-domain/domain-events.md`, [ADR-004](../05-architecture/decisions/records/ADR-004-microservices-architecture.md)).
 
 ### Validating the contracts
 
 ```bash
-npx @redocly/cli lint 07-api/contracts/openapi/iam-service.yaml
-npx @redocly/cli build-docs 07-api/contracts/openapi/lexicon-service.yaml
+npx --yes @redocly/cli lint 07-api/contracts/openapi/iam-service.yaml
+npx --yes @redocly/cli build-docs 07-api/contracts/openapi/lexicon-service.yaml
 ```
+
+Expected result: "Your API description is valid", with style warnings only (no license, `localhost` servers).
+
+---
+
+## Planned, not implemented
+
+These routes appeared in earlier drafts of the contracts but **do not exist** in Backend `2993301`. They were removed from the YAML files so that the contracts describe only what the code does. They stay here as proposals, with the requirement that justified each one; none of them is a commitment.
+
+| Service | Route (as drafted) | Purpose | Requirements |
+|---------|--------------------|---------|--------------|
+| iam | `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/jwks` | Refresh token, logout, public keys (RS256) | FR-011, FR-012, FR-013, HU-IAM-007, HU-IAM-008, ADR-002 |
+| iam | `GET /api/users`, `PATCH /api/users/{id}/status` | User administration | FR-015, FR-901, HU-IAM-010 |
+| iam | `PUT/DELETE /api/users/{id}/roles/{roleId}`, `GET/POST /api/roles`, `DELETE /api/roles/{id}`, `PUT /api/roles/{id}/permissions`, `GET /api/roles/permissions` | Role administration under `/api/roles`. Implemented today under `/api/iam`: `POST /api/iam/users/{userId}/roles`, `DELETE /api/iam/users/{userId}/roles/{roleName}`, `GET /api/iam/roles`, `DELETE /api/iam/roles/{roleId}`. Creating roles and editing role permissions have no route | FR-101, FR-102, FR-103, HU-AUTHZ-001, HU-AUTHZ-002 |
+| iam | `GET/POST /api/consents`, `DELETE /api/consents/{id}` | Consent and personal data (Law 1581 of 2012) | FR-002, FR-603, NFR-005 |
+| recognition | `GET /api/models`, `GET /api/models/active`, `POST /api/models/train`, `POST /api/models/{id}/activate` | Model registry and training | FR-604, FR-605, FR-606, HU-AI-003, HU-AI-004, HU-AI-005 |
+| recognition | `POST /api/samples/{id}/validate`, `DELETE /api/samples/sessions/{captureSessionId}` | Validate samples, discard a capture session | FR-603, FR-604, HU-AI-001, HU-AI-003 |
+| analytics | `GET /api/analytics/sections`, `GET /api/analytics/sessions`, `GET /api/analytics/events/summary` | Drafted reports. The implemented ones are `GET /summary`, `/top-signs`, `/daily` and `/reports/sections` | FR-702, FR-703, FR-704, FR-706, HU-USG-002, HU-USG-003 |
+| profile | `POST /api/notifications`, `POST /api/notifications/devices`, `DELETE /api/notifications/devices/{id}`, `GET /api/notifications/types`, `PATCH /api/notifications/types/{id}` | Create / schedule notifications, push devices, notification types | FR-501, FR-503, FR-504, FR-505, FR-509, HU-NOTIF-001, HU-NOTIF-003, HU-NOTIF-004, HU-NOTIF-005 |
+| profile | `POST /api/achievements`, `PATCH /api/achievements/{id}` | Administer achievements (RF8 not approved) | FR-801, HU-GAM-001 |
+
+Behaviour that is not in the code either, although it is not a route: refresh tokens, consent records, audit trail, push notifications.
+
+Implemented since the first version of this list: Google and Facebook login (`POST /api/auth/google`, `POST /api/auth/facebook`; FR-008, FR-009, HU-IAM-005) and the `iam.UserDeleted` event.
 
 ---
 
 ## Open items in the contracts
 
-- Ids: the current code uses integers; the contracts use UUID (`06-data`) except lexicon, which keeps
-  the integer ids of the code until its migration.
-- Response envelope: the current code answers `{success, message, data}`; the target contracts return
-  `ErrorResponse` for errors and plain payloads for the new services.
-- Consent endpoints (`/api/consents`) and the model-training endpoints are proposals: no source
-  requirement defines them in detail yet.
-- Gamification (`/api/achievements`) depends on the approval of RF8.
+- Pending (not documented as behaviour): a session version in the token (`401 SESSION_REVOKED`, `503 AUTH_UNAVAILABLE` at the gateway).
+- The error format is not uniform inside recognition-service (the errors listed above have no `code`).
+- Gamification depends on the approval of RF8.
 
 ---
 

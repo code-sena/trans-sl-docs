@@ -3,19 +3,18 @@ info:
   title: Lexicon Service API
   version: 1.0.0
   description: |
-    Learning & Lexicon (`04-lexicon-service`, port 3003, PostgreSQL db `lexicon` + static media
-    `.glb`/`.png`). Data owned: `06-data/domains/04-lexicon` (`sign_lexicon`, `sign_localizations`,
-    `categories`, `multimedia_resources`).
+    Learning & Lexicon (`04-lexicon-service`, internal port 3003, PostgreSQL db `lexicon` + static media
+    `.glb`/`.png`). Data owned: tables `categories`, `sign_lexicon`, `sign_localizations` and `multimedia_resource`.
 
-    Public paths served (through the gateway): `/api/lexicon/**`, including `/api/lexicon/media/**`.
+    **Based on:** Backend `2993301` (`origin/develop`, 2026-10-16; no route changes since `b29a2fa`), `services/lexicon-service`. The 17 endpoints below plus the media route
+    match `src/adapters/inbound/http/routes.ts`, with the DTOs of `dto/sign_request.ts` and the domain entities.
 
-    ## Source (extraction status: in progress)
-    The 17 endpoints below are copied from the real routes of the backend module
-    `domains/lexicon/adapters/inbound/http/routes.ts` (mounted today at `/api/lexicon`), with the DTOs of
-    `dto/sign_request.ts` and the domain entities. This service keeps the lexicon response envelope
-    (`{success, message, data, meta}`) and error format (`{success: false, code, message}`) of the code,
-    declared as `LexiconResult` and `LexiconError` below. Ids follow the current code (integer
-    `lexiconId`, `categoryId`, `resourceId`); migration to UUID (`06-data`) is pending.
+    Public paths served through the gateway: `/api/lexicon/**`, including `/api/lexicon/media/**`.
+    Port 3003 is internal: use the gateway at `http://localhost:8080`.
+
+    ## Response format
+    The service uses the envelope `{success, message, data, meta}` (`LexiconResult`) and the error format
+    `{success: false, code, message}` (`LexiconError`). Ids are integers (`lexiconId`, `categoryId`, `resourceId`).
 
     ## Access rules
     - Browsing the catalog (signs, search, alphabet, categories, media) is **public**: the alphabet
@@ -32,13 +31,11 @@ info:
       (or `LEXICON_MEDIA_BASE_URL` when configured, for a CDN). Media is cached for 7 days.
 
     ## Events published
-    `lexicon.SignPublished`, `lexicon.SignWithdrawn` (recognition-service refreshes its catalog).
+    `lexicon.SignPublished`, `lexicon.SignWithdrawn` (recognition-service consumes them and only logs them for now).
 
 servers:
-  - url: http://localhost:3003
-    description: Local development (direct to the service)
   - url: http://localhost:8080
-    description: Local development through the api-gateway
+    description: Local development through the api-gateway (the only port published by Docker Compose). The service itself listens on port 3003 inside the network.
 
 security: []
 
@@ -56,41 +53,28 @@ tags:
 
 paths:
   /health:
+    servers:
+      - url: http://localhost:3003
+        description: Internal port of the service (not routed by the gateway; the gateway has its own `/health`)
     get:
       summary: Health check
       operationId: health
       tags: [Health]
       responses:
         '200':
-          description: Service healthy
+          description: Service running
           content:
             application/json:
               schema:
                 type: object
-                required: [status]
+                required: [status, service]
                 properties:
                   status:
                     type: string
                     enum: [ok]
-                  timestamp:
-                    $ref: './_shared.yaml#/components/schemas/Timestamp'
-                  dependencies:
-                    type: object
-                    properties:
-                      database:
-                        type: string
-                        enum: [ok, degraded, down]
-                      rabbitmq:
-                        type: string
-                        enum: [ok, degraded, down]
-              example:
-                status: ok
-                timestamp: '2026-10-04T10:30:00Z'
-                dependencies:
-                  database: ok
-                  rabbitmq: ok
-        '503':
-          description: Service not available
+                  service:
+                    type: string
+                    example: lexicon-service
 
   /api/lexicon/media/{path}:
     get:
@@ -98,7 +82,6 @@ paths:
       description: Serves files from the media directory, for example `alfabeto/glb/A.glb`. Cached 7 days. Unknown files answer 404 with the lexicon error format.
       operationId: getMedia
       tags: [Media]
-      x-status: implemented
       parameters:
         - name: path
           in: path
@@ -129,7 +112,6 @@ paths:
       description: Only ACTIVE signs. `meta` reports `limit` and `offset`.
       operationId: listSigns
       tags: [Signs]
-      x-status: implemented
       x-requirements: [FR-301, HU-LEX-001]
       parameters:
         - $ref: '#/components/parameters/SignTypeParam'
@@ -159,7 +141,6 @@ paths:
       description: The sign is always created as DRAFT. Needs at least a Spanish localization (`word` or `localizations`).
       operationId: createSign
       tags: [Admin]
-      x-status: implemented
       x-requirements: [FR-305, FR-307, HU-LEX-006]
       x-required-role: ADMIN
       security:
@@ -196,7 +177,6 @@ paths:
       description: Ordered by relevance. `q` is required.
       operationId: searchSigns
       tags: [Signs]
-      x-status: implemented
       x-requirements: [FR-302, HU-LEX-002]
       parameters:
         - name: q
@@ -221,7 +201,6 @@ paths:
       description: The signs of type LETTER in alphabetical order, with their 3D model and thumbnail.
       operationId: getAlphabet
       tags: [Signs]
-      x-status: implemented
       x-requirements: [FR-304, HU-LEX-004]
       parameters:
         - $ref: '#/components/parameters/SignLanguageParam'
@@ -238,7 +217,6 @@ paths:
       description: Each category carries its count of ACTIVE signs.
       operationId: listCategories
       tags: [Categories]
-      x-status: implemented
       x-requirements: [FR-301, HU-LEX-001]
       responses:
         '200':
@@ -259,7 +237,6 @@ paths:
       summary: Create a category (ADMIN)
       operationId: createCategory
       tags: [Admin]
-      x-status: implemented
       x-requirements: [FR-308, HU-LEX-006]
       x-required-role: ADMIN
       security:
@@ -289,7 +266,6 @@ paths:
       summary: Update a category (ADMIN)
       operationId: updateCategory
       tags: [Admin]
-      x-status: implemented
       x-requirements: [FR-308, HU-LEX-006]
       x-required-role: ADMIN
       security:
@@ -318,7 +294,6 @@ paths:
       description: Rejected with `CATEGORY_IN_USE` when it still has signs.
       operationId: deleteCategory
       tags: [Admin]
-      x-status: implemented
       x-requirements: [FR-308, HU-LEX-006]
       x-required-role: ADMIN
       security:
@@ -345,7 +320,6 @@ paths:
       summary: List signs including DRAFT and INACTIVE (ADMIN)
       operationId: adminListSigns
       tags: [Admin]
-      x-status: implemented
       x-requirements: [FR-307, HU-LEX-006]
       x-required-role: ADMIN
       security:
@@ -382,7 +356,6 @@ paths:
       summary: Get a sign in any status (ADMIN)
       operationId: adminGetSign
       tags: [Admin]
-      x-status: implemented
       x-requirements: [FR-307, HU-LEX-006]
       x-required-role: ADMIN
       security:
@@ -408,7 +381,6 @@ paths:
       description: ACTIVE signs only. Includes `resources` (ordered) and `localizations`.
       operationId: getSign
       tags: [Signs]
-      x-status: implemented
       x-requirements: [FR-303, HU-LEX-003]
       parameters:
         - $ref: '#/components/parameters/UiLangParam'
@@ -422,7 +394,6 @@ paths:
       description: '`code` and `status` are not changeable here (INV-018); if sent they are ignored.'
       operationId: updateSign
       tags: [Admin]
-      x-status: implemented
       x-requirements: [FR-307, HU-LEX-006]
       x-required-role: ADMIN
       security:
@@ -451,7 +422,6 @@ paths:
       description: 'Soft retirement: status changes to INACTIVE; the sign is not deleted. Publishes `lexicon.SignWithdrawn`.'
       operationId: deactivateSign
       tags: [Admin]
-      x-status: implemented
       x-requirements: [FR-307, HU-LEX-006]
       x-required-role: ADMIN
       security:
@@ -474,7 +444,6 @@ paths:
       description: DRAFT to ACTIVE; the sign becomes visible to users. Publishes `lexicon.SignPublished`.
       operationId: publishSign
       tags: [Admin]
-      x-status: implemented
       x-requirements: [FR-307, HU-LEX-006]
       x-required-role: ADMIN
       security:
@@ -504,7 +473,6 @@ paths:
       summary: Create or replace the localization of a sign (ADMIN)
       operationId: upsertLocalization
       tags: [Admin]
-      x-status: implemented
       x-requirements: [FR-305, FR-306, HU-LEX-005]
       x-required-role: ADMIN
       security:
@@ -538,7 +506,6 @@ paths:
       description: Rejected with `POSITION_TAKEN` if `displayOrder` is already used by another resource of the sign.
       operationId: addResource
       tags: [Admin]
-      x-status: implemented
       x-requirements: [FR-309, HU-LEX-007]
       x-required-role: ADMIN
       security:
@@ -588,7 +555,6 @@ paths:
       summary: Remove a multimedia resource (ADMIN)
       operationId: removeResource
       tags: [Admin]
-      x-status: implemented
       x-requirements: [FR-309, HU-LEX-007]
       x-required-role: ADMIN
       security:
@@ -692,7 +658,7 @@ components:
 
     LexiconError:
       type: object
-      description: Error format of this service (differs from the shared `ErrorResponse`).
+      description: Error format of the lexicon business errors; same shape as `ApiError` in `_shared.yaml`, with the codes of this service.
       required: [success, message]
       properties:
         success:
@@ -961,17 +927,17 @@ components:
           schema:
             $ref: '#/components/schemas/LexiconError'
     Unauthorized:
-      description: Missing or invalid JWT
+      description: Missing or invalid JWT (`UNAUTHORIZED`)
       content:
         application/json:
           schema:
-            $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+            $ref: './_shared.yaml#/components/schemas/ApiError'
     Forbidden:
-      description: The user does not have the ADMIN role
+      description: The user does not have the ADMIN role (`FORBIDDEN`)
       content:
         application/json:
           schema:
-            $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+            $ref: './_shared.yaml#/components/schemas/ApiError'
     NotFound:
       description: Sign, category or resource not found
       content:
