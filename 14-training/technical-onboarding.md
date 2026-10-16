@@ -154,11 +154,14 @@ npm run build     # compiles shared and every service (tsc)
 npm test          # builds @traduce/shared, then scripts/run-tests.js runs every *.test.ts with node:test
 ```
 
-`scripts/run-tests.js` looks for `*.test.ts` under `tests/`, `packages/` and `services/`. Tests exist for
-`packages/shared` and for `analytics-service` and `api-gateway`, among others; not every service has the same
-coverage. **Do not assume a coverage figure**: no coverage report is configured.
+`scripts/run-tests.js` looks for `*.test.ts` under `tests/`, `packages/` and `services/`. Every service and
+`packages/shared` has tests. Coverage is not collected by default; on 2026-10-16 it was 88.5 % of lines.
+Three PostgreSQL suites are skipped unless `PROFILE_TEST_DATABASE_URL` points to a disposable database.
 
-Frontend: only `npm run typecheck`.
+Frontend: `npm test` (Jest + `jest-expo`, tests in `src/**/__tests__/`) and `npm run typecheck`.
+
+Commands to measure coverage, the figures per service and the known gaps are in
+[`11-quality/testing-strategy.md`](../11-quality/testing-strategy.md).
 
 ---
 
