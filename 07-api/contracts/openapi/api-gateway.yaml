@@ -3,67 +3,65 @@ info:
   title: API Gateway
   version: 1.0.0
   description: |
-    Single entry point of Traduce Senas (`01-api-gateway`, port 8080). The gateway owns no data and no
-    business logic: it routes, validates the JWT signature, applies rate limiting and CORS, and forwards
-    each request to the domain service that owns the path. Clients only talk to the gateway; the
-    paths below `/api` are the same ones documented in each service contract.
+    Single entry point of Traduce Señas (`01-api-gateway`, port 8080, the only port Docker Compose publishes to the host).
+    The gateway owns no data and no business logic: it applies CORS and rate limits, checks the JWT when one is sent, and forwards
+    each request to the service that owns the path prefix. Clients only talk to the gateway; the paths below `/api` are the ones
+    documented in each service contract.
+
+    **Based on:** Backend `2993301` (`origin/develop`, 2026-10-16), `services/api-gateway` (`src/route_table.ts`, `src/app.ts`, `src/health.ts`,
+    `src/optional_auth.ts`, `src/cors_options.ts`, `src/proxies.ts`).
 
     ## Routing table
-    | Public path prefix | Upstream service | Port | Contract |
-    |--------------------|------------------|------|----------|
-    | `/api/auth/**`, `/api/users/**`, `/api/roles/**`, `/api/consents/**` | iam-service | 3001 | `iam-service.yaml` |
-    | `/api/translations/**`, `/api/recognition/**`, `/api/models/**`, `/api/samples/**` | recognition-service | 3002 | `recognition-service.yaml` |
+    | Public path prefix | Upstream service | Internal port | Contract |
+    |--------------------|------------------|---------------|----------|
+    | `/api/auth/**`, `/api/users/**`, `/api/iam/**` | iam-service | 3001 | `iam-service.yaml` |
+    | `/api/translations/**`, `/api/recognition/**`, `/api/sign-templates/**` (deprecated alias), `/api/samples/**` | recognition-service | 3002 | `recognition-service.yaml` |
     | `/api/lexicon/**` (including `/api/lexicon/media/**`) | lexicon-service | 3003 | `lexicon-service.yaml` |
     | `/api/analytics/**` | analytics-service | 3004 | `analytics-service.yaml` |
     | `/api/profile/**`, `/api/notifications/**`, `/api/achievements/**` | profile-service | 3005 | `profile-service.yaml` |
 
-    Paths are forwarded unchanged (no prefix stripping). Routing is also declared machine-readably in
-    the `x-routing` extension of this file.
+    Paths are forwarded unchanged (no prefix stripping) and the body is not parsed. A path outside these prefixes answers `404 NOT_FOUND`.
+    The same table is machine-readable in the `x-routing` extension of this file.
 
     ## Authentication
-    Protected endpoints require a JWT issued by iam-service:
+    Protected endpoints need a JWT issued by iam-service (`POST /api/auth/login`, HS256):
     ```
-    Authorization: Bearer <accessToken>
+    Authorization: Bearer <token>
     ```
-    Get it with `POST /api/auth/login`. The gateway validates the signature (public keys from
-    `GET /api/auth/jwks`) and rejects invalid tokens with `401` before reaching the service. Public
-    endpoints (registration, login, lexicon catalog, media) are let through without a token. Services
-    still enforce authorization (for example the ADMIN role).
+    The gateway verifies the token **only if the header is present** (outside `/api/auth`): an invalid or expired token is rejected with
+    `401 UNAUTHORIZED` before reaching the service. A request without a header is let through; every service decides which routes
+    need a session and enforces roles and permissions. The gateway adds no identity headers: services read the claims from the token.
 
-    ## Headers added by the gateway (internal)
-    - `X-User-Id`: user UUID (`sub` claim)
-    - `X-User-Roles`: roles of the user, comma separated (for example `ADMIN`)
-    - `X-Correlation-Id`: id to correlate logs across services
+    ## Rate limits
+    300 requests per minute per client for everything (`RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS`), and 10 per minute for
+    `POST /api/auth/login`, `/forgot-password`, `/verify-code`, `/reset-password`, `/google` and `/facebook` (`AUTH_RATE_LIMIT_MAX`).
+    Over the limit: `429 RATE_LIMITED`. Limits count per client IP; behind a reverse proxy set `TRUST_PROXY` to the number of
+    trusted proxies (`1` in production behind Caddy) so the gateway reads the client IP from `X-Forwarded-For`. With `0`
+    (default) the header is ignored.
 
-    ## Communication between services
-    Client calls are synchronous REST through this gateway. Services talk to each other
-    asynchronously with domain events over RabbitMQ (topic exchange `traduce.events`, routing key
-    `<service>.<event>`); the gateway is not involved.
+    ## CORS
+    Allowed origins come from `CORS_ORIGINS` (comma separated). If it is empty, development allows `http://localhost:8081` and
+    `http://localhost:19006` (Expo web) and production allows none. Native apps send no `Origin` and do not depend on CORS.
 
     ## Errors
-    Gateway errors use `ErrorResponse` from `_shared.yaml`: `401` invalid token, `404` unknown route,
-    `429` rate limit exceeded, `502`/`503` upstream unavailable.
+    All gateway errors use `{ "success": false, "code": string, "message": string }` (`ApiError` in `_shared.yaml`):
+    `401 UNAUTHORIZED` invalid token, `404 NOT_FOUND` unknown route, `429 RATE_LIMITED`, `502 BAD_GATEWAY` the upstream service does not answer.
+
+    ## Pending (in progress by the backend team)
+    The backend team is adding a session version to the token (`401 SESSION_REVOKED`, `503 AUTH_UNAVAILABLE` at the gateway). It is not in Backend `2993301`, so it is not documented as behaviour.
 
 servers:
+  - url: https://traducesenas.tech
+    description: Production (Caddy with HTTPS in front of the gateway)
   - url: http://localhost:8080
-    description: Local development
-  - url: https://api.dev.{domain}
-    description: Development
-    variables:
-      domain:
-        default: example.com
-  - url: https://api.{domain}
-    description: Production
-    variables:
-      domain:
-        default: example.com
+    description: Local development (Docker Compose or `npm run dev:all`)
 
 x-routing:
-  - prefixes: [/api/auth, /api/users, /api/roles, /api/consents]
+  - prefixes: [/api/auth, /api/users, /api/iam]
     upstream: iam-service
     target: http://iam-service:3001
     contract: iam-service.yaml
-  - prefixes: [/api/translations, /api/recognition, /api/models, /api/samples]
+  - prefixes: [/api/translations, /api/recognition, /api/sign-templates, /api/samples]
     upstream: recognition-service
     target: http://recognition-service:3002
     contract: recognition-service.yaml
@@ -89,48 +87,75 @@ paths:
     get:
       summary: Gateway health check
       description: |
-        Verifies that the gateway is running and reports the state of every upstream service.
+        Calls `GET /health` of each service with a 2 second timeout (`HEALTH_TIMEOUT_MS`) and reports the result.
+        It always answers 200 while the gateway is alive; read the body to know if a service is down.
         No authentication required.
       operationId: health
       tags: [Health]
       security: []
       responses:
         '200':
-          description: Gateway healthy (upstreams may be degraded)
+          description: Gateway running (services may be down)
           content:
             application/json:
               schema:
-                type: object
-                required: [status, timestamp]
-                properties:
-                  status:
-                    type: string
-                    enum: [ok, degraded]
-                  timestamp:
-                    $ref: './_shared.yaml#/components/schemas/Timestamp'
-                  upstreams:
-                    type: object
-                    description: State of each domain service
-                    additionalProperties:
-                      type: string
-                      enum: [ok, degraded, down]
-              example:
-                status: ok
-                timestamp: '2026-10-04T10:30:00Z'
-                upstreams:
-                  iam-service: ok
-                  recognition-service: ok
-                  lexicon-service: ok
-                  analytics-service: ok
-                  profile-service: ok
-        '503':
-          description: Gateway starting or a critical upstream is down
+                $ref: '#/components/schemas/HealthReport'
+              examples:
+                allUp:
+                  summary: All services up
+                  value:
+                    status: ok
+                    services:
+                      iam: { status: up }
+                      recognition: { status: up }
+                      lexicon: { status: up }
+                      analytics: { status: up }
+                      profile: { status: up }
+                degraded:
+                  summary: One service down
+                  value:
+                    status: degraded
+                    services:
+                      iam: { status: up }
+                      recognition: { status: up }
+                      lexicon: { status: down }
+                      analytics: { status: up }
+                      profile: { status: up }
+        '429':
+          description: Rate limit exceeded (`RATE_LIMITED`)
           content:
             application/json:
               schema:
-                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+                $ref: './_shared.yaml#/components/schemas/ApiError'
 
 components:
-  securitySchemes:
-    bearerAuth:
-      $ref: './_shared.yaml#/components/securitySchemes/bearerAuth'
+  schemas:
+    ServiceStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [up, down]
+    HealthReport:
+      type: object
+      required: [status, services]
+      properties:
+        status:
+          type: string
+          description: '`ok` only if every service is up'
+          enum: [ok, degraded]
+        services:
+          type: object
+          required: [iam, recognition, lexicon, analytics, profile]
+          properties:
+            iam:
+              $ref: '#/components/schemas/ServiceStatus'
+            recognition:
+              $ref: '#/components/schemas/ServiceStatus'
+            lexicon:
+              $ref: '#/components/schemas/ServiceStatus'
+            analytics:
+              $ref: '#/components/schemas/ServiceStatus'
+            profile:
+              $ref: '#/components/schemas/ServiceStatus'
