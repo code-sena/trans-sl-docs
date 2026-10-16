@@ -73,12 +73,12 @@ were evaluated, and what the consequences are. They are **short documents** (1-2
 
 **Use `decisions/_template-adr.md`**
 
-**Typical ADR examples:**
+**Recorded ADRs** (index and status: [decisions/README.md](decisions/README.md)):
 ```
-ADR-001-documentation-language.md  → Why English for all documentation
-ADR-002-auth-strategy.md           → Why JWT and not sessions
-ADR-003-database-per-service.md    → Why separate DB per service
-ADR-004-api-gateway.md             → Why Kong and not custom NGINX
+ADR-001-documentation-language.md     → Why English for the documentation
+ADR-002-jwt-authentication.md         → Why JWT and not sessions
+ADR-003-database-separation.md        → Why PostgreSQL + MongoDB without foreign keys between them
+ADR-004-microservices-architecture.md → Why gateway + services, one database each, events over RabbitMQ
 ```
 
 ---
