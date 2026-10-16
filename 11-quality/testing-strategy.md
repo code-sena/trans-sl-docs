@@ -1,314 +1,200 @@
-# Testing Strategy
+# Testing Strategy — Traduce Señas
 
-> Defines what, how much, and with which tools to test at each layer.
-> Complements the TDD guide (`tdd-guide.md`) that explains the process.
-> This document is the project's quality contract.
-
----
-
-## Project testing pyramid
-
-```
-                 /\
-                /  \
-               /    \
-              /  E2E  \     ← Few, slow, expensive but high-value
-             /  [5%]   \
-            /────────────\
-           /  Integration  \
-          /    [25%]        \  ← Test real integration (DB, broker, external APIs)
-         /──────────────────\
-        /   Contract Tests    \
-       /      [20%]            \  ← Verify the OpenAPI contract is fulfilled
-      /────────────────────────\
-     /       Unit Tests         \
-    /          [50%]             \  ← Many, fast, test business logic
-   /────────────────────────────\
-```
-
-**Rule:** More tests at the bottom = more maintainable system at lower cost.
-Inverting the pyramid (more E2E than unit tests) makes CI slow and fragile.
+> What the team tests, with which tools, how to run the tests and how much code they cover.
+> Complements the TDD guide (`tdd-guide.md`), which explains the process.
+>
+> **Last verified:** 2026-10-16 against Backend `develop@2993301` and Frontend PR
+> [#38](https://github.com/tadeo77789/frontendTS/pull/38) (`chore/frontend-unit-tests`, pending merge into `develop`).
+> Figures in this document come from running the suites on those commits; update them when they change.
 
 ---
 
-## Tier 1: Unit Tests
+## Current state at a glance
 
-**Objective:** Test business logic in complete isolation.
+| | Backend (`backendTS`) | Frontend (`frontendTS`) |
+|---|---|---|
+| **Test runner** | `node:test` (built into Node) + `ts-node` | Jest 29 + `jest-expo` (Expo SDK 57 preset) |
+| **Helpers** | `node:assert/strict`, in-memory repositories and fake adapters | `@testing-library/react-native` for hooks |
+| **Command** | `npm test` (from the repo root) | `npm test` |
+| **Test files** | 72 | 8 |
+| **Tests** | 683 (681 pass, 2 skipped without a test database) | 79 |
+| **Line coverage** | 88.5 % | 4.5 % |
+| **CI** | None | None |
 
-| Aspect | Value |
-|--------|-------|
-| **What they test** | Aggregates, Value Objects, Domain Services, use cases |
-| **Isolation** | Complete — no real calls to DB or external services |
-| **Speed** | < 5ms per test |
-| **Target coverage** | ≥ 80% of lines (≥ 90% in `src/domain/`) |
-| **Tools** | Jest, Vitest, JUnit 5, pytest |
-| **Doubles** | Fakes, Stubs, Spies (see `tdd-guide.md`) |
-| **When they run** | On every `git commit` (pre-commit hook) and in CI |
-
-**Folder structure:**
-
-```
-tests/
-└── unit/
-    ├── domain/
-    │   ├── [Aggregate].spec.ts
-    │   └── value-objects/
-    │       └── [VO].spec.ts
-    └── application/
-        └── [UseCase].spec.ts
-```
-
-**Unit test example (see complete guide in `tdd-guide.md`):**
-
-```typescript
-// tests/unit/domain/Order.spec.ts
-it('total should be the sum of items × quantity', () => {
-  const items = [
-    new OrderItem(prod1Id, 2, new Money(100, 'USD')),
-    new OrderItem(prod2Id, 1, new Money(50, 'USD')),
-  ];
-  const order = Order.create(customerId, items);
-  expect(order.total).toEqual(new Money(250, 'USD'));
-});
-```
+**Summary:** the backend business logic is well covered by unit tests. The frontend has just started
+(pure logic only, no screens). No repository runs tests automatically, and there are no contract, E2E or
+performance tests yet.
 
 ---
 
-## Tier 2: Integration Tests
+## Test types
 
-**Objective:** Verify that the adapters work correctly with real systems.
+### Unit tests — in place
 
-| Aspect | Value |
-|--------|-------|
-| **What they test** | Repositories vs real DB, publishers vs real broker |
-| **Isolation** | Low — use real DB and broker in Docker |
-| **Speed** | 50ms – 2s per test |
-| **Target coverage** | Happy path + 2-3 error cases per adapter |
-| **Tools** | Jest + Testcontainers, Spring Boot Test |
-| **Setup** | `docker compose up -d test-db test-broker` |
-| **When they run** | In CI, NOT in pre-commit (too slow) |
+**Goal:** test business logic in isolation, with no real database, broker, network or device.
 
-**Setup with Testcontainers:**
+#### Backend
 
-```typescript
-// tests/integration/setup.ts
-import { PostgreSqlContainer } from '@testcontainers/postgresql';
+- **Location:** `tests/` folder inside each workspace: `packages/shared/tests/`, `services/<service>/tests/`,
+  plus `tests/` at the repo root for cross-service checks.
+- **Naming:** `<subject>.test.ts`. `scripts/run-tests.js` collects every `*.test.ts` under `tests/`,
+  `packages/` and `services/` (Node 20 does not expand globs in `node --test`).
+- **Test doubles:** in-memory implementations of the ports (for example `services/profile-service/tests/in_memory.ts`),
+  `InMemoryEventBus` from `@traduce/shared` and fake `pg` pools. HTTP routes are tested on the Express app
+  without opening a real server where possible.
+- **Static checks as tests:** `tests/postgres_schema.test.ts` checks that every table used by a Postgres adapter
+  is created by a migration mounted for that service. It reads files only; it needs no database.
 
-let pgContainer: StartedPostgreSqlContainer;
+#### Frontend
 
-beforeAll(async () => {
-  pgContainer = await new PostgreSqlContainer('postgres:15')
-    .withDatabase('test_db')
-    .withUsername('test')
-    .withPassword('test')
-    .start();
+- **Location:** `__tests__/` folder next to the code under test, for example
+  `src/shared/utils/__tests__/email.test.ts`. Jest only picks up `src/**/__tests__/**/*.test.ts(x)`.
+- **What is covered today:**
 
-  process.env.DATABASE_URL = pgContainer.getConnectionUri();
+  | Area | File under test | Tests |
+  |---|---|---|
+  | Validation | `shared/utils/email.ts`, `passwordStrength.ts`, `userDisplayName.ts` | 26 |
+  | API client | `shared/services/api.client.ts` (error mapping, token only sent to the API, single 401 notice) | 19 |
+  | Auth flows | `feature/auth/services/pendingAuthFlow.ts`, `passwordResetFlow.ts` (30-minute expiry) | 14 |
+  | Resend cooldown | `feature/auth/hooks/useResendCooldown.ts` | 5 |
+  | Sign recognition | `feature/Translation/services/vision/normalize.ts`, `knnClassifier.ts` | 15 |
 
-  // Apply migrations
-  await runMigrations(process.env.DATABASE_URL);
-}, 60_000); // 60s timeout for image pull
+- **Test doubles:** `jest.mock` for `expo-secure-store` and `templateStore`; the official AsyncStorage mock;
+  a custom axios `adapter` to capture outgoing requests instead of calling the server.
+- **Setup notes** (in `package.json` → `jest` and `jest.setup.js`):
+  - `moduleNameMapper` points `expo-modules-core` to the copy nested inside `expo`.
+  - `jest.setup.js` restores Node's native Web Streams; without it, importing axios crashes Jest.
+  - `tsconfig.json` declares `"types": ["jest"]`, required by TypeScript 6 for `npm run typecheck`.
 
-afterAll(async () => {
-  await pgContainer.stop();
-});
-```
+### Integration tests — partial
 
----
+**Goal:** check adapters against real infrastructure.
 
-## Tier 3: Contract Tests (Consumer-Driven Contract Testing)
+Three backend suites run against a real PostgreSQL and are **skipped** unless a dedicated, disposable
+database is provided:
 
-**Objective:** Verify that the OpenAPI contract (what the service documents) matches what the service actually implements.
+| Suite | Variables |
+|---|---|
+| `services/profile-service/tests/preferences_postgres.test.ts` | `PROFILE_TEST_DATABASE_URL`; `PROFILE_PREFERENCES_PG_TESTS=1` makes the suite fail instead of skip when the URL is missing |
+| `services/profile-service/tests/gamification_concurrency.test.ts` | `PROFILE_TEST_DATABASE_URL`; `GAMIFICATION_PG_TESTS=1` (same behaviour) |
+| `services/analytics-service/tests/atomic_erasure_postgres.test.ts` | `PROFILE_TEST_DATABASE_URL` |
 
-| Aspect | Value |
-|--------|-------|
-| **What they test** | HTTP API vs OpenAPI contract |
-| **Tools** | Pact, Dredd, supertest + openapi-validator |
-| **When they run** | In CI before pushing to staging |
+> ⚠️ Never point these variables at a shared or production database: the suites create and drop data.
 
-**Validation with openapi-validator:**
+There are no integration tests yet for RabbitMQ, MongoDB or Liquibase migrations.
 
-```typescript
-// tests/contract/api-contract.spec.ts
-import { createOpenAPIValidatorMiddleware } from 'express-openapi-validator';
+### Contract tests — not started
 
-const app = buildApp();
-app.use(createOpenAPIValidatorMiddleware({
-  apiSpec: './07-api/contracts/openapi/[service].yaml',
-  validateRequests: true,
-  validateResponses: true,
-}));
+The OpenAPI files in `07-api/contracts/openapi/` are not validated against the running services.
 
-it('POST /orders returns 201 with the correct schema', async () => {
-  const response = await request(app)
-    .post('/orders')
-    .set('Authorization', `Bearer ${testJWT}`)
-    .send(validOrderPayload);
+### End-to-end (E2E) tests — not started
 
-  expect(response.status).toBe(201);
-  // Response schema validation is done by the OpenAPI middleware
-});
-```
-
----
-
-## Tier 4: End-to-End Tests (E2E)
-
-**Objective:** Verify complete user flows as the end user would experience them.
-
-| Aspect | Value |
-|--------|-------|
-| **What they test** | Critical business flows end-to-end |
-| **Isolation** | None — real environment (staging or dedicated E2E environment) |
-| **Speed** | 5s – 60s per test |
-| **Tools** | Playwright (UI), K6 (API E2E), Cypress |
-| **When they run** | In CI only in the staging pipeline, not on every PR |
-| **Scope** | Critical flows only — register + create order + confirm payment |
-
-**Priority E2E flows:**
+Priority flows, when E2E tests are added:
 
 | # | Flow | Services involved |
-|---|------|------------------|
-| 1 | User registration and login | auth-service |
-| 2 | [Main business flow] | [services] |
-| 3 | [Critical error flow] | [services] |
+|---|------|-------------------|
+| 1 | Register, verify email with the code, log in | api-gateway, iam-service |
+| 2 | Log in with Google | api-gateway, iam-service, profile-service |
+| 3 | Recognise a sign and save the translation in the history | recognition-service, profile-service, analytics-service |
+| 4 | Delete the account with the email code and check the data is removed in every service | iam-service, profile-service, recognition-service, analytics-service |
+
+### Performance tests — not started
+
+No load tests exist. The NFR performance targets are in `04-requirements/non-functional.md`.
 
 ---
 
-## Performance Tests
+## How to run the tests
 
-**Objective:** Verify that NFR performance requirements are met under load.
+### Backend
 
-| Aspect | Value |
-|--------|-------|
-| **Tool** | k6 |
-| **When they run** | In the staging pipeline (not on every PR) |
-| **Failure criterion** | If P95 > 300ms or error rate > 1% |
+```bash
+npm ci
+npm test            # builds @traduce/shared, then runs every *.test.ts with node:test
+```
 
-```javascript
-// tests/performance/load-test.js (k6)
-import http from 'k6/http';
-import { check } from 'k6';
+With a disposable Postgres for the integration suites:
 
-export const options = {
-  stages: [
-    { duration: '30s', target: 100 },  // Ramp up to 100 users
-    { duration: '60s', target: 100 },  // Hold 100 users
-    { duration: '30s', target: 0 },    // Ramp down
-  ],
-  thresholds: {
-    'http_req_duration': ['p(95)<300'],  // P95 < 300ms
-    'http_req_failed': ['rate<0.01'],    // < 1% errors
-  },
-};
+```bash
+PROFILE_TEST_DATABASE_URL=postgres://<user>:<password>@<host>:<port>/<empty_test_db> npm test
+```
 
-export default function () {
-  const res = http.get('http://localhost:8080/[critical-endpoint]', {
-    headers: { 'Authorization': `Bearer ${__ENV.TEST_TOKEN}` },
-  });
-  check(res, { 'status is 200': (r) => r.status === 200 });
-}
+### Frontend
+
+```bash
+npm ci
+npm test            # jest
+npm run typecheck   # tsc --noEmit, includes the test files
 ```
 
 ---
 
-## CI configuration per pipeline
+## How to measure coverage
 
-```yaml
-# .github/workflows/ci.yml (simplified)
-jobs:
-  unit-tests:
-    steps:
-      - run: npm run test:unit -- --coverage
-      - run: npm run lint
+Coverage is **not** collected by default and no threshold is enforced.
 
-  integration-tests:
-    services:
-      postgres:
-        image: postgres:15
-      redis:
-        image: redis:7
-    steps:
-      - run: npm run test:integration
+### Backend
 
-  contract-tests:
-    steps:
-      - run: npm run test:contract
+`node:test` has built-in coverage (experimental in Node 22/24). From the Backend root, with `@traduce/shared` built:
 
-  # Only on push to main/develop:
-  performance-tests:
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - run: k6 run tests/performance/load-test.js
+```bash
+TS_NODE_PROJECT=tsconfig.base.json node --require ts-node/register --test \
+  --experimental-test-coverage \
+  --test-coverage-exclude='**/tests/**' --test-coverage-exclude='**/node_modules/**' --test-coverage-exclude='**/dist/**' \
+  $(find tests packages services -name '*.test.ts' -not -path '*/node_modules/*')
 ```
+
+> Only files loaded by at least one test are counted. Of the 246 `src/**/*.ts` files, 72 are never loaded;
+> most of them are type-only (ports, entities, request types) and produce no runtime code. The others are
+> configuration, composition roots (`app.ts`, `*.module.ts`) and the LSC-54 dataset scripts in recognition-service.
+
+### Frontend
+
+```bash
+npx jest --coverage
+```
+
+The report goes to `coverage/` (ignored by git).
+
+### Coverage by area (2026-10-16)
+
+| Workspace | Line coverage | Note |
+|---|---|---|
+| `packages/shared` | 99.5 % | |
+| `api-gateway` | 100 % | |
+| `analytics-service` | 95.1 % | |
+| `iam-service` | 89.3 % | Lowest: `iam_controller.ts` (~37 %), `mailer.ts` (~43 %) |
+| `recognition-service` | 86.0 % | Lowest: recognition `service.ts` (~39 %), `mongo_sample_repository.ts` (~45 %) |
+| `lexicon-service` | 83.5 % | Lowest: `category_repository.ts` (~29 %), `lexicon_repository.ts` (~48 %) |
+| `profile-service` | 83.5 % | |
+| **Backend total** | **88.5 %** | |
+| **Frontend total** | **4.5 %** | Screens, navigation and login hooks have no tests |
 
 ---
 
-## Code coverage — Thresholds per layer
+## Targets and gaps
 
-```json
-// jest.config.json
-{
-  "coverageThreshold": {
-    "global": {
-      "lines": 80,
-      "branches": 75,
-      "functions": 80,
-      "statements": 80
-    },
-    "./src/domain/": {
-      "lines": 90,
-      "branches": 85
-    }
-  }
-}
-```
+**Target:** NFR-007 (`04-requirements/non-functional.md`) asks for ≥ 80 % line coverage (≥ 90 % in the domain layer).
+The backend meets the global target; the frontend does not.
 
-**Coverage rule:** If a PR lowers the global coverage, CI fails.
-Coverage cannot go down — if there is uncovered code, tests must be added in the same PR.
+| Gap | Impact | Proposed next step |
+|---|---|---|
+| No CI in any repository | Tests only run when someone runs them by hand; a PR can break them unnoticed | GitHub Actions workflow running `npm test` (and `npm run typecheck` in Frontend) on every PR |
+| Frontend coverage 4.5 % | UI and login regressions are only caught by hand | Cover the login and register hooks, `AuthContext` and the services that call the API |
+| Postgres integration suites skipped by default | Concurrency and deletion guarantees are not checked routinely | Disposable Postgres service in CI with `PROFILE_TEST_DATABASE_URL` |
+| No contract, E2E or performance tests | API drift and full-flow breakage go unnoticed | Start with E2E flow 1 above |
+| No coverage threshold | Coverage can drop without anyone noticing | Add a threshold once CI exists |
 
----
-
-## Fixture and test data files
-
-```
-tests/
-├── fixtures/
-│   ├── order.fixture.ts       # Test object builders
-│   ├── user.fixture.ts
-│   └── db-seeds/
-│       └── test-data.sql       # Base data for integration tests
-├── helpers/
-│   ├── auth.helper.ts          # Generate test JWT
-│   └── database.helper.ts      # Reset DB between tests
-```
-
-**Fixture Builder pattern:**
-
-```typescript
-// tests/fixtures/order.fixture.ts
-export class OrderFixture {
-  static createValid(overrides: Partial<OrderData> = {}): Order {
-    return Order.create(
-      overrides.customerId ?? new CustomerId('customer-test-uuid'),
-      overrides.items ?? [OrderItemFixture.oneItem()],
-    );
-  }
-
-  static inConfirmedState(): Order {
-    const order = OrderFixture.createValid();
-    order.confirm();
-    return order;
-  }
-}
-```
+**Known defect found while writing frontend tests:** `classifyLetterLSC` (`feature/Translation/services/vision/classifier.ts`)
+never returns `L`, because index extended with the other fingers folded matches the `D`/`G` rule first.
 
 ---
 
 ## Correlations
 
-- Complete TDD guide → `11-quality/tdd-guide.md`
-- Definition of Done (required coverage) → `00-governance/definition-of-done.md`
-- OpenAPI contracts to validate → `07-api/contracts/openapi/`
-- Hexagonal Architecture (facilitates testing) → `05-architecture/hexagonal-architecture.md`
-- CI/CD pipeline → `10-devops/README.md`
+- TDD process → `11-quality/tdd-guide.md`
+- Coverage requirement → `04-requirements/non-functional.md` (NFR-007)
+- Definition of Done → `00-governance/definition-of-done.md`
+- Technical debt on coverage → `15-project-control/technical-backlog.md` (TD-011)
+- How a new developer runs the tests → `14-training/technical-onboarding.md`
+- OpenAPI contracts (future contract tests) → `07-api/contracts/openapi/`
