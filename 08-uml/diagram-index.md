@@ -85,6 +85,12 @@ All sources are based on `backendTS@497feef` (`origin/develop`, 2026-10-05; gene
 | CL-10 | Domain analytics | PlantUML | [`source/class-backend-analytics.puml`](diagrams/source/class-backend-analytics.puml) | Usage events and the section report |
 | CL-11 | lexicon-service | PlantUML | [`source/class-lexicon-service.puml`](diagrams/source/class-lexicon-service.puml) | Microservice `services/lexicon-service`: sign catalog, categories, resources, events (RabbitMQ) and its own security |
 
+### Use case diagrams (Traduce Señas)
+
+| ID | Name | Tool | File | Description |
+|----|------|------|------|-------------|
+| UC-01 | Use cases | Unknown (PDF export only, no source) | [`exports/use-cases.pdf`](diagrams/exports/use-cases.pdf) | Imported 2026-10-03 from `github.com/tadeo77789/TraduceSe-as` (`Diagramas/casos de uso.pdf`). Not yet checked against the MVP scope (sign → text/voice only) |
+
 ---
 
 ## Diagram templates
