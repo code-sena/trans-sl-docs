@@ -24,7 +24,7 @@
 - [ ] If new/modified events: `event-catalog.md` updated
 
 ### Deployment
-- [ ] Code is mergeable to `dev` (no conflicts)
+- [ ] Code is mergeable to the integration branch (no conflicts): `develop` in Backend and Frontend, `main` in Docs
 - [ ] CI/CD green on the branch
 - [ ] Deployed to staging environment
 - [ ] Basic smoke test passing on staging
