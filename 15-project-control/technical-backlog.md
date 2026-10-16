@@ -189,8 +189,8 @@
 | Field | Value |
 |-------|-------|
 | **ID** | TD-011 |
-| **Title** | Increase unit and integration test coverage from current ~20% to 80%+ |
-| **Description** | Low coverage means bugs escape to production. NFR-007 requires ≥80% coverage. |
+| **Title** | Increase unit and integration test coverage to 80%+ in every repository |
+| **Description** | Low coverage means bugs escape to production. NFR-007 requires ≥80% coverage. Measured on 2026-10-16: Backend 88.5 % of lines (meets the target), Frontend 4.5 % (screens and login hooks untested). No CI runs the tests. Details in `11-quality/testing-strategy.md`. |
 | **Why now** | Test-first development (TDD) slows down initial sprints but prevents 3–4 week debugging cycles later. |
 | **Effort** | 40 hours (6–8 SP) |
 | **Priority** | Medium |
