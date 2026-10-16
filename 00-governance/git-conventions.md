@@ -6,7 +6,7 @@
 
 ```
 main        ← Production. Merge from release only. Always stable.
-  └── dev   ← Continuous integration. Merge from features.
+  └── develop ← Continuous integration. Merge from features (Backend, Frontend).
         └── feat/[description]    ← One branch per feature/user story
         └── fix/[description]     ← One branch per bugfix
         └── chore/[description]   ← Infrastructure, docs, dependency changes
@@ -14,7 +14,7 @@ main        ← Production. Merge from release only. Always stable.
 ```
 
 **Rules:**
-- Nobody commits directly to `main` or `dev`
+- Nobody commits directly to `main` or `develop`
 - Every task = one branch + one Pull Request
 - One branch = one task (do not mix different features)
 - Branches are deleted after merge
@@ -79,11 +79,13 @@ chore(deps): upgrade Spring Boot to 3.2.0
 - **Template:** use the template at `.github/pull_request_template.md`
 - **Green CI:** merge only proceeds if all pipeline checks pass
 
+**Integration branch:** `develop` (Backend, Frontend). Docs: PRs go straight to `main`; the remote `dev` branch is stale and not used.
+
 ---
 
 ## Merge policy
 
-- Use **Squash and Merge** for features (keeps `dev` history clean)
+- Use **Squash and Merge** for features (keeps `develop` history clean)
 - Use **Merge Commit** for releases to `main` (preserves full history)
 - **Do not** use Rebase & Merge (creates confusion in shared history)
 
