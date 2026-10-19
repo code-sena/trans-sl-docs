@@ -100,3 +100,16 @@ Follow [SemVer](https://semver.org/): `MAJOR.MINOR.PATCH`
 git tag -a v1.2.0 -m "Release v1.2.0: add reports module"
 git push origin v1.2.0
 ```
+
+Backend and Frontend are versioned independently. The first release of both is `v1.0.0` (2026-10-19).
+
+| Repo | Source of the version | Notes |
+|------|-----------------------|-------|
+| Backend | root `package.json` (`version`) | One version for all services. `GET /health` of the api-gateway reports it |
+| Frontend | `app.json` (`expo.version`) | Shown in Profile and Admin. `expo.android.versionCode` goes up by 1 on every APK build |
+| traducesenas-download | GitHub Release `vX.Y.Z` with the asset `traducesenas.apk` | Same version as the Frontend `expo.version` of that APK |
+
+- `PATCH` for fixes, `MINOR` for new features, `MAJOR` for breaking API or app changes.
+- Bump the version in a PR to `develop` before releasing; tag the commit on `main` after the release merge.
+- Every tag gets a GitHub Release with generated notes: `gh release create v1.2.0 --generate-notes`.
+- Docs and Evidencias are not versioned.
