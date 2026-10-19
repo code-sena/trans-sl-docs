@@ -87,7 +87,8 @@ paths:
     get:
       summary: Gateway health check
       description: |
-        Calls `GET /health` of each service with a 2 second timeout (`HEALTH_TIMEOUT_MS`) and reports the result.
+        Calls `GET /health` of each service with a 2 second timeout (`HEALTH_TIMEOUT_MS`) and reports the result,
+        together with the deployed backend version.
         It always answers 200 while the gateway is alive; read the body to know if a service is down.
         No authentication required.
       operationId: health
@@ -105,6 +106,7 @@ paths:
                   summary: All services up
                   value:
                     status: ok
+                    version: 1.0.0
                     services:
                       iam: { status: up }
                       recognition: { status: up }
@@ -115,6 +117,7 @@ paths:
                   summary: One service down
                   value:
                     status: degraded
+                    version: 1.0.0
                     services:
                       iam: { status: up }
                       recognition: { status: up }
@@ -139,12 +142,16 @@ components:
           enum: [up, down]
     HealthReport:
       type: object
-      required: [status, services]
+      required: [status, version, services]
       properties:
         status:
           type: string
           description: '`ok` only if every service is up'
           enum: [ok, degraded]
+        version:
+          type: string
+          description: Backend version (SemVer) from the root `package.json` of the Backend repo; `unknown` if it cannot be read
+          example: 1.0.0
         services:
           type: object
           required: [iam, recognition, lexicon, analytics, profile]
