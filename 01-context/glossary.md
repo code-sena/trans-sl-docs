@@ -12,7 +12,7 @@
 2. If it's not there: add it with its definition.
 3. If there is disagreement about the definition: discuss it as a team and update this document.
 
-Per [ADR-001](../05-architecture/decisions/records/ADR-001-idioma-documentacion.md), all
+Per [ADR-001](../05-architecture/decisions/records/ADR-001-documentation-language.md), all
 documentation and code are written in English while the business domain is Spanish. The
 **Canonical term** column below is therefore binding: it is the exact name to use in classes,
 variables, database columns and API fields. The **Spanish term** column records the word the
@@ -31,7 +31,7 @@ domain actually uses, so the translation is decided once, here, and never re-inv
 | Intérprete | `Interpreter` | Certified LSC professional. In this project they validate translations and label training data; the system does not replace them | Avoid "translator": interpretation is live, translation is on recorded material |
 | Traducción | `Translation` | One completed sign → text/speech conversion, stored with its timestamp, its result and the user who produced it | |
 | Historial de traducciones | `TranslationHistory` | Chronological list of the translations of one user, which they can browse and delete entry by entry | |
-| Reconocimiento de señas | `SignRecognition` | The process of turning a camera video stream into an identified sign. Runs on MediaPipe/OpenCV | Avoid "detección": detection only finds a hand, recognition identifies which sign it is |
+| Reconocimiento de señas | `SignRecognition` | The process of turning a camera video stream into an identified sign. Runs on the device with MediaPipe and the team's TensorFlow.js model | Avoid "detección": detection only finds a hand, recognition identifies which sign it is |
 | Punto de referencia | `Landmark` | Each of the hand or body coordinates that MediaPipe extracts per frame; the input of the recognition model | |
 | Léxico de señas | `SignLexicon` | Curated catalogue of the signs the system knows, with their multimedia resources. Its size defines the real coverage of the MVP | |
 | Alfabeto en señas | `SignAlphabet` | The learning module that shows each letter of the alphabet in LSC | |
@@ -61,7 +61,7 @@ domain actually uses, so the translation is decided once, here, and never re-inv
 | Microservices | The architecture of this system: five domain services (`iam`, `recognition`, `lexicon`, `analytics`, `profile`) behind an API Gateway, each independently deployable, hexagonal inside, with its own database. Client calls go over REST through the gateway; services talk to each other with asynchronous domain events over RabbitMQ |
 | Database per service | Each service owns its data store (PostgreSQL databases `iam`, `recognition`, `lexicon`, `analytics`, `profile`; MongoDB `gesture_samples` in recognition). No foreign keys across services: cross-service references are logical IDs such as the `user_id` UUID issued by iam-service |
 | API Gateway | The single public entry point (`/api/**`, port 8080). It routes to the owning service, validates the JWT signature, applies rate limiting and CORS. It owns no data |
-| N-layer architecture | The internal division of the **mobile/web client**: **presentation** (screens, components, navigation), **business** (translation, user, notifications, profile), **data** (API clients, repositories, local storage), **services** (recognition, auth, push) and **config**. A layer may call the one below it, never the one above |
+| Client structure | How the **web/Android client** is organised: by feature rather than by layer. `src/app` holds configuration, providers (context) and routes; `src/feature/*` holds the screens and services of each feature (Translation, Alphabet, History, Profile, Stats, Admin, auth); `src/shared` holds the API client, common components, hooks and types. The earlier description as an "N-layer" client no longer applies |
 | Layer boundary violation | Any code that skips or inverts the layer order — a screen that opens a repository directly, or business logic written inside a component. The most common defect this architecture is meant to prevent |
 | Singleton | Creational pattern used for `DatabaseConnection` and `ConfiguracionApp`, the two things that must exist exactly once. Duplicating the connection wastes resources and breaks transactions; duplicating the configuration means a language change in one module is invisible to the others |
 | Factory Method | Creational pattern used by `TraduccionFactory` and `NotificacionFactory`. Adding a translation type becomes a new subclass instead of another branch in a growing `if`/`switch` |
@@ -80,7 +80,7 @@ domain actually uses, so the translation is decided once, here, and never re-inv
 |-------------|------------------------|
 | God Object | One class or component holding translation, authentication, notifications and UI at once |
 | Unnecessary Singleton | Making `Traduccion` a Singleton. Only `DatabaseConnection` and `ConfiguracionApp` qualify |
-| Manual polling | Asking the server every few seconds whether a notification arrived, draining battery. Use the Observer with WebSockets or FCM |
+| Manual polling | Asking the server every few seconds whether a notification arrived, draining battery. Notifications are fetched from `profile-service` when the user opens them |
 | Prop drilling | Passing the authenticated user or the active language through five nested components instead of using Context |
 | Business logic in the view | Building a translation object inside a screen component instead of delegating to the factory |
 | Magic strings for events | Writing event names as loose string literals. Centralise them in one typed constants object |
@@ -118,7 +118,6 @@ domain actually uses, so the translation is decided once, here, and never re-inv
 | C4 | Context, Container, Component, Code — architecture diagram model |
 | TDD | Test-Driven Development |
 | OAuth | Open Authorization — the protocol behind social login |
-| FCM | Firebase Cloud Messaging |
 | SENA | Servicio Nacional de Aprendizaje |
 | ADSO | Análisis y Desarrollo de Software — the SENA programme this project belongs to |
 | GoF | Gang of Four — the design-pattern catalogue this project draws its four patterns from |
