@@ -55,9 +55,8 @@ The system captures video of identifiable people. Under **Ley 1581 de 2012** and
 |----------------|-----------------|---------|
 | Google Sign-In | OAuth 2.0 | Social login |
 | Facebook Login | OAuth 2.0 | Social login |
-| Email provider | SMTP / transactional API | Password recovery messages |
-| Firebase Cloud Messaging | SDK | Push notifications without manual polling |
-| MediaPipe / OpenCV | Library, embedded | Hand and gesture detection for sign recognition |
+| Email provider (Gmail SMTP) | SMTP | Verification codes for registration and password recovery |
+| MediaPipe Tasks Vision + TensorFlow.js | Library, embedded in the client | Hand and pose landmarks and the team's own 54-sign model, running on the device |
 
 > **Decided (2026-08-28):** the providers are **Google and Facebook**, as specified in the SRS.
 > The technical document proposes Google and Apple; the SRS wins.
@@ -130,9 +129,8 @@ What the system **does NOT build** in this version and why:
 
 | Feature | Who builds it | Why not us |
 |---------|--------------|-----------|
-| Sign recognition models | MediaPipe / OpenCV (third-party) | Pre-trained hand and gesture detection; training from scratch is outside the capacity and schedule of a three-person team |
+| Hand and pose landmark detection | MediaPipe (third-party) | Pre-trained landmark models; the team trains only the sign classifier on top of them (LSC-54 dataset, 54 signs) |
 | Sign validation and corpus quality | Certified LSC interpreters | Linguistic authority the development team does not have |
-| Push delivery infrastructure | Firebase Cloud Messaging | Reusing a proven service is cheaper than operating our own |
 
 ---
 
@@ -157,7 +155,7 @@ What the system **does NOT build** in this version and why:
 |------|-------------|
 | **Time** | ⚠ **Re-planning pending.** The original baseline was 14 two-week sprints, 2026-01-01 → 2026-07-31 (`Scrum.xlsx`), and that window has closed. The technical-economic proposal describes a different plan — 6 phases totalling 26 weeks against the sprint plan's 28 — so the two were never reconciled. Until the team agrees a new baseline, treat time as an open constraint and do not commit to dates |
 | **Budget** | ⚠ **Unreconciled.** The components are development and programming $48,000,000 · hardware $15,003,310 · infrastructure and servers $1,350,000 · testing and training $2,000,000 · software and security $225,000 — which **sum to $66,578,310**. The proposal's own §7 states a total of $66,350,000, its summary states approximately $66,800,000, and its change report §10.1 states $51,350,000. Four figures, none of which match the arithmetic. Treat $66,578,310 as the only defensible number until the proposal is corrected. Source: `Propuesta Técnica y Económica.docx` |
-| **Technology** | React Native + TypeScript, React for web, Node.js + Express, PostgreSQL + MongoDB, RabbitMQ, MediaPipe + OpenCV. Microservices (iam, recognition, lexicon, analytics, profile + API Gateway), database per service |
+| **Technology** | Expo + React Native + TypeScript (web and Android from one codebase), Node.js + Express, PostgreSQL + MongoDB, RabbitMQ, MediaPipe + TensorFlow.js, Docker Compose + Caddy. Microservices (iam, recognition, lexicon, analytics, profile + API Gateway), database per service |
 | **Team** | 3 people for 6 months. One of them holds Tech Lead, Scrum Master and developer roles simultaneously — see `overview.md` |
 | **Developer equipment** | Minimum per developer: Intel Core i5 8th gen / Ryzen 5, 8 GB RAM, 256 GB SSD, 720p camera. Training recognition models requires an NVIDIA GTX 1650 or better, which the minimum profile does not include. Source: `informe tecnico (1).xlsx`, sheet 2 |
 | **Regulatory** | Ley 1581 de 2012 and Decreto 1377 de 2013 on personal data protection. Binding, not advisory — see the NFR8 obligations above |
@@ -173,9 +171,8 @@ What the system **does NOT build** in this version and why:
 |-----------|----------------|--------------|--------|
 | Certified LSC interpreters for validation and labelling | External / institutional | Before FR3 acceptance | 🟡 To confirm |
 | Institutional permission for pilot testing | Schools and public bodies | Before the validation phase | 🟡 To confirm |
-| Server hosting | Hosting provider | Before the dev environment | 🟡 To confirm |
-| Google / Facebook OAuth credentials | Provider consoles | Before FR1 | 🔴 Pending |
-| Firebase project and FCM keys | Google | Before FR4 | 🔴 Pending |
+| Server hosting | Hostinger VPS | Before the dev environment | ✅ Done — production at https://traducesenas.tech since 2026-10-16 |
+| Google / Facebook OAuth credentials | Provider consoles | Before FR1 | ✅ Done |
 | Development equipment (3 laptops, monitors, camera, modem) | Purchase | Sprint 1 | 🟡 To confirm |
 | Personal data processing policy and user consent form | Team, reviewed by the Product Owner | Before the pilot | 🔴 Pending |
 

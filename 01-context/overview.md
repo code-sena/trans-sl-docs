@@ -46,7 +46,7 @@ everyday interactions that today have no coverage at all.
 |------|-------------|--------------------------|
 | Deaf / hard-of-hearing user | Person who communicates in LSC | Signs in front of the camera so the system produces text or speech for the hearing party; consults their translation history |
 | Hearing user | Person who does not know LSC — teacher, student, shop assistant, public servant | Reads or listens to the translation; consults the sign alphabet to learn basic signs |
-| Administrator | Technical profile in charge of the platform | Monitors recognition accuracy, manages content updates, consults usage statistics, supports end users |
+| Administrator | Technical profile in charge of the platform | Manages users and roles, publishes signs in the lexicon, manages sign templates, consults usage statistics |
 
 > The MVP is designed around school environments (students and teachers) as the first validation
 > setting, and then extends to shops and public services.
@@ -54,40 +54,52 @@ everyday interactions that today have no coverage at all.
 ## Architecture
 
 TraduceSeñas is a **microservices system**: five domain services — `iam`, `recognition`,
-`lexicon`, `analytics` and `profile` — behind an **API Gateway**. The React Native / web client
-(internally organised in N layers: presentation, business, data, external services and
-configuration) talks to the gateway over REST. Each service is hexagonal, has its own database
-(PostgreSQL, plus MongoDB for the training samples in recognition) and communicates with the
-others through asynchronous domain events over RabbitMQ. The decision was confirmed by the
-product owner on 2026-10-04; the full description lives in `05-architecture/`.
+`lexicon`, `analytics` and `profile` — behind an **API Gateway**, the only published entry point.
+The client is a single Expo / React Native codebase that runs on the web and on Android, organised
+by feature (`src/feature/`), and talks to the gateway over REST. Each service is hexagonal, has its
+own database (PostgreSQL, plus MongoDB for the gesture samples in recognition) and communicates
+with the others through asynchronous domain events over RabbitMQ; account deletion uses an outbox
+so the `UserDeleted` event is never lost. The decision was confirmed by the product owner on
+2026-10-04 and is recorded in
+[ADR-004](../05-architecture/decisions/records/ADR-004-microservices-architecture.md); the full
+description lives in [`05-architecture/`](../05-architecture/overview.md).
 
-> **Extraction status:** the backend code today has the domain modules `auth`, `users`,
-> `translations`, `ia` and `lexicon`, each already hexagonal, which are being split into the
-> services above. Status per service: pending / in progress.
+**Sign recognition runs on the user's device.** MediaPipe locates the hands and body in each
+camera frame (128 values per frame) and the team's own TensorFlow.js model, trained on the
+LSC-54 dataset, classifies the sign among 54 words. A second engine recognises the alphabet with
+hand geometry, KNN and DTW. Video never leaves the device, which supports the legal frame below
+and means the server needs no GPU.
+
+**Deployment.** Everything runs with Docker Compose on a Hostinger VPS, behind Caddy, which serves
+HTTPS with Let's Encrypt certificates. The web app is published at https://traducesenas.tech and
+the Android APK is distributed through GitHub Pages.
 
 ## Technology stack
 
 | Layer | Technology | Justification |
 |-------|-----------|---------------|
-| Mobile frontend | React Native + TypeScript | Single codebase for Android and iOS; the team already knows JavaScript; good integration with camera and computer-vision libraries |
-| Web frontend | React | Shares language, tooling and a large part of the component logic with React Native |
-| Navigation | React Navigation | Standard routing for React Native, integrates with the screen structure |
-| Global state | React Context API | Session, language and theme are read across the whole app |
-| Server state | React Query | Caching and revalidation of history, lexicon and notifications without manual polling |
-| Local persistence | AsyncStorage | Session token and offline preferences |
-| Backend | Node.js + Express | Same language as the frontend; REST is enough for the traffic profile of the MVP |
-| Sign recognition | MediaPipe + OpenCV | Pre-trained hand and gesture detection models; drastically reduces model training time |
-| Database | MySQL | Reliable, free, widely supported and known by the team |
-| Real-time transport | HTTPS + WebSockets | HTTPS for standard client-server calls, WebSockets for the live recognition stream |
-| Push notifications | Firebase Cloud Messaging (FCM) | Avoids manual polling and battery drain |
+| Client (web and Android) | Expo 57 + React Native 0.86 + react-native-web + TypeScript | One codebase for the browser and the Android APK; the APK opens translation in a WebView |
+| Navigation | React Navigation 6 | Standard routing for React Native, integrates with the screen structure |
+| Global state | React Context API | Session, access, language, preferences and theme are read across the whole app |
+| HTTP client | axios | REST calls to the API Gateway; no server-state cache library |
+| Local persistence | expo-secure-store (native) / browser storage (web), AsyncStorage | Session token and local preferences |
+| Speech | expo-speech | Reads the translated word aloud |
+| Languages | i18n with Spanish, English, French and Portuguese | Interface text in four languages |
+| Sign recognition | MediaPipe Tasks Vision + TensorFlow.js | Hand and pose landmarks plus the team's own 54-sign model, all running on the device |
+| Backend | Node.js + Express 5 + TypeScript, zod | Same language as the client; REST is enough for the traffic profile of the MVP |
+| Databases | PostgreSQL 16 (one per service) + MongoDB 7 | Data ownership per service, no foreign keys across databases ([ADR-003](../05-architecture/decisions/records/ADR-003-database-separation.md)) |
+| Messaging | RabbitMQ (exchange `traduce.events`) | Asynchronous domain events between services, with a dead-letter queue per queue |
+| Authentication | JWT (HS256), email + verification code, Google and Facebook login | Stateless sessions validated at the gateway ([ADR-002](../05-architecture/decisions/records/ADR-002-jwt-authentication.md)) |
+| Notifications | In-app notifications (`profile-service`) | No push service is used |
+| Deployment | Docker Compose + Caddy on a VPS | 15 containers; HTTPS with automatic Let's Encrypt renewal |
 
 ## Current status
 
-- **Phase:** In development
-- **Current version:** not yet released
-- **Last release:** none
+- **Phase:** In production at https://traducesenas.tech since 2026-10-16
+- **Current version:** Backend `v1.0.0`, Frontend `v1.0.1` (web and Android APK)
+- **Release process:** production is built from `main`; each repository has its own SemVer version, published as a git tag and a GitHub Release ([git conventions](../00-governance/git-conventions.md))
 - **Original planned schedule:** 14 two-week sprints, 2026-01-01 → 2026-07-31 (`Scrum.xlsx`). Kept as the baseline of record; not rewritten.
-- **Next milestone:** **Pending re-planning.** The original schedule closed on 2026-07-31 and no new baseline has been agreed yet. This field stays empty on purpose until the team re-plans.
+- **Next milestone:** final project defence (SENA ADSO) on 2026-10-28.
 
 ## Project contacts
 
@@ -126,4 +138,5 @@ detached from the user's identity. See NFR8 and `scope.md`.
 - Scope boundaries → `01-context/scope.md`
 - Term definitions → `01-context/glossary.md`
 - Product vision and roadmap → `03-product/vision.md`
-- Documentation language rule → `05-architecture/decisions/records/ADR-001-idioma-documentacion.md`
+- Architecture → `05-architecture/overview.md`
+- Documentation language rule → `05-architecture/decisions/records/ADR-001-documentation-language.md`
