@@ -1,174 +1,71 @@
-# Microservices Governance Framework
+# Traduce Señas — project documentation
 
-> Generic documentation template · v1.0 · MIT License
-> Authored by Jesus Ariel Gonzalez Bonilla - freely licensed (MIT) for anyone.
+Traduce Señas is a mobile and web app that recognizes Colombian Sign Language (LSC) through the camera and turns it into text or synthesized speech. The MVP is one-way (sign → text/voice); see [scope](./01-context/scope.md).
 
-This repository is a **documentation scaffold** for any microservices project.
-It contains no project-specific information. Its purpose is to teach how to document
-a software system professionally — showing what goes in each section, why it matters,
-and how every document relates to the others.
+- **Production:** <https://traducesenas.tech>
+- **Android APK:** <https://tadeo77789.github.io/traducesenas-download/>
+- **Language:** English is the main language of this repository ([ADR-001](./05-architecture/decisions/records/ADR-001-documentation-language.md)).
 
 ---
 
-## How to use this framework
+## Repositories
 
-1. **Fork** (or copy the structure) into your project repository.
-2. **Pick your stack** → read `_stacks/[your-language].md` for folder structure and stack-specific commands.
-3. **Follow the fill-in order** → see [`00-sdd-guide.md`](./00-sdd-guide.md) for the weekly schedule and how to split work across team members.
-4. **Fill in each file** starting from sections marked as priority (⭐).
-5. **Read each `README.md`** before filling in documents in that section — they explain what is expected.
-6. **Do not delete instructions** until a document is fully filled in.
-7. Once a document is complete and reviewed, remove the `> [!NOTE] INSTRUCTIONS` block.
+| Repository | Content |
+|------------|---------|
+| [code-sena/trans-sl-docs](https://github.com/code-sena/trans-sl-docs) | This documentation |
+| [mauro-1508/backendTS](https://github.com/mauro-1508/backendTS) | Backend: API gateway and five microservices (Node.js, Express, TypeScript) |
+| [tadeo77789/frontendTS](https://github.com/tadeo77789/frontendTS) | Mobile and web app (Expo, React Native, react-native-web) |
+| [mauro-1508/traduce-senas-evidencias](https://github.com/mauro-1508/traduce-senas-evidencias) | SENA deliverables (ES/EN); its `docs/` folder is a copy of this repository |
+| [tadeo77789/traducesenas-download](https://github.com/tadeo77789/traducesenas-download) | APK download page |
 
 ---
 
-## Build flow — section dependencies
+## Where to start
 
-> `00-governance` wraps the entire project and applies to every section.
-
-```mermaid
-graph TD
-    subgraph DISCOVERY["🔵 DISCOVERY"]
-        C1["01-context\nvisión · scope · glossary"]
-        C2["02-domain\nDDD · entities · events"]
-        C3["03-product\nPRD · vision · backlog"]
-        C4["04-requirements\nuser stories · NFRs"]
-        C1 --> C2 --> C3 --> C4
-    end
-
-    subgraph DESIGN["🟢 DESIGN"]
-        C5["05-architecture\nADRs · hexagonal · C4"]
-        C6["06-data\nmodels · migrations"]
-        C7["07-api\nOpenAPI · contracts"]
-        C5 --> C6
-        C5 --> C7
-    end
-
-    subgraph DETAIL["🟣 DETAIL"]
-        C8["08-uml\ndiagrams"]
-        C9["09-microservices\ncatalog · runbooks"]
-        C12["12-ux-ui\ndesign system"]
-        C9 --> C8
-        C9 --> C12
-    end
-
-    subgraph OPS["🟠 IMPL & OPS"]
-        C10["10-devops\nCI/CD · environments"]
-        C11["11-quality\nTDD · metrics"]
-        C13["13-operations\nobservability · incidents"]
-        C14["14-training\nonboarding"]
-        C15["15-project-control\nrisks · tech backlog"]
-        C10 --> C11
-        C10 --> C13
-        C13 --> C14
-        C13 --> C15
-    end
-
-    C4 --> C5
-    C6 --> C9
-    C7 --> C9
-    C9 --> C10
-```
+| If you want to... | Read |
+|-------------------|------|
+| Understand the product | [overview](./01-context/overview.md), [scope](./01-context/scope.md), [glossary](./01-context/glossary.md) |
+| See the architecture | [05-architecture](./05-architecture/README.md), [ADR index](./05-architecture/decisions/README.md) |
+| Find a service, its data and its events | [service catalog](./09-microservices/service-catalog.md) |
+| Call the API | [07-api](./07-api/README.md) (OpenAPI contracts per service) |
+| Run the system locally | [local setup](./10-devops/local-setup.md) |
+| Know how the system is tested | [testing strategy](./11-quality/testing-strategy.md) |
+| Follow the team rules | [git conventions](./00-governance/git-conventions.md), [definition of done](./00-governance/definition-of-done.md) |
 
 ---
 
 ## Section index
 
-| # | Folder | Purpose | Phase |
+"Project" means the section describes Traduce Señas. "Template" means it still holds the generic framework text and has not been filled in for this project.
+
+| # | Folder | Content | State |
 |---|--------|---------|-------|
-| 00 | [00-governance](./00-governance/README.md) | Team rules: Git, naming, DoD/DoR, security | ⭐ First |
-| 01 | [01-context](./01-context/README.md) | Why the system exists: vision, scope, glossary | ⭐ First |
-| 02 | [02-domain](./02-domain/README.md) | The business problem: entities, rules, domain events | ⭐ First |
-| 03 | [03-product](./03-product/README.md) | What to build: PRD, product vision, initial backlog | ⭐ First |
-| 04 | [04-requirements](./04-requirements/README.md) | What the system must do: functional & non-functional | ⭐ First |
-| 05 | [05-architecture](./05-architecture/README.md) | How the system is organized: ADRs, deployment, patterns | 🔵 Design |
-| 06 | [06-data](./06-data/README.md) | How data is stored: models, dictionary, migrations | 🔵 Design |
-| 07 | [07-api](./07-api/README.md) | Service contracts: OpenAPI, authentication, REST guidelines | 🔵 Design |
-| 08 | [08-uml](./08-uml/README.md) | Diagrams: class, sequence, component, ER | 🔵 Design |
-| 09 | [09-microservices](./09-microservices/README.md) | Each microservice documented individually | 🟢 Impl |
-| 10 | [10-devops](./10-devops/README.md) | CI/CD, environments, local setup, release process | 🟢 Impl |
-| 11 | [11-quality](./11-quality/README.md) | Testing strategy, code review, metrics | 🟢 Impl |
-| 12 | [12-ux-ui](./12-ux-ui/README.md) | Interface design: design system, flows, wireframes | 🔵 Design |
-| 13 | [13-operations](./13-operations/README.md) | Production operations: observability, incidents, SLA/SLO | 🟠 Ops |
-| 14 | [14-training](./14-training/README.md) | User manuals, admin guides, technical onboarding | 🟠 Ops |
-| 15 | [15-project-control](./15-project-control/README.md) | Risks, dependencies, open questions, tech backlog | 🔵 Design |
-| 99 | [99-archive](./99-archive/README.md) | Deprecated decisions and documents | — |
+| 00 | [00-governance](./00-governance/README.md) | Git, DoD/DoR, security and documentation rules | Mostly template |
+| 01 | [01-context](./01-context/README.md) | Vision, scope, glossary | Project |
+| 02 | [02-domain](./02-domain/README.md) | Bounded contexts, entities, domain events | Project |
+| 03 | [03-product](./03-product/README.md) | PRD, product vision, backlog | Project |
+| 04 | [04-requirements](./04-requirements/README.md) | User stories, functional and non-functional requirements, traceability | Project |
+| 05 | [05-architecture](./05-architecture/README.md) | ADRs, deployment, cross-cutting concerns | Project (except `hexagonal-architecture.md`) |
+| 06 | [06-data](./06-data/README.md) | Data model, DBML, constraints, open items | Project |
+| 07 | [07-api](./07-api/README.md) | OpenAPI contracts per service | Project |
+| 08 | [08-uml](./08-uml/README.md) | Class and use case diagrams | Project |
+| 09 | [09-microservices](./09-microservices/README.md) | Service catalog | Project |
+| 10 | [10-devops](./10-devops/README.md) | Local setup, environments | Mixed (`environments.md` is template) |
+| 11 | [11-quality](./11-quality/README.md) | Testing strategy | Mixed (`tdd-guide.md` is template) |
+| 12 | [12-ux-ui](./12-ux-ui/README.md) | Design system, navigation map | Mixed |
+| 13 | [13-operations](./13-operations/README.md) | Observability, incidents | Mixed |
+| 14 | [14-training](./14-training/README.md) | Manuals and onboarding | Project |
+| 15 | [15-project-control](./15-project-control/README.md) | Risks, technical backlog | Project |
+| 99 | [99-archive](./99-archive/README.md) | Superseded documents | — |
 
 ---
 
-## Stack guides
+## Origin of the structure
 
-Choose the guide that matches your project's primary language:
-
-| Stack | File |
-|-------|------|
-| Java + Spring Boot | [`_stacks/java-spring.md`](./_stacks/java-spring.md) |
-| Go | [`_stacks/go.md`](./_stacks/go.md) |
-| Node.js + TypeScript | [`_stacks/node-typescript.md`](./_stacks/node-typescript.md) |
-| Python + FastAPI | [`_stacks/python-fastapi.md`](./_stacks/python-fastapi.md) |
-
----
-
-## The golden rule of documentation
-
-> **A document nobody reads is a document that does not exist.**
->
-> Before creating a document, ask: who will read it? when? what decision does it help them make?
-> If you cannot answer all three questions, do not create it yet.
-
----
-
-## Key cross-section dependencies
-
-| If you change... | You must also review... |
-|-----------------|------------------------|
-| Scope (01-context) | PRD (03), requirements (04), architecture overview (05) |
-| A domain entity (02) | Data models (06), API contracts (07), UML diagrams (08) |
-| A functional requirement (04) | Acceptance criteria, test cases (11), user stories (03) |
-| Architecture (05) | ADRs (05/decisions), each affected microservice (09) |
-| A data model (06) | Owner service API contract (07, 09), ER diagrams (08) |
-| An API contract (07) | Owner microservice (09), contract consumers (09) |
-| A microservice (09) | dependency-map (09), event-catalog (09), data-ownership-matrix (09) |
-| CI/CD pipeline (10) | Release checklist (10), environments (10) |
-
----
-
-## Naming conventions
-
-- **Content files:** `kebab-case.md`
-- **Templates:** `_template-name.md` (leading `_` so they sort first)
-- **ADRs:** `ADR-NNN-short-title.md` (sequential numbering)
-- **OpenAPI contracts:** `service-name.yaml`
-
----
-
-## Methodologies included
-
-| Methodology | Primary document | Section |
-|-------------|-----------------|---------|
-| **SDD** (Software Design Documentation) | [`00-sdd-guide.md`](./00-sdd-guide.md) | Root |
-| **DDD** (Domain-Driven Design) | [`02-domain/domain-map.md`](./02-domain/domain-map.md) | 02-domain |
-| DDD — Entities, VOs, Aggregates | [`02-domain/entities-and-rules.md`](./02-domain/entities-and-rules.md) | 02-domain |
-| DDD — Domain events | [`02-domain/domain-events.md`](./02-domain/domain-events.md) | 02-domain |
-| **Hexagonal Architecture** | [`05-architecture/hexagonal-architecture.md`](./05-architecture/hexagonal-architecture.md) | 05-architecture |
-| **Patterns** (GoF + Microservices) | [`05-architecture/pattern-guide.md`](./05-architecture/pattern-guide.md) | 05-architecture |
-| **TDD** (Test-Driven Development) | [`11-quality/tdd-guide.md`](./11-quality/tdd-guide.md) | 11-quality |
-| TDD — Strategy and pyramid | [`11-quality/testing-strategy.md`](./11-quality/testing-strategy.md) | 11-quality |
-
----
-
-## Reference resources
-
-- [adr.github.io](https://adr.github.io/) — Architecture Decision Records
-- [12factor.net](https://12factor.net/) — Twelve-factor app best practices
-- [OpenAPI Specification](https://swagger.io/specification/) — REST contract standard
-- [C4 Model](https://c4model.com/) — Architecture diagrams (System, Container, Component, Code)
-- [Domain-Driven Design Reference](https://www.domainlanguage.com/ddd/reference/) — Eric Evans
-- [Hexagonal Architecture](https://alistair.cockburn.us/hexagonal-architecture/) — Alistair Cockburn
-- [Test Driven Development](https://www.amazon.com/Test-Driven-Development-Kent-Beck/dp/0321146530) — Kent Beck
+The folder structure, the templates and the guides ([`00-sdd-guide.md`](./00-sdd-guide.md), [`_stacks/`](./_stacks/README.md) and the generic parts of `00-governance/`) come from the **Microservices Governance Framework** by Jesús Ariel González Bonilla, released under the MIT license. The team filled the sections with the project's own content; sections marked as template above still keep the framework text.
 
 ---
 
 ## License
 
-MIT © 2026 Jesús Ariel González Bonilla
+MIT. See [LICENSE](./LICENSE).
