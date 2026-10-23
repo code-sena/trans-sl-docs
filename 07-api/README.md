@@ -21,7 +21,7 @@ One OpenAPI 3.0.3 file per component. They reuse `_shared.yaml` (`ApiError`, `Ti
 
 | Contract | Service | Internal port | Public paths (under `/api`) | Operations* |
 |----------|---------|---------------|-----------------------------|-------------|
-| [`api-gateway.yaml`](contracts/openapi/api-gateway.yaml) | api-gateway | 8080 (published) | routing table and `GET /health` | 1 |
+| [`api-gateway.yaml`](contracts/openapi/api-gateway.yaml) | api-gateway | 8080 (published) | routing table, `GET /health` and `GET /api/health` | 2 |
 | [`iam-service.yaml`](contracts/openapi/iam-service.yaml) | iam-service | 3001 | `/auth/**`, `/users/**`, `/iam/**` | 17 |
 | [`recognition-service.yaml`](contracts/openapi/recognition-service.yaml) | recognition-service | 3002 | `/translations/**`, `/recognition/sign-templates/**` (alias `/sign-templates/**`, deprecated), `/samples/**` | 14 |
 | [`lexicon-service.yaml`](contracts/openapi/lexicon-service.yaml) | lexicon-service | 3003 | `/lexicon/**` (including `/lexicon/media/**`) | 19 |

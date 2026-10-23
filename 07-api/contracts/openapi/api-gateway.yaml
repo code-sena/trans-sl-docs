@@ -90,7 +90,8 @@ paths:
         Calls `GET /health` of each service with a 2 second timeout (`HEALTH_TIMEOUT_MS`) and reports the result,
         together with the deployed backend version.
         It always answers 200 while the gateway is alive; read the body to know if a service is down.
-        No authentication required.
+        No authentication and no rate limit (it is mounted before the limiter).
+        Internal path, used by Docker `HEALTHCHECK`; from outside use `/api/health`.
       operationId: health
       tags: [Health]
       security: []
@@ -124,12 +125,32 @@ paths:
                       lexicon: { status: down }
                       analytics: { status: up }
                       profile: { status: up }
-        '429':
-          description: Rate limit exceeded (`RATE_LIMITED`)
+
+  /api/health:
+    get:
+      summary: Public gateway health check
+      description: |
+        Same report as `GET /health`. Caddy only forwards `/api/*` to the gateway and keeps the path,
+        so this is the health check reachable from the internet: `https://traducesenas.tech/api/health`.
+      operationId: publicHealth
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: Gateway running (services may be down)
           content:
             application/json:
               schema:
-                $ref: './_shared.yaml#/components/schemas/ApiError'
+                $ref: '#/components/schemas/HealthReport'
+              example:
+                status: ok
+                version: 1.2.0
+                services:
+                  iam: { status: up }
+                  recognition: { status: up }
+                  lexicon: { status: up }
+                  analytics: { status: up }
+                  profile: { status: up }
 
 components:
   schemas:
