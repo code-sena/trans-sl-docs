@@ -24,7 +24,7 @@ info:
 
     ## Response format
     Success: `{ "success": true, "message"?: string, "data"?: any }`.
-    Error: `{ "success": false, "code"?: string, "message": string }` (`ApiError` in `_shared.yaml`). The create, history and delete routes of `translations` and all `sign-templates` routes answer business errors with `400` and no `code` (including "not found"); the permission checks (`PERMISSION_ERROR`, `FORBIDDEN`) and `samples` do carry a `code`.
+    Error: `{ "success": false, "code"?: string, "message": string }` (`ApiError` in `_shared.yaml`). Every error carries a `code`: invalid input answers `400 VALIDATION_ERROR`, an unknown id `404 NOT_FOUND`, a deleted account `401 ACCOUNT_DELETED` and a permission check `403` (`PERMISSION_ERROR` or `FORBIDDEN`). Any other failure answers `500 INTERNAL_ERROR` without internal details.
 
     ## Events
     Publishes `recognition.TranslationProduced` `{ translationId, userId, gloss, text, occurredAt }` after each saved translation.
@@ -206,7 +206,7 @@ paths:
   /api/translations/{id}:
     delete:
       summary: Delete a translation from my history
-      description: Soft delete (`isDeleted = true`). A translation that does not exist or belongs to another user answers `400` ("Traduccion no encontrada"), not `404`.
+      description: Soft delete (`isDeleted = true`). A translation that does not exist or belongs to another user answers `404 NOT_FOUND` ("Traduccion no encontrada").
       operationId: deleteTranslation
       tags: [Translations]
       x-requirements: [FR-407, HU-TRA-006]
@@ -238,6 +238,8 @@ paths:
                         type: integer
         '400':
           $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -304,7 +306,7 @@ paths:
   /api/recognition/sign-templates/{id}:
     delete:
       summary: Delete a sign template
-      description: Needs the permission `models.manage`. An unknown id answers `400` ("Plantilla no encontrada").
+      description: Needs the permission `models.manage`. An unknown id answers `404 NOT_FOUND` ("Plantilla no encontrada").
       operationId: deleteSignTemplate
       tags: [Sign templates]
       x-requirements: [FR-401]
@@ -328,6 +330,8 @@ paths:
                     $ref: '#/components/schemas/SignTemplate'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -415,6 +419,8 @@ paths:
                     $ref: '#/components/schemas/SignTemplate'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -784,7 +790,13 @@ components:
                 items:
                   $ref: '#/components/schemas/SignTemplate'
     BadRequest:
-      description: Invalid input or business error (`VALIDATION_ERROR` in samples; only `message` in translations and sign templates)
+      description: Invalid input (`VALIDATION_ERROR`)
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ApiError'
+    NotFound:
+      description: The translation or sign template does not exist (`NOT_FOUND`)
       content:
         application/json:
           schema:
