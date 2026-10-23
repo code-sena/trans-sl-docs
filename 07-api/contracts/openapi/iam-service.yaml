@@ -82,6 +82,7 @@ paths:
       summary: Register a new user
       description: |
         Creates the account as `INACTIVE` with the `USER` role and tries to email a verification code.
+        Requires express consent (`acceptedTerms: true`) and the accepted `termsVersion`; without them the answer is `400 INVALID_BODY` and no account is created.
         If the email cannot be sent the account is kept and `verification_email_sent` is `false`; ask for a new code with `resend-verification`.
       operationId: register
       tags: [Auth]
@@ -97,6 +98,8 @@ paths:
               name: Maria Garcia
               email: maria@example.com
               password: <your-password>
+              acceptedTerms: true
+              termsVersion: '2025-01'
       responses:
         '201':
           description: Account created
@@ -708,7 +711,7 @@ components:
 
     RegisterRequest:
       type: object
-      required: [name, email, password]
+      required: [name, email, password, acceptedTerms, termsVersion]
       properties:
         name:
           type: string
@@ -722,6 +725,16 @@ components:
         password:
           type: string
           description: At most 72 bytes (bcrypt limit); longer values are rejected, not truncated
+        acceptedTerms:
+          type: boolean
+          enum: [true]
+          description: Express consent to the terms and the personal data policy (Ley 1581 de 2012). Any other value gives `400 INVALID_BODY`.
+        termsVersion:
+          type: string
+          minLength: 1
+          maxLength: 20
+          description: Version of the terms the person accepted, stored in `users.terms_version`
+          example: '2025-01'
 
     RegisterResponse:
       type: object
