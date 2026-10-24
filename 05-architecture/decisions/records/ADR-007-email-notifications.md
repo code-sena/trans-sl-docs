@@ -5,7 +5,7 @@
 - **ID:** ADR-007
 - **Date:** 2026-10-24
 - **Status:** Accepted
-- **Authors:** Mauricio (proposal and implementation); accepted by the development team when the pull requests of this change are merged
+- **Authors:** Mauricio Suaza Solórzano (proposal and implementation); accepted by the development team when the pull requests of this change are merged
 
 ---
 
