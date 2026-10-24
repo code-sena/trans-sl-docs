@@ -396,6 +396,44 @@ paths:
               schema:
                 $ref: './_shared.yaml#/components/schemas/ApiError'
 
+  /api/users/admins:
+    get:
+      summary: Ids of the active administrators (service to service)
+      description: |
+        Needs the permission `admins.read`, which no role grants: only the short-lived service token that
+        profile-service signs carries it. profile-service uses the list to send the administrator reports
+        by email to every administrator with notifications turned on (ADR-007).
+      operationId: listAdminIds
+      tags: [Users]
+      responses:
+        '200':
+          description: Ids of the users with the `ADMIN` role and status `ACTIVE`
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [userIds]
+                    properties:
+                      userIds:
+                        type: array
+                        items:
+                          type: integer
+                          minimum: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Missing permission (`FORBIDDEN`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
+
   /api/users/me:
     get:
       summary: Get my account
