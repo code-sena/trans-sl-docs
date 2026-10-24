@@ -9,25 +9,25 @@
 
 | Field | Value |
 |-------|-------|
-| Duration | [1 week / 2 weeks / 3 weeks] |
-| Sprint start | [Monday / Tuesday / Wednesday] |
-| Sprint end | [Friday of week N] |
-| Current sprint | Sprint [N] — [start date] to [end date] |
-| Estimated capacity | [N story points per sprint] |
+| Duration | 2 weeks (baseline of 14 sprints in `Scrum.xlsx`; see `01-context/scope.md`) |
+| Sprint start | Pending — to agree at re-planning |
+| Sprint end | Pending — to agree at re-planning |
+| Current sprint | None — the original 14-sprint calendar (2026-01-01 → 2026-07-31) has ended; re-planning pending |
+| Estimated capacity | Pending — to agree at re-planning |
 
 ---
 
 ## Ceremonies
 
 ### Sprint Planning
-- **When:** First day of the sprint — [time]
-- **Duration:** Maximum [1h per week of sprint]
+- **When:** First day of the sprint — time pending (team agreement)
+- **Duration:** Maximum 1 h per week of sprint
 - **Who:** Entire team
 - **Goal:** Select and commit to sprint user stories, break down into technical tasks
-- **Output artifact:** Sprint Backlog updated in [tool: Jira / Linear / GitHub Issues]
+- **Output artifact:** Sprint Backlog updated in the backlog tool (see "Backlog tool")
 
 ### Daily Stand-up
-- **When:** Every day — [time]
+- **When:** Every day — time pending (team agreement)
 - **Duration:** Maximum 15 minutes
 - **Format:**
   1. What did I do yesterday?
@@ -36,15 +36,15 @@
 - **Rule:** Technical discussions happen after the daily, not during it
 
 ### Sprint Review
-- **When:** Last day of the sprint — [time]
-- **Duration:** Maximum [30 min]
+- **When:** Last day of the sprint — time pending (team agreement)
+- **Duration:** Maximum 30 min
 - **Who:** Team + Product Owner (+ stakeholders if applicable)
 - **Goal:** Show what was built and collect feedback
 
 ### Sprint Retrospective
 - **When:** Last day of the sprint — after the review
-- **Duration:** Maximum [45 min]
-- **Format:** [What went well / What to improve / Action commitments]
+- **Duration:** Maximum 45 min
+- **Format:** What went well / What to improve / Action commitments
 - **Rule:** Each retro produces at least 1 improvement action with an owner and due date
 
 ### Backlog Refinement
@@ -78,8 +78,8 @@
 
 ## Backlog tool
 
-**Tool:** [Jira / Linear / GitHub Projects / Trello]
-**Board URL:** [URL]
+**Tool:** GitHub — pull requests in each repository; board (GitHub Projects or Issues) pending team agreement
+**Board URL:** pending
 
 ### Board columns
 | Column | Meaning |
@@ -108,4 +108,4 @@
 - Definition of Ready → `00-governance/definition-of-ready.md`
 - Definition of Done → `00-governance/definition-of-done.md`
 - Risk management → `15-project-control/risks.md`
-- Technical debt backlog → `15-project-control/tech-backlog.md`
+- Technical debt backlog → `15-project-control/technical-backlog.md`
