@@ -26,5 +26,6 @@ ADRs document important architectural decisions. Each file = one decision.
 | [ADR-004](records/ADR-004-microservices-architecture.md) | Microservices Architecture | Accepted | 2026-10-05 |
 | [ADR-005](records/ADR-005-terms-consent.md) | Express Consent on Account Creation (Ley 1581) | Accepted | 2026-10-23 |
 | [ADR-006](records/ADR-006-ci-and-static-analysis.md) | Continuous Integration and Static Analysis | Accepted | 2026-10-23 |
+| [ADR-007](records/ADR-007-email-notifications.md) | Email Instead of Push for Notifications Outside the App | Accepted | 2026-10-24 |
 
 > Add rows here as you create ADRs in `records/`. ADR-004 records a decision that was taken orally on 2026-09-28 ("modular monolith") and replaced on 2026-10-05; there was no earlier ADR to supersede.

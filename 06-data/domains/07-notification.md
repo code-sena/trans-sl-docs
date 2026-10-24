@@ -15,6 +15,11 @@
 The catalog of alert types that exist, the devices that can receive a push, and every alert with its
 delivery state.
 
+> **Since 2026-10-24 ([ADR-007](../../05-architecture/decisions/records/ADR-007-email-notifications.md)) push is
+> not used.** Alerts outside the app go by `EMAIL`, sent by a profile-service worker from the `PENDING`
+> rows whose `scheduled_at` has passed; `IN_APP` is the bell. `user_devices` and the `PUSH` value are kept
+> below as the original design and are not created in production.
+
 > **The most important rule in this domain is not in a table — it is in an enum.**
 > `notification_channel` admits `PUSH`, `EMAIL` and `IN_APP`. **No value is audio-only, and none can be
 > added.** The users of this application are deaf and hard-of-hearing people: an alert they cannot
@@ -108,7 +113,7 @@ CREATE INDEX idx_notifications_reference    ON notification.notifications (refer
 
 | Column | Meaning | Notes |
 |--------|---------|-------|
-| `channel` | How the alert reaches the user | `PUSH` · `IN_APP` · `EMAIL`. All visual. `IN_APP` is the recommended default for alerts that must be seen inside the dashboard |
+| `channel` | How the alert reaches the user | `PUSH` · `IN_APP` · `EMAIL`. All visual. In use: `IN_APP` (the bell, default) and `EMAIL` (ADR-007) |
 | `device_id` | Target device | Required if and only if `channel = 'PUSH'` (INV-024) |
 | `reference_type` / `reference_id` | The record in another domain that caused the alert | **No foreign key.** See below |
 | `status` | Delivery state | `PENDING` → `SENT` → `READ`, or `FAILED`, or `CANCELLED` |
