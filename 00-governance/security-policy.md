@@ -22,10 +22,10 @@
 
 | Property | Required value |
 |----------|---------------|
-| Signing algorithm | RS256 (asymmetric) or HS256 with 256+ bit secret |
-| Access token expiration | 1 hour (`exp`) |
-| Refresh token expiration | 7 days |
-| Required claims | `sub` (userId), `iat`, `exp`, `jti` (unique token ID) |
+| Signing algorithm | HS256 with a secret of at least 32 characters (`JWT_SECRET`), accepted in ADR-002; RS256 is the target for production |
+| Access token expiration | 1 day today (`JWT_EXPIRES_IN`, default `1d`); target 15 minutes with refresh (audit finding H-08) |
+| Refresh token expiration | Not implemented (ADR-002); planned with H-08 |
+| Required claims | `sub` (userId), `email`, `roles`, `permissions`, `iat`, `exp`; issuer `traduce-iam`, audience `traduce-api` |
 | Client storage | `httpOnly cookie` (web) or Keychain/Keystore (mobile) |
 
 **Prohibited in the payload:**
@@ -48,30 +48,29 @@
 
 | Role | Description | Permissions |
 |------|-------------|------------|
-| `SUPER_ADMIN` | System technical administrator | All |
-| `ADMIN` | Business administrator | [define] |
-| `OPERATOR` | Operator with write permissions | [define] |
-| `VIEWER` | Read-only | [define] |
-| `[CUSTOM_ROLE]` | [description] | [define] |
+| `USER` | Standard account, assigned on register | `translation.create`, `translation.read.own`, `translation.delete.own`, `lexicon.read`, `profile.manage.own` |
+| `LINGUIST` | Captures and validates sign samples; does not manage users | everything `USER` has, plus `samples.capture`, `samples.validate`, `lexicon.write` |
+| `ADMIN` | System administration | all permissions, including `users.manage`, `stats.read`, `models.manage`, `notifications.manage`, `security.policy.manage` |
+
+Source: `backendTS/services/iam-service/db/003_iam_roles_permissions.sql`. The domain names the three people the app serves (deaf person, hearing person, administrator); the first two are both `USER`.
 
 **Permission model:**
 
 ```
-Permission: [resource]:[action]
+Permission: <resource>.<action>[.own]
 
-Examples:
-  orders:create
-  orders:read
-  orders:update
-  orders:delete
-  users:read
-  reports:export
+Examples (real):
+  translation.create
+  translation.read.own
+  lexicon.write
+  users.manage
+  stats.read
 ```
 
 **Validation:**
 - The API Gateway validates the JWT (signature and expiration)
 - Each service validates the role permissions for the specific operation
-- Roles are included in the JWT as claim `roles: ["OPERATOR", "VIEWER"]`
+- Roles and permissions are included in the JWT as claims `roles: ["USER"]` and `permissions: ["translation.create", …]`
 
 ---
 
