@@ -34,7 +34,8 @@ info:
 
     ## Rate limits
     300 requests per minute per client for everything (`RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS`), and 10 per minute for
-    `POST /api/auth/login`, `/forgot-password`, `/verify-code`, `/reset-password`, `/google` and `/facebook` (`AUTH_RATE_LIMIT_MAX`).
+    `POST /api/auth/register`, `/verify-email`, `/resend-verification`, `/login`, `/forgot-password`, `/verify-code`, `/reset-password`,
+    `/google` and `/facebook` (`AUTH_RATE_LIMIT_MAX`). These paths share one counter per client.
     Over the limit: `429 RATE_LIMITED`. Limits count per client IP; behind a reverse proxy set `TRUST_PROXY` to the number of
     trusted proxies (`1` in production behind Caddy) so the gateway reads the client IP from `X-Forwarded-For`. With `0`
     (default) the header is ignored.
