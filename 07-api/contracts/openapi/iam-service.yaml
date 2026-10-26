@@ -726,14 +726,28 @@ components:
   schemas:
     ServiceHealth:
       type: object
+      description: |
+        Always HTTP 200 while the process is alive (the Docker `HEALTHCHECK` only checks that). `degraded` means the
+        service answers but leaves data unprocessed; `issues` and `details` are only present then.
       required: [status, service]
       properties:
         status:
           type: string
-          enum: [ok]
+          enum: [ok, degraded]
         service:
           type: string
           example: iam-service
+        issues:
+          type: array
+          description: '`outbox_backlog` (an event such as `iam.UserDeleted` has waited more than 10 minutes in `outbox_events`) or `outbox_unavailable` (the check failed or took longer than 1.5 s)'
+          items:
+            type: string
+          example: [outbox_backlog]
+        details:
+          type: object
+          description: Detail per check, for the internal network only; the gateway does not publish it
+          additionalProperties: true
+          example: { outbox: { pending: 3, oldestPendingSeconds: 840 } }
 
     Message:
       type: object
