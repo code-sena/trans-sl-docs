@@ -94,7 +94,7 @@ erase or unlink their own data when the event arrives and keep the id in `erased
 | **Bounded contexts** | None (edge component) |
 | **Data owned** | None |
 | **Port** | 8080 (the only port published to the host by `docker-compose.yml`) |
-| **Routes** | `GET /health` → `{"status":"ok"|"degraded","services":{"iam":{"status":"up"|"down"},...}}`, always HTTP 200. Unknown path → 404 `NOT_FOUND`. Rate limit 300 requests per minute per client by default; `login`, `forgot-password`, `verify-code`, `reset-password`, `google` and `facebook` are limited to 10 per minute (`429 RATE_LIMITED`). `TRUST_PROXY` (`1` behind Caddy in production) makes the limits count per client IP |
+| **Routes** | `GET /health` → `{"status":"ok"|"degraded","services":{"iam":{"status":"up"|"down"},...}}`, always HTTP 200. Unknown path → 404 `NOT_FOUND`. Rate limit 300 requests per minute per client by default; `register`, `verify-email`, `resend-verification`, `login`, `forgot-password`, `verify-code`, `reset-password`, `google` and `facebook` share a limit of 10 per minute (`429 RATE_LIMITED`). `TRUST_PROXY` (`1` behind Caddy in production) makes the limits count per client IP |
 | **Events** | Publishes none, consumes none |
 | **Depends on** | The five domain services (`*_SERVICE_URL`), `JWT_SECRET`, `CORS_ORIGINS` |
 | **Tests** | 1 file in `services/api-gateway/tests` (`routing.test.ts`) |
