@@ -73,7 +73,7 @@ Shared code lives in `packages/shared` (`@traduce/shared`): configuration loader
 
 **Negative / Trade-offs:**
 - More infrastructure to run and document: five PostgreSQL instances, MongoDB and RabbitMQ.
-- Consistency between services is eventual. Known gap: account deletion in `iam-service` publishes no event, and its SQL (`account_repository.ts`, `erase`) still touches tables of other services (`translations`, `usage_events`) that are not in the `iam` database (analytics owns `usage_event`, singular, in its own database); `lexicon-service` (`created_by` / `updated_by`) and the other services would keep the old `user_id`. Marked as debt in `services/iam-service/src/users/application/delete_account.ts`; fix in progress.
+- Consistency between services is eventual. Account deletion was the known gap when this ADR was written; it is now solved: `iam-service` deletes only its own rows and writes `iam.UserDeleted` to its outbox in the same transaction, and recognition, analytics and profile clean up their own data and record the id in `erased_users`. `lexicon-service` keeps `created_by` / `updated_by` on purpose. See [ADR-008](ADR-008-database-per-service.md).
 - Cross-cutting concerns (JWT secret, error format `{success, code, message}`, event contracts in `packages/shared/src/events/contracts.ts`) must be kept consistent by hand.
 - The documents that still describe the monolith or the old single `traduce_senas` database (`01-context/`, parts of `06-data/`) are out of date.
 
