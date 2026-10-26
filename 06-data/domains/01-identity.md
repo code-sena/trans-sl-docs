@@ -335,6 +335,6 @@ schema is a place to avoid deciding where something belongs.**
 - Entities and invariants → [`../../02-domain/entities-and-rules.md`](../../02-domain/entities-and-rules.md) — `User`, `LoginSession`, `PasswordResetRequest`, `PasswordPolicy`
 - Roles and permissions, and the `security.policy.manage` permission → [`02-authorization.md`](02-authorization.md)
 - Preferences of the same user → [`03-profile.md`](03-profile.md)
-- The dissolved `Configuration` domain → [`11-configuration.md`](11-configuration.md)
+- The dissolved `Configuration` domain → no file of its own; the reasoning is in this document and in [`../models.md`](../models.md)
 - Auth contract → `07-api/contracts/openapi/auth-service.yaml`
 - Hashing, secrets and why `max_length` is questionable → `00-governance/security-policy.md`
