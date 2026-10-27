@@ -22,7 +22,7 @@ After a successful login the app shows the tab bar. **The tabs depend on the rol
 
 ## 2. Screen inventory
 
-**21 screens:** 18 already exist in the frontend, 3 are required by the SRS and do not exist yet (🆕).
+**21 screens:** 19 already exist in the frontend, 2 are required by the SRS and do not exist yet as their own screen (🆕); the achievements catalog and daily challenge card live inside the profile.
 
 | # | Mockup folder | Screen (UI name) | Frontend component | Requirement | Access | Platform | Frontend |
 |---|---------------|------------------|--------------------|-------------|--------|----------|----------|
@@ -41,12 +41,30 @@ After a successful login the app shows the tab bar. **The tabs depend on the rol
 | 13 | `view-alphabet` | Alfabeto | `AlphabetScreen` | RF7 · ERF7.1 | User | Web · Mobile | ✅ |
 | 14 | `view-translation-history` | Historial | `HistoryScreen` | RF5 · ERF5.5 | User | Web · Mobile | ✅ |
 | 15 | `manage-profile` | Perfil | `ProfileScreen` | RF5 · ERF5.1, ERF5.2, ERF5.4 | User · Admin | Web · Mobile | ✅ |
-| 16 | `change-password` | Cambiar contraseña | — | RF5 · ERF5.3 | User · Admin | Web · Mobile | 🆕 |
+| 16 | `change-password` | Cambiar contraseña | `ChangePasswordScreen` | RF5 · ERF5.3 | User · Admin | Web · Mobile | ✅ |
 | 17 | `view-notifications` | Notificaciones | — | RF4 · ERF4.1 | User | Web · Mobile | 🆕 |
 | 18 | `view-achievements` | Mis logros | — | RF8 · ERF8.1, ERF8.2 | User | Web · Mobile | 🆕 · dibujado |
 | 19 | `view-usage-statistics` | Estadísticas | `StatsScreen` | RF6 · ERF6.1 | Admin | Web · Mobile | ✅ |
 | 20 | `view-admin-dashboard` | Administración | `AdminDashboardScreen` | — | Admin | Web · Mobile | ✅ |
 | 21 | `train-recognition-model` | Entrenar la IA | `AdminTrainingScreen` | — (supports RF3, RNF8) | Admin | Web · Mobile | ✅ |
+
+**Web addresses.** On web each screen has its own URL (`frontend/src/app/routes/linking.ts`), so the address bar changes and
+the back button returns to the previous screen. On Android/iOS this is off. An address that does not exist for the current
+session state (for example `/traducir` without signing in) opens the initial screen.
+
+| Without session | URL | With session | URL |
+|-----------------|-----|--------------|-----|
+| Inicio | `/` | Traducción | `/traducir` |
+| Nosotros | `/nosotros` | Alfabeto | `/abecedario` |
+| Demo del traductor | `/demo/traductor` | Historial | `/historial` |
+| Demo del alfabeto | `/demo/abecedario` | Estadísticas | `/estadisticas` |
+| Ingresar | `/login` | Administración | `/admin` |
+| Crear cuenta | `/registro` | Entrenar la IA | `/admin/entrenamiento` |
+| Recuperar contraseña | `/recuperar` | Muestras del modelo | `/admin/muestras` |
+| Verificar código | `/verificar` | Perfil | `/perfil` |
+| Nueva contraseña | `/restablecer` | Términos (con sesión) | `/perfil/terminos` |
+| Términos | `/terminos` | Privacidad (con sesión) | `/perfil/privacidad` |
+| Privacidad | `/privacidad` | Cambiar contraseña | `/seguridad` |
 
 > **RF2 · ERF2.1 (navigation bar) applies to every screen**, not only to the landing: the SRS requires the
 > bar to be visible on all pages and to work on PC, tablet and phone.
