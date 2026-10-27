@@ -1655,6 +1655,57 @@ Scenario 1: Achievement list
 
 ---
 
+### HU-GAM-005 — Daily challenge {#HU-GAM-005}
+
+**Epic:** EP-009 · **FR:** FR-806, FR-807 · **Decision:** [ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md)
+
+> **As** a learner
+> **I want** a small goal each day that grows when I save translations
+> **so that** I have a reason to practice every day
+
+```gherkin
+Scenario 1: Progress
+  When  I save and confirm a translation
+  Then  the progress of today's challenge goes up by one
+
+Scenario 2: Completion
+  When  I reach the goal of the challenge
+  Then  I receive the reward points once
+  And   I see a visual notice if my notifications are enabled
+```
+
+| Field | Value |
+|-------|-------|
+| Priority | Could Have |
+| Status | Done (profile-service PR #67, app PR #85) |
+| Dependencies | HU-GAM-002, HU-TRA-003 |
+| Module | GAM |
+
+---
+
+### HU-GAM-006 — Medals for challenge points {#HU-GAM-006}
+
+**Epic:** EP-009 · **FR:** FR-808 · **Decision:** [ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md)
+
+> **As** a learner
+> **I want** to see my total of challenge points and earn medals for it
+> **so that** my effort over time is recognized
+
+```gherkin
+Scenario 1: Medal
+  When  my accumulated challenge points reach 500, 1,000 or 3,000
+  Then  the matching medal is unlocked once, with no extra points
+```
+
+| Field | Value |
+|-------|-------|
+| Priority | Could Have |
+| Status | Done (profile-service PR #69, app PR #86) |
+| Dependencies | HU-GAM-005 |
+| Module | GAM |
+
+---
+
 # EP-010 — Audit and configuration
 
 ### HU-AUD-001 — Change audit trail {#HU-AUD-001}
