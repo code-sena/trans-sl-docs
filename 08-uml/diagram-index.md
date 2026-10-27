@@ -84,12 +84,24 @@ All sources are based on `backendTS@497feef` (`origin/develop`, 2026-10-05; gene
 | CL-09 | Domain iam | PlantUML | [`source/class-backend-iam.puml`](diagrams/source/class-backend-iam.puml) | Roles, permissions and their rules (RBAC) |
 | CL-10 | Domain analytics | PlantUML | [`source/class-backend-analytics.puml`](diagrams/source/class-backend-analytics.puml) | Usage events and the section report |
 | CL-11 | lexicon-service | PlantUML | [`source/class-lexicon-service.puml`](diagrams/source/class-lexicon-service.puml) | Microservice `services/lexicon-service`: sign catalog, categories, resources, events (RabbitMQ) and its own security |
+| CL-12 | profile-service | PlantUML | [`source/class-profile-service.puml`](diagrams/source/class-profile-service.puml) | Microservice `services/profile-service` (2026-10-27): daily challenges, challenge-point medals, achievements, notifications (IN_APP and EMAIL), admin weekly/monthly reports, `Mailer` port, report and email workers. See [ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md), [ADR-010](../05-architecture/decisions/records/ADR-010-challenge-reward-medals.md) and ADR-007 |
+
+**Update of 2026-10-27.** The code now lives in `backend/services/*` (iam, recognition, analytics, lexicon, profile, gateway). CL-03 to CL-10 still describe the single-process backend of `497feef` (paths `src/domains/*`) and have not been re-read against the services; the class names remain a useful guide, but the paths and the later changes (outbox, social login, account deletion codes, 30-day translation retention) are not drawn. Re-check is pending (see [`class-diagram-review.md`](class-diagram-review.md), section 6).
+
+**Exports pending regeneration** (the `.puml` changed on 2026-10-27 but the SVG in `diagrams/exports/` is still the old one; no local PlantUML was available):
+
+| Source | Export | Status |
+|--------|--------|--------|
+| `class-profile-service.puml` | `class-profile-service.svg` | Does not exist yet: generate |
+| `class-backend-planned.puml` | `class-backend-planned.svg` | Outdated: regenerate (notifications and user_preferences are no longer planned) |
+| `class-backend-overview.puml` | `class-backend-overview.svg` | Outdated: regenerate (adds the profile-service package) |
+| `class-backend-patterns.puml` | `class-backend-patterns.svg` | Outdated: regenerate (notes on notifications and subscribers) |
 
 ### Use case diagrams (Traduce Señas)
 
 | ID | Name | Tool | File | Description |
 |----|------|------|------|-------------|
-| UC-01 | Use cases | Unknown (PDF export only, no source) | [`exports/use-cases.pdf`](diagrams/exports/use-cases.pdf) | Imported 2026-10-03 from `github.com/tadeo77789/TraduceSe-as` (`Diagramas/casos de uso.pdf`). Not yet checked against the MVP scope (sign → text/voice only) |
+| UC-01 | Use cases | Unknown (PDF export only, no source) | [`exports/use-cases.pdf`](diagrams/exports/use-cases.pdf) | Imported 2026-10-03 from `github.com/tadeo77789/TraduceSe-as` (`Diagramas/casos de uso.pdf`). Not yet checked against the MVP scope (sign → text/voice only). **Pending update (2026-10-27):** it does not include daily challenges, challenge-point medals, achievement/challenge notices or admin reports by email. The PDF has no source, so it must be redrawn by whoever owns it |
 
 ---
 
