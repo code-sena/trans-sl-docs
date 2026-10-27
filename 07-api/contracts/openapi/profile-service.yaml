@@ -56,6 +56,8 @@ tags:
     description: In-app notifications
   - name: Achievements
     description: Achievements and progress
+  - name: Challenges
+    description: Daily challenges and their rewards
   - name: Health
     description: Service status (internal)
 
@@ -269,6 +271,104 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/achievements/activity:
+    post:
+      summary: Record functional activity (letters viewed, active time, voice playback)
+      description: |
+        Feeds the achievements whose metric is measured from real use. The user id comes from the token; users with
+        `users.manage` get `403`. `sessionId` identifies the browser session (16 to 80 characters: letters, digits and `-`).
+        Kinds: `letter` (needs `code`, a letter of the alphabet), `tick` (active time, counted only in a continuous window
+        after a confirmed translation), `pause`, `voice-start` (needs `translationId` of a translation of the user; answers a
+        `playbackId`), `voice-end` and `voice-cancel` (need that `playbackId`). Invalid kinds, letters or unknown
+        translations answer `400`. Publishes `profile.AchievementUnlocked` for each achievement unlocked.
+      operationId: recordActivity
+      tags: [Achievements]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivityInput'
+            example:
+              sessionId: 3f2b8c1e-5d4a-4b7e-9c10-1a2b3c4d5e6f
+              kind: letter
+              code: A
+      responses:
+        '200':
+          description: Activity recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      playbackId:
+                        type: string
+                        format: uuid
+                        description: Only present for `voice-start`
+        '400':
+          description: Invalid activity (the body is `{ "success": false }`)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Administrators (`users.manage`) have no activity (body `{ "success": false }`)
+
+  # ───────────────────────────── Daily challenges ─────────────────────────────
+  /api/profile/challenges/today:
+    get:
+      summary: Get today's daily challenge and my progress
+      description: |
+        One challenge per user and day (Bogota time), the same for everyone that day. Does not create anything: without
+        activity it shows zero progress. Answers `data: null` with a `message` when there are no active challenges or the
+        account was deleted. Users with `users.manage` get `403`. See ADR-009.
+      operationId: getTodayChallenge
+      tags: [Challenges]
+      responses:
+        '200':
+          description: Today's challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodayChallengeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Administrators (`users.manage`) have no challenges (body `{ "success": false }`)
+
+  /api/profile/challenges/rewards/summary:
+    get:
+      summary: Total of challenge points I have been granted
+      description: |
+        Sum of `challenge_rewards.points` of the authenticated user (0 if none). Excludes catalog points, partial progress and
+        achievement points. Creates nothing. Users with `users.manage` get `403`. See ADR-010.
+      operationId: getChallengeRewardSummary
+      tags: [Challenges]
+      responses:
+        '200':
+          description: Total points
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [totalPoints]
+                    properties:
+                      totalPoints:
+                        type: integer
+                        minimum: 0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Administrators (`users.manage`) have no challenges (body `{ "success": false }`)
+
 components:
   securitySchemes:
     bearerAuth:
@@ -345,6 +445,9 @@ components:
         typeId:
           type: string
           format: uuid
+        typeCode:
+          type: string
+          description: Code of the type, e.g. `ACHIEVEMENT_UNLOCKED` or `CHALLENGE_COMPLETED`
         channel:
           type: string
           enum: [PUSH, EMAIL, IN_APP]
@@ -354,7 +457,7 @@ components:
           type: string
         referenceType:
           type: string
-          enum: [ACHIEVEMENT]
+          enum: [ACHIEVEMENT, CHALLENGE]
         referenceId:
           type: string
           format: uuid
@@ -397,7 +500,8 @@ components:
           type: string
         metric:
           type: string
-          enum: [TRANSLATIONS_COMPLETED, SIGNS_LEARNED, ALPHABET_COMPLETED, SESSIONS_COMPLETED]
+          enum: [TRANSLATIONS_COMPLETED, SIGNS_LEARNED, ALPHABET_COMPLETED, SESSIONS_COMPLETED, CATALOG_REQUIREMENT, ACTIVE_SECONDS, VOICE_COMPLETED, FAVORITE_WORD, DISTINCT_WORDS, LETTERS_VIEWED, BOTH_MODES, TRANSLATION_DAYS, WORD_CATEGORIES, DAILY_CHALLENGE_POINTS]
+          description: '`DAILY_CHALLENGE_POINTS` (ADR-010) is only listed when the query has `catalogVersion=2&challengeRewards=1`'
         targetCount:
           type: integer
         points:
@@ -422,6 +526,101 @@ components:
           format: date-time
           nullable: true
           description: Null while in progress
+
+    ActivityInput:
+      type: object
+      required: [sessionId, kind]
+      properties:
+        sessionId:
+          type: string
+          pattern: '^[a-zA-Z0-9-]{16,80}$'
+        kind:
+          type: string
+          enum: [letter, tick, pause, voice-start, voice-end, voice-cancel]
+        code:
+          type: string
+          description: Letter of the alphabet (only for `letter`)
+        translationId:
+          type: integer
+          description: Only for `voice-start`
+        playbackId:
+          type: string
+          format: uuid
+          description: Only for `voice-end` and `voice-cancel`
+
+    ChallengeText:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    TodayChallenge:
+      type: object
+      required: [challengeId, code, name, description, targetCount, currentCount, points, completed, date]
+      properties:
+        assignmentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null until the first translation of the day creates the assignment
+        reward:
+          type: object
+          nullable: true
+          description: Points really granted and when; null if not completed
+          properties:
+            points:
+              type: integer
+            grantedAt:
+              $ref: './_shared.yaml#/components/schemas/Timestamp'
+        localizations:
+          type: object
+          description: Texts of the snapshot by language (`es`, `en`, `fr`, `pt`)
+          additionalProperties:
+            $ref: '#/components/schemas/ChallengeText'
+        challengeId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          example: TRANSLATE_3
+        name:
+          type: string
+          description: Localized with the interface language of the user
+        description:
+          type: string
+        targetCount:
+          type: integer
+        currentCount:
+          type: integer
+        points:
+          type: integer
+          description: Planned reward
+        completed:
+          type: boolean
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        date:
+          type: string
+          format: date
+          description: Day of the challenge in Bogota time
+
+    TodayChallengeResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        data:
+          allOf:
+            - $ref: '#/components/schemas/TodayChallenge'
+          nullable: true
+        message:
+          type: string
+          description: Present when `data` is null
 
   responses:
     BadRequest:
