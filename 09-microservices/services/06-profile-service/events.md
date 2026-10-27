@@ -45,6 +45,12 @@ facts; they may be handled in process and published only if another service need
 }
 ```
 
+### Implemented today
+
+The code publishes `profile.PreferencesChanged` and `profile.AchievementUnlocked` (also when a challenge-point medal unlocks,
+[ADR-010](../../../05-architecture/decisions/records/ADR-010-challenge-points-medals.md)). Completing a daily challenge publishes no event: it
+creates an `IN_APP` notification of type `CHALLENGE_COMPLETED` in the same transaction ([ADR-009](../../../05-architecture/decisions/records/ADR-009-daily-challenges.md)).
+
 ---
 
 ## Events this service CONSUMES
@@ -62,6 +68,8 @@ Queue `profile.main`.
 | `TranslationProduced` | recognition | Advance achievements that count translations; show the result when the type is active |
 | `RecognitionFailed` | recognition | On-screen alert "sign not recognized, try again" (without blocking navigation, RF4) |
 | `TranslationSessionInterrupted` | recognition | Understandable error message; what was translated is kept (RNF7) |
+
+`TranslationProduced` also advances the daily challenge of the day of `occurredAt`, inside the same once-only processing (per-user lock, receipt per `translationId`).
 
 Before creating any notification the handler checks `notifications_enabled` of the user (INV-025). All handlers are idempotent by `eventId`.
 

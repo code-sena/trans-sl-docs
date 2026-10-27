@@ -77,6 +77,22 @@ Do not create this schema until the team approves RF8 (GAP-01). If approved:
 
 If RF8 is rejected, the two tables, the `achievement_metric` enum, `usage_section.ACHIEVEMENTS` and `reference_entity.ACHIEVEMENT` come out together; nothing else breaks, because notifications reference achievements without a FK.
 
+### Daily challenges (implemented, migrations 009 and 010)
+
+| Table | Content |
+|-------|---------|
+| `challenges` | Catalog: `code` UNIQUE, `name`, `description`, `target_count` > 0, `points` >= 0, `localizations` (JSONB es/en/fr/pt), `is_active`. Seeds `TRANSLATE_1/3/5/8` |
+| `user_challenges` | One row per user and day, `UNIQUE (user_id, challenge_date)`; snapshot of the definition; `current_count` <= `target_count`; `completed_at` set exactly when the goal is reached |
+| `challenge_rewards` | PK `user_challenge_id` (FK, `CASCADE`), `user_id`, `points` really granted, `granted_at`; index on `user_id` |
+
+Migration 009 adds the notification type `CHALLENGE_COMPLETED` (reference type `CHALLENGE`). Migration 010 adds the metric
+`DAILY_CHALLENGE_POINTS` and the medals `dailyChallengePoints500/1000/3000` (zero extra points), measured as
+`SUM(challenge_rewards.points)`. `user_id` is a logical id (`VARCHAR(64)`), no FK to other services. See ADR-009 and ADR-010.
+
+Real migrations in `backend/services/profile-service/db`: 001 to 010 (profile, erased users, UI languages, achievement catalog,
+obtainable achievements, translation milestones, functional achievements, admin reports, daily challenges, challenge reward
+achievements). The Liquibase plan below was not adopted: plain numbered SQL files are used.
+
 ---
 
 ## Cross-service references

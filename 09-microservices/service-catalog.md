@@ -168,12 +168,12 @@ Note: the recognition model itself runs in the client (MediaPipe + template matc
 |-------|-------|
 | **Responsibility** | Profile copy of the account, interface preferences, in-app notifications and achievements |
 | **Bounded contexts** | Profile & Preferences; Notifications; Gamification (provisional, RF8 not approved) |
-| **Data owned** | PostgreSQL `profile`: `user_profiles`, `user_preferences`, `notification_types`, `notifications`, `achievements`, `user_achievements`, `processed_events` |
+| **Data owned** | PostgreSQL `profile`: `user_profiles`, `user_preferences`, `notification_types`, `notifications`, `achievements`, `user_achievements`, `challenges`, `user_challenges`, `challenge_rewards`, `processed_events` |
 | **Store / port** | PostgreSQL `profile` / 3005 |
-| **Routes (7)** | `GET /api/profile/me`, `PATCH /api/profile/me`, `GET /api/profile/preferences`, `PATCH /api/profile/preferences`, `GET /api/notifications`, `PATCH /api/notifications/:id/read`, `GET /api/achievements` |
+| **Routes (10)** | `GET /api/profile/me`, `PATCH /api/profile/me`, `GET /api/profile/preferences`, `PATCH /api/profile/preferences`, `GET /api/profile/challenges/today`, `GET /api/profile/challenges/rewards/summary`, `GET /api/notifications`, `PATCH /api/notifications/:id/read`, `GET /api/achievements`, `POST /api/achievements/activity` (daily challenges: [ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md), [ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md)) |
 | **Publishes** | `profile.AchievementUnlocked`, `profile.PreferencesChanged` (no consumer yet) |
 | **Consumes** | `iam.UserRegistered` (creates profile and default preferences), `iam.UserDeleted` (erases profile, preferences, notifications and progress), `recognition.TranslationProduced` (advances achievements) |
-| **Depends on** | PostgreSQL, RabbitMQ (optional). No push or mail provider: notifications are in-app only |
+| **Depends on** | PostgreSQL, RabbitMQ (optional). Gmail SMTP for administrator reports sent by email ([ADR-007](../05-architecture/decisions/records/ADR-007-email-notifications.md)); no push provider |
 | **Tests** | 11 files in `services/profile-service/tests` |
 | **Extraction status** | Extracted |
 
