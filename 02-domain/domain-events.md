@@ -468,6 +468,12 @@ version comes from.
 > Notifications consumes it through `reference_type: ACHIEVEMENT` and `reference_id`, **with no foreign
 > key**. That is what keeps Notifications working if RF8 is rejected and this context disappears.
 
+**Daily challenges (implemented).** Completing a challenge publishes no domain event: profile-service reacts to
+`recognition.TranslationProduced` and, in the same transaction, grants the reward and creates an in-app notification of type
+`CHALLENGE_COMPLETED` (`reference_type: CHALLENGE`). If a challenge-point medal unlocks, `AchievementUnlocked` is published.
+See [ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md) and
+[ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md).
+
 ---
 
 ## Standard fields for all events

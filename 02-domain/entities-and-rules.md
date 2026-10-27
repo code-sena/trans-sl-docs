@@ -746,6 +746,15 @@ INV-027: An achievement unlocks once per user                     [NEW in v1.1] 
 > ⏸ **Provisional.** These two entities exist only if RF8 is approved and added to the SRS. Until then
 > nothing here is built. See `04-requirements/traceability-matrix.md` § 6, GAP-01.
 
+**Daily challenges (implemented in profile-service; not numbered as INV).** Rules from
+[ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md) and
+[ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md):
+
+- A user has at most one challenge per day (Bogota time); the assignment keeps a snapshot of the definition.
+- Only a saved and confirmed translation advances it, once; the counter never exceeds the goal and a completed challenge is not reopened.
+- The reward is granted once per assignment, even if the user turned notifications off; only the notice depends on that switch.
+- Medals for 500, 1,000 and 3,000 challenge points are computed from the persisted rewards and grant no extra points.
+
 ---
 
 ## System Value Objects
