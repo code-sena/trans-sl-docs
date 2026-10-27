@@ -1,6 +1,6 @@
 ' Fuente: backendTS@497feef (origin/develop, código y Liquibase) y modelo de datos 06-data/traduce_senas.dbml, generado 2026-10-06
 @startuml class-backend-planned
-title Backend Traduce Señas - entidades PLANEADAS, sin código (modelo de datos)
+title Backend Traduce Señas - entidades PLANEADAS, sin código (modelo de datos, actualizado 2026-10-27)
 skinparam classAttributeIconSize 0
 skinparam shadowing false
 skinparam class {
@@ -17,10 +17,12 @@ skinparam class {
 
 legend right
   <<planned>> : sin código en el backend; definida en el DBML (algunas también en Liquibase)
-  Selección de 6 tablas equivalentes a elementos del diagrama viejo.
+  Selección de 4 tablas equivalentes a elementos del diagrama viejo.
   Desde el diagrama anterior (c142c80) pasaron a tener código:
   sign_lexicon y multimedia_resources (lexicon-service),
   roles/permisos (iam) y usage_events (analytics).
+  Desde 2026-10-27 también: user_preferences y notifications (profile-service,
+  ver class-profile-service.puml).
 endlegend
 
 class user_auth_providers <<planned>> {
@@ -33,8 +35,9 @@ class user_auth_providers <<planned>> {
 }
 note bottom of user_auth_providers
   DBML tabla user_auth_providers, l. 227-239
-  Equivale al login social (Google/Facebook). En 497feef: makeGoogleLogin existe
-  pero no tiene ruta, y crea el usuario con password null sin guardar el proveedor.
+  Equivale al login social (Google/Facebook). Hoy iam-service ya tiene google_login y
+  facebook_login (auth/application), pero ninguna migración crea esta tabla: el proveedor
+  no se guarda como vínculo aparte.
   Solo existe user_auth en Liquibase (changelogs/004_user_auth.xml: provider, provider_id).
 end note
 
@@ -50,15 +53,8 @@ class user_sessions <<planned>> {
 }
 note bottom of user_sessions : DBML tabla user_sessions, l. 241-255\nSin código; solo tabla user_session en Liquibase (changelogs/007_user_session.xml).\nanalytics guarda session_id = null a la espera de esta tabla.
 
-class user_preferences <<planned>> {
-  user_preference_id : uuid
-  user_id : uuid
-  ui_language : ui_language
-  theme : theme_option
-  notifications_enabled : boolean
-  updated_at : timestamptz
-}
-note bottom of user_preferences : DBML tabla user_preferences, l. 362-369\nAquí viven idioma y tema (no en User).
+' user_preferences y notifications ya NO son planned: las implementa profile-service
+' (ver class-profile-service.puml). Se quitaron de este diagrama el 2026-10-27.
 
 class user_devices <<planned>> {
   device_id : uuid
@@ -69,25 +65,7 @@ class user_devices <<planned>> {
   registered_at : timestamptz
   revoked_at : timestamptz
 }
-note bottom of user_devices : DBML tabla user_devices, l. 565-577
-
-class notifications <<planned>> {
-  notification_id : uuid
-  user_id : uuid
-  notification_type_id : uuid
-  device_id : uuid
-  channel : notification_channel
-  title : varchar(150)
-  body : text
-  reference_type : reference_entity
-  reference_id : uuid
-  status : notification_status
-  scheduled_at : timestamptz
-  sent_at : timestamptz
-  read_at : timestamptz
-  created_at : timestamptz
-}
-note bottom of notifications : DBML tabla notifications, l. 579-602\nSolo existe el permiso notifications.manage (iam) y la sección\nNOTIFICATIONS en analytics; no hay tabla ni código.
+note bottom of user_devices : DBML tabla user_devices, l. 565-577\nSigue sin código. El canal PUSH quedó descartado (ADR-007): los avisos\nsalen por IN_APP y EMAIL, así que probablemente no se implemente.
 
 class audit_logs <<planned>> {
   audit_log_id : uuid
@@ -103,11 +81,8 @@ class audit_logs <<planned>> {
 }
 note bottom of audit_logs : DBML tabla audit_logs, l. 779-795
 
-' Referencias del DBML entre estas tablas
-notifications "0..*" --> "0..1" user_devices : device_id (l. 608)
-
 note as NFk
-  Las seis tienen user_id hacia users en el DBML.
+  Las cuatro tienen user_id hacia users en el DBML.
   En el código users usa SERIAL (integer); el DBML usa uuid.
 end note
 @enduml

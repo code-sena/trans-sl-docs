@@ -85,6 +85,25 @@ package "lexicon-service (services/lexicon-service, puerto 3003)" {
   class "cmd/main.ts" as lexmain <<entrypoint>>
 }
 
+package "profile-service (services/profile-service, puerto 3005)" {
+  interface UnitOfWork <<port out>>
+  interface ChallengeRepository <<port out>>
+  interface Mailer <<port out>>
+  class makeGetTodayChallenge <<use case>>
+  class makeRunAdminReports <<use case>>
+  class makeDeliverEmailNotifications <<use case>>
+  class makeProfileModule <<module>>
+  class "cmd/main.ts" as profmain <<entrypoint>>
+}
+note bottom of profmain : Detalle (retos diarios, medallas por puntos, reportes al admin\ny correo) en class-profile-service.puml. Servicio nuevo desde el 2026-10-27.
+profmain ..> makeProfileModule
+makeProfileModule ..> makeGetTodayChallenge
+makeProfileModule ..> makeRunAdminReports
+makeProfileModule ..> makeDeliverEmailNotifications
+makeGetTodayChallenge ..> UnitOfWork
+UnitOfWork ..> ChallengeRepository
+makeDeliverEmailNotifications ..> Mailer
+
 ' Relaciones dentro de cada dominio
 makeIamModule ..> IamService : arma
 IamRepository ..> Role
