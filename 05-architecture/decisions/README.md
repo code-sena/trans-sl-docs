@@ -27,5 +27,9 @@ ADRs document important architectural decisions. Each file = one decision.
 | [ADR-005](records/ADR-005-terms-consent.md) | Express Consent on Account Creation (Ley 1581) | Accepted | 2026-10-23 |
 | [ADR-006](records/ADR-006-ci-and-static-analysis.md) | Continuous Integration and Static Analysis | Accepted | 2026-10-23 |
 | [ADR-007](records/ADR-007-email-notifications.md) | Email Instead of Push for Notifications Outside the App | Accepted | 2026-10-24 |
+| [ADR-009](records/ADR-009-daily-challenges.md) | Daily Challenges Assigned Once per Day, Counted per Saved Translation | Accepted | 2026-10-27 |
+| [ADR-010](records/ADR-010-challenge-points-medals.md) | Medals for Accumulated Challenge Points | Accepted | 2026-10-27 |
 
+> ADR-008 is reserved for the database-per-service decision (branch `chore/adr-008-database-per-service`).
+>
 > Add rows here as you create ADRs in `records/`. ADR-004 records a decision that was taken orally on 2026-09-28 ("modular monolith") and replaced on 2026-10-05; there was no earlier ADR to supersede.
