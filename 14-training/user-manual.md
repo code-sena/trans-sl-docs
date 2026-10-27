@@ -1,7 +1,11 @@
 # User Manual
 
-> **Version:** 1.0 · **Date:** 2026-10-12 · **Audience:** people who use the app to translate signs
+> **Version:** 1.1 · **Date:** 2026-10-27 · **Audience:** people who use the app to translate signs
 > **Based on:** Docs `cc30cd7` · Backend `origin/develop` `b29a2fa` · Frontend `origin/develop` `06e7f39`
+> **Update 2026-10-27:** sections 4.1, 5.4, 5.5 and the new 5.6 and 5.7 were re-read against Frontend
+> `develop` (version 1.2.0) and profile-service: daily challenges, challenge-point medals, achievement and
+> challenge notices, History grouped by session, one address per screen. The rest of the manual still
+> reflects the earlier build.
 > **Adapted from:** the Spanish user manual v1.2 (2026-10-05). Every screen was re-checked against
 > `src/feature/*/pages/*` and `src/app/routes/*` of Frontend `origin/develop`, and against
 > [12-ux-ui/navigation-map.md](../12-ux-ui/navigation-map.md).
@@ -54,6 +58,12 @@ translator demo, alphabet demo). On a phone the app opens directly on the sign-i
 
 ![Landing page](../assets/14-training/usuario-01-inicio.png)
 *Landing page (earlier build, Spanish interface).*
+
+On the web every screen has its **own address** (for example `/login`, `/registro`, `/traducir`, `/abecedario`,
+`/historial`, `/perfil`, `/seguridad` for changing the password, `/restablecer` for the new password). The address
+bar changes as you move, the browser **Back** button returns to the previous screen instead of leaving the site, and
+you can bookmark a screen. If you open an address that needs a session without being signed in, the app shows the
+initial screen. On a phone the app does not use addresses.
 
 ### 4.2 Creating an account
 
@@ -115,8 +125,9 @@ Possible messages:
 | Could not reach the server. Check your connection and try again. | Check your internet or tell the administrator. |
 | Your session has expired. Please sign in again. | Sign in again. |
 
-> **Not connected:** the **Google** and **Facebook** buttons on the sign-in screen do not work yet. The Google
-> button has no action, and the Facebook sign-in is not available on the server. Use e-mail and password.
+> **Google and Facebook (to verify):** this manual said these buttons did not work. The 2026-10-27 code review shows
+> that the web app now has Google and Facebook login hooks and the server has `google_login` and `facebook_login`, but
+> the flow was **not tested** for this update and depends on the administrator's setup. If it fails, use e-mail and password.
 
 To **sign out**, open **Profile** and press **Sign out**.
 
@@ -195,13 +206,20 @@ without images."; in that case you only get the letters, without the sign images
 
 ### 5.4 History
 
-The **History** tab lists your saved translations (the latest 100).
+The **History** tab lists your saved translations (the latest 100). Translations made in the same sitting are
+grouped: you see **one card per session**, with the date, the start and end time and the words joined in one text.
+A card with several words shows "N words" and **Show words**; pressing it opens the detail with each word.
+The screen reminds you that "Translations are kept for 30 days and then deleted."
 
 ![History tab](../assets/14-training/usuario-09-historial.png)
-*History with example translations.*
+*History with example translations (earlier build, one row per translation).*
+
+> Screenshot pending: History with session cards.
 
 1. Type in the search box to filter.
-2. To **delete** one, press the **trash icon** on that record and confirm.
+2. To **delete**, press the **trash icon** on the card and confirm. On a session card the message says "Do you want
+   to delete this session? Its N words will be deleted." and all its words are deleted. If any word cannot be
+   deleted, the app tells you and keeps that word on screen.
 3. If you have not translated anything yet you will see "No translations".
 
 The **Reuse** button on a record only shows a message with the text ("Translate again?"). It does **not**
@@ -215,14 +233,54 @@ translate again yet.
 | **App language** | Spanish, English, French or Portuguese. |
 | **Change password** | You enter your current password and a new one. If the current password is wrong the app says so. |
 | **Terms and conditions** / **Privacy policy** | The legal texts of the app. See section 7. |
-| **Achievements** | Medals with your progress. They are calculated from your own translation statistics. |
+| **Achievements** | Medals (bronze, silver, gold) with your progress, grouped by category. Some are still marked "Coming soon". See section 5.6. |
 | **Sign out** | Leaves your account. |
 | **Delete account** | Asks for your password. **Known issue: it likely fails in the Docker deployment.** See section 7. |
 
-The statistics at the top of the Profile screen come from the server (your own translations).
+At the top of the Profile screen you see **four indicators** that adapt to the screen width (in a row on a wide
+screen, in a grid on a phone): **Translations**, **Distinct texts**, **Available achievements** (how many you have
+unlocked) and **Challenge points** (the total you have earned with daily challenges). They come from the server. If
+the challenge points cannot be loaded you see "Could not load your challenge points." with a **Retry** button.
+Administrators do not see achievements or challenge points.
 
-> **Notifications switch.** Some accounts see a **Notifications** switch in Profile. It does not work yet: it is not
-> saved and it does not notify the server.
+> Screenshot pending: Profile with the four indicators.
+
+> **Notifications switch.** If your account has permission to manage notifications, Profile shows a
+> **Notifications** switch. It is saved on the server. When it is off you still earn challenge points and medals, but
+> you get no on-screen notices (section 5.7).
+
+### 5.6 Daily challenges and medals
+
+Every day you get **one challenge**, shown in the **Daily challenge** card on the **Translation** screen (not for
+administrators). The challenge asks you to save a number of translations that day: **1, 3, 5 or 8**, worth
+**5, 10, 15 or 25 points**. The challenge changes every day, and the day is counted with Colombian time.
+
+The card shows:
+
+- The name ("Saved translations: N") and the rule: "Save and confirm N translations today. Each saved translation
+  counts once; a sentence is not counted by word."
+- A progress bar and the text "X of N translations".
+- The points: "P points on completion" while it is pending, and "P points awarded" once you finish.
+- The state: **In progress** or **Completed**.
+
+The card refreshes by itself each time one of your translations is saved. If it cannot be loaded you see "Could not
+load the challenge." and a **Retry** button; if there is no challenge you see "No active challenges today."
+The texts are available in Spanish, English, French and Portuguese.
+
+> Screenshot pending: Daily challenge card on the Translation screen.
+
+**Medals for challenge points.** The points of completed challenges add up (the **Challenge points** indicator of
+Profile). The medals of the **Achievements** catalogue that depend on those points unlock on their own when your total
+reaches their goal. Each medal has a level (bronze, silver or gold). Points
+are granted once per challenge: finishing the same challenge again does not add more.
+
+### 5.7 Notices
+
+When you complete a challenge or unlock a medal, a **notice** appears at the top of the screen for a few seconds:
+"Daily challenge completed!" with "P points granted", or "Unlocked" with the name of the medal. Several notices
+wait in a queue and appear one after another; the **×** button closes one. Notices only appear if the
+**Notifications** switch of Profile is on and the app is open and connected; they do not repeat events from before
+you opened the app. The same notice is also saved in your notifications list as read once it has been shown.
 
 ## 6. Known limitations
 
@@ -232,7 +290,7 @@ The statistics at the top of the Profile screen come from the server (your own t
 - **It can be wrong.** Always check the text. Do not use the app as the only source in important situations.
 - **Recognition only on the web.** On a phone, camera recognition is not available yet.
 - **One direction only.** Sign to text or voice.
-- **Google and Facebook sign-in:** not working.
+- **Google and Facebook sign-in:** not verified in this update (see section 4.4).
 - **Reuse in History:** only shows a message.
 - **Delete account:** likely fails (see section 7).
 - **Statistics:** only administrators see the usage statistics.
