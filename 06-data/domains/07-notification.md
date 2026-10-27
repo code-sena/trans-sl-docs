@@ -35,7 +35,7 @@ delivery state.
 ```sql
 CREATE TABLE notification.notification_types (
   notification_type_id UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  code                 VARCHAR(50)  NOT NULL UNIQUE,              -- ACHIEVEMENT_UNLOCKED, ACCOUNT_SECURITY…
+  code                 VARCHAR(50)  NOT NULL UNIQUE,              -- ACHIEVEMENT_UNLOCKED, CHALLENGE_COMPLETED, ACCOUNT_SECURITY…
   name                 VARCHAR(100) NOT NULL,
   description          VARCHAR(255),
   is_active            BOOLEAN      NOT NULL DEFAULT TRUE,        -- administrator control, system-wide

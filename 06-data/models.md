@@ -40,7 +40,7 @@ resolved: reversing a design decision belongs to the team, not to a documentatio
 | recognition | `recognition` + MongoDB | `translations`, `sign_templates`, `erased_users` · collection `gesture_samples` | `SERIAL` |
 | lexicon | `lexicon` | `categories`, `sign_lexicon`, `sign_localizations`, `multimedia_resource` | `SERIAL` |
 | analytics | `analytics` | `usage_event`, `erased_users` | `BIGSERIAL` |
-| profile | `profile` | `user_profiles`, `user_preferences`, `notification_types`, `notifications`, `achievements`, `user_achievements`, `achievement_activity`, `achievement_translation_receipts`, `processed_events`, `erased_users` | `UUID` |
+| profile | `profile` | `user_profiles`, `user_preferences`, `notification_types`, `notifications`, `achievements`, `user_achievements`, `achievement_activity`, `achievement_translation_receipts`, `challenges`, `user_challenges`, `challenge_rewards`, `processed_events`, `erased_users` | `UUID` |
 
 **Legacy tables still present in `iam`:** `role`, `user_role` and `password_reset_token`, created by
 `000_users.sql` and replaced by `roles`, `user_roles` and `user_tokens`. No code reads them (only the
@@ -53,7 +53,9 @@ should be dropped when the migrations are unified (H-02).
 with no refresh token ([ADR-002](../05-architecture/decisions/records/ADR-002-jwt-authentication.md)).
 
 **Implemented but not in the reference model:** `outbox_events`, `sign_templates`, `erased_users`,
-`user_profiles`, `processed_events` and the achievement activity tables.
+`user_profiles`, `processed_events`, the achievement activity tables and the daily challenge tables
+(`challenges`, `user_challenges`, `challenge_rewards`; see [ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md)
+and [ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md)).
 
 ---
 
