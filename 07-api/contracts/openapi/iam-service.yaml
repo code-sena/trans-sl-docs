@@ -30,8 +30,9 @@ info:
     Success: `{ "success": true, "message"?: string, "data"?: object }`.
     Error: `{ "success": false, "code": string, "message": string }` (`ApiError` in `_shared.yaml`).
     Business errors use the codes documented per operation. Unexpected errors return `500 INTERNAL_ERROR`.
-    Sensitive paths (`login`, `forgot-password`, `verify-code`, `reset-password`, `google`, `facebook`) are limited
-    by the gateway to 10 requests per minute per client by default (`AUTH_RATE_LIMIT_MAX`, `429 RATE_LIMITED`).
+    Sensitive paths (`register`, `verify-email`, `resend-verification`, `login`, `forgot-password`, `verify-code`,
+    `reset-password`, `google`, `facebook`) are limited by the gateway to 10 requests per minute per client by default,
+    shared among them (`AUTH_RATE_LIMIT_MAX`, `429 RATE_LIMITED`).
 
     ## Events published (RabbitMQ, exchange `traduce.events`)
     - `iam.UserRegistered` `{ userId, email, name }`.
@@ -83,6 +84,7 @@ paths:
       description: |
         Creates the account as `INACTIVE` with the `USER` role and tries to email a verification code.
         Requires express consent (`acceptedTerms: true`) and the accepted `termsVersion`; without them the answer is `400 INVALID_BODY` and no account is created.
+        The password needs at least 8 characters and 3 of these 4 kinds: uppercase, lowercase, digit and symbol (the same minimum as the app); otherwise `400 VALIDATION_ERROR`.
         If the email cannot be sent the account is kept and `verification_email_sent` is `false`; ask for a new code with `resend-verification`.
       operationId: register
       tags: [Auth]
@@ -115,6 +117,8 @@ paths:
             application/json:
               schema:
                 $ref: './_shared.yaml#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /api/auth/login:
     post:
@@ -180,6 +184,8 @@ paths:
           $ref: '#/components/responses/Message'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /api/auth/resend-verification:
     post:
@@ -202,6 +208,8 @@ paths:
           $ref: '#/components/responses/Message'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /api/auth/forgot-password:
     post:
@@ -726,14 +734,28 @@ components:
   schemas:
     ServiceHealth:
       type: object
+      description: |
+        Always HTTP 200 while the process is alive (the Docker `HEALTHCHECK` only checks that). `degraded` means the
+        service answers but leaves data unprocessed; `issues` and `details` are only present then.
       required: [status, service]
       properties:
         status:
           type: string
-          enum: [ok]
+          enum: [ok, degraded]
         service:
           type: string
           example: iam-service
+        issues:
+          type: array
+          description: '`outbox_backlog` (an event such as `iam.UserDeleted` has waited more than 10 minutes in `outbox_events`) or `outbox_unavailable` (the check failed or took longer than 1.5 s)'
+          items:
+            type: string
+          example: [outbox_backlog]
+        details:
+          type: object
+          description: Detail per check, for the internal network only; the gateway does not publish it
+          additionalProperties: true
+          example: { outbox: { pending: 3, oldestPendingSeconds: 840 } }
 
     Message:
       type: object
@@ -762,7 +784,10 @@ components:
           description: Trimmed and lower-cased by the server
         password:
           type: string
-          description: At most 72 bytes (bcrypt limit); longer values are rejected, not truncated
+          minLength: 8
+          description: |
+            At least 8 characters and 3 of 4 kinds (uppercase, lowercase, digit, symbol); at most 72 bytes (bcrypt limit),
+            longer values are rejected, not truncated
         acceptedTerms:
           type: boolean
           enum: [true]

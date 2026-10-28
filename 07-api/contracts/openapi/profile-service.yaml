@@ -179,6 +179,40 @@ paths:
           $ref: '#/components/responses/AccountDeleted'
 
   # ───────────────────────────── Notifications ─────────────────────────────
+  /api/profile/challenges/today:
+    get:
+      summary: Get today's daily challenge
+      description: |
+        Today's challenge (America/Bogota date) with my progress. It is assigned when the first translation of the day
+        is processed, so before that `currentCount` is 0 and the challenge is the one that would be assigned.
+        `name` and `description` come in my interface language. `data` is `null` when there is no active challenge
+        or the account was deleted (see `message`). Accounts with `users.manage` (administrators) get `403`: they
+        do not take part in achievements or challenges.
+      operationId: getTodayChallenge
+      tags: [Achievements]
+      responses:
+        '200':
+          description: Today's challenge, or `null`
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/DailyChallenge'
+                    nullable: true
+                  message:
+                    type: string
+                    example: No hay retos activos para hoy
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/NotForAdmins'
+
   /api/notifications:
     get:
       summary: List my notifications
@@ -269,22 +303,139 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/achievements/activity:
+    post:
+      summary: Record app activity for achievements
+      description: |
+        Activity the server cannot see in a translation: letters viewed, active translation time and voice playback.
+        The server validates every step (for example, `tick` only counts within 15 s of a confirmed translation and
+        at most 10 s per tick) so the client cannot inflate the counters. Accounts with `users.manage` get `403`.
+      operationId: recordActivity
+      tags: [Achievements]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivityRequest'
+      responses:
+        '200':
+          description: Activity recorded; `playbackId` only for `voice-start`
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      playbackId:
+                        type: string
+                        format: uuid
+        '400':
+          description: 'Invalid activity (`{ "success": false }`, without a code)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailureFlag'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/NotForAdmins'
 components:
   securitySchemes:
     bearerAuth:
       $ref: './_shared.yaml#/components/securitySchemes/bearerAuth'
 
   schemas:
+    DailyChallenge:
+      type: object
+      required: [challengeId, code, name, description, targetCount, currentCount, points, completed, completedAt, date]
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          example: TRANSLATE_3
+        name:
+          type: string
+        description:
+          type: string
+        targetCount:
+          type: integer
+          minimum: 1
+        currentCount:
+          type: integer
+          minimum: 0
+          description: Never greater than `targetCount`
+        points:
+          type: integer
+          minimum: 0
+        completed:
+          type: boolean
+          description: '`true` exactly when `currentCount` equals `targetCount`'
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        date:
+          type: string
+          format: date
+          description: Challenge day in America/Bogota
+    ActivityRequest:
+      type: object
+      required: [sessionId, kind]
+      properties:
+        sessionId:
+          type: string
+          pattern: '^[a-zA-Z0-9-]{16,80}$'
+          description: Id of the translation session in the app
+        kind:
+          type: string
+          enum: [letter, tick, pause, voice-start, voice-end, voice-cancel]
+        code:
+          type: string
+          description: Alphabet code, only for `letter`
+        translationId:
+          type: integer
+          description: Only for `voice-start`; a translation of mine already counted for achievements
+        playbackId:
+          type: string
+          format: uuid
+          description: Only for `voice-end` and `voice-cancel`; the id returned by `voice-start`
+    FailureFlag:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
     ServiceHealth:
       type: object
+      description: |
+        Always HTTP 200 while the process is alive (the Docker `HEALTHCHECK` only checks that). `degraded` means the
+        service answers but leaves data unprocessed; `issues` and `details` are only present then.
       required: [status, service]
       properties:
         status:
           type: string
-          enum: [ok]
+          enum: [ok, degraded]
         service:
           type: string
           example: profile-service
+        issues:
+          type: array
+          description: '`dead_letters` (a consumed queue has messages in its `<queue>.dead`), `dead_letters_unavailable` (no connection to RabbitMQ, or the check took longer than 1.5 s) or `consumer_retrying` (the handler of an event, such as the cleanup of `iam.UserDeleted`, has been retrying for more than 10 minutes)'
+          items:
+            type: string
+          example: [dead_letters]
+        details:
+          type: object
+          description: Detail per check, for the internal network only; the gateway does not publish it
+          additionalProperties: true
+          example: { dead_letters: { profile-service.user-deleted: 1 } }
 
     UiLanguage:
       type: string
@@ -454,3 +605,9 @@ components:
         application/json:
           schema:
             $ref: './_shared.yaml#/components/schemas/ApiError'
+    NotForAdmins:
+      description: 'Administrators (`users.manage`) do not take part in achievements or challenges (`{ "success": false }`, without a code)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/FailureFlag'
