@@ -5,6 +5,19 @@
 
 ---
 
+## Implemented today
+
+Taken from the migrations of Backend `develop` `2e0816f` (`services/analytics-service/db/`, applied in order by `docker-compose.yml`). Tables marked † are in `develop` but not yet deployed (production runs v1.3.0). PostgreSQL database `analytics`, schema `public` (no `usage` schema).
+
+| Table | Key columns | Notes |
+|-------|-------------|-------|
+| `usage_event` (singular) | `usage_event_id` BIGSERIAL, `event_id` UNIQUE (makes the consumers idempotent), `user_id` VARCHAR(64), `session_id`, `section`, `event_type`, `reference_type`, `reference_id`, `sign_codes` TEXT[], `created_at` | Fed by `recognition.TranslationProduced`, `iam.UserRegistered` and `POST /api/analytics/events`. No retention: rows are kept, unlinked from the user on erasure |
+| `erased_users` | `user_id` VARCHAR(64), `erased_at` | Late events for an erased user are stored without the user |
+
+There are no `usage_daily_stats` or `session_daily_stats` rollups; reports aggregate `usage_event` directly.
+
+> **The sections after this one describe the reference (target) model**, which the code does not fully implement.
+
 ## Database engine
 
 **Engine:** PostgreSQL, database `analytics`, schema `usage`.

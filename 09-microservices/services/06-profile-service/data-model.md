@@ -5,6 +5,24 @@
 
 ---
 
+## Implemented today
+
+Taken from the migrations of Backend `develop` `2e0816f` (`services/profile-service/db/`, applied in order by `docker-compose.yml`). Tables marked † are in `develop` but not yet deployed (production runs v1.3.0). PostgreSQL database `profile`, schema `public` (no `profile`, `notification` or `gamification` schemas). Keys are UUID; `user_id` is VARCHAR(64). Gamification is implemented (achievements and daily challenges).
+
+| Table | Key columns | Notes |
+|-------|-------------|-------|
+| `user_profiles` | `user_id`, `email`, `full_name`, `username` | Copy received in `iam.UserRegistered` |
+| `user_preferences` | `user_id` UNIQUE, `ui_language` (`ES`, `EN`, `FR`, `PT`), `theme`, `notifications_enabled` | `001`, `003` |
+| `notification_types`, `notifications` | `channel` (`IN_APP`, `EMAIL`; `PUSH` unused, ADR-007), `status` (`PENDING`, `SENT`, `FAILED`, `READ`, `CANCELLED`), `scheduled_at`, `reference_type`, `reference_id` | Email queue of ADR-007 |
+| `achievements`, `user_achievements` | catalog with `metric`, `target_count`, `points`, `collection`, `availability`, `category`, `level`, `localizations` JSONB; progress per user | `001`, `004` to `007` |
+| `achievement_activity`, `achievement_translation_receipts` | activity state JSONB per user; translations already counted | `007` |
+| `processed_events` | `event_id` | Idempotency of the consumers |
+| `erased_users` | `user_id` | ADR-008 |
+| `admin_recipients` †, `admin_report_runs` † | admins seen by the service; one row per report and period | `008` |
+| `challenges` †, `user_challenges` †, `challenge_rewards` † | daily challenge catalog, assignment per user and date, granted points | `009` |
+
+> **The sections after this one describe the reference (target) model**, which the code does not fully implement.
+
 ## Database engine
 
 **Engine:** PostgreSQL, database `profile`, schemas `profile`, `notification`, `gamification` (the last one only if RF8 is approved).

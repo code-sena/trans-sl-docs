@@ -256,14 +256,28 @@ components:
   schemas:
     ServiceHealth:
       type: object
+      description: |
+        Always HTTP 200 while the process is alive (the Docker `HEALTHCHECK` only checks that). `degraded` means the
+        service answers but leaves data unprocessed; `issues` and `details` are only present then.
       required: [status, service]
       properties:
         status:
           type: string
-          enum: [ok]
+          enum: [ok, degraded]
         service:
           type: string
           example: analytics-service
+        issues:
+          type: array
+          description: '`dead_letters` (a consumed queue has messages in its `<queue>.dead`), `dead_letters_unavailable` (no connection to RabbitMQ, or the check took longer than 1.5 s) or `consumer_retrying` (the handler of an event, such as the cleanup of `iam.UserDeleted`, has been retrying for more than 10 minutes)'
+          items:
+            type: string
+          example: [dead_letters]
+        details:
+          type: object
+          description: Detail per check, for the internal network only; the gateway does not publish it
+          additionalProperties: true
+          example: { dead_letters: { analytics-service.user-deleted: 1 } }
 
     UsageSection:
       type: string
