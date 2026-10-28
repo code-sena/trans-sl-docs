@@ -5,6 +5,12 @@
 
 ---
 
+## Implemented today
+
+No database. The routing table is code, not a configuration file: `services/api-gateway/src/route_table.ts` (prefix per service and the public prefixes). Rate-limit counters live in process memory (`express-rate-limit`), as described below. `GET /health` and `/api/health` read the `/health` of each service on every call and keep nothing.
+
+> **The sections after this one describe the reference (target) model**, which the code does not fully implement.
+
 ## Database engine
 
 **Engine:** none.

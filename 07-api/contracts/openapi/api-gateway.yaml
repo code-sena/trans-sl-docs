@@ -34,7 +34,8 @@ info:
 
     ## Rate limits
     300 requests per minute per client for everything (`RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS`), and 10 per minute for
-    `POST /api/auth/login`, `/forgot-password`, `/verify-code`, `/reset-password`, `/google` and `/facebook` (`AUTH_RATE_LIMIT_MAX`).
+    `POST /api/auth/register`, `/verify-email`, `/resend-verification`, `/login`, `/forgot-password`, `/verify-code`, `/reset-password`,
+    `/google` and `/facebook` (`AUTH_RATE_LIMIT_MAX`). These paths share one counter per client.
     Over the limit: `429 RATE_LIMITED`. Limits count per client IP; behind a reverse proxy set `TRUST_PROXY` to the number of
     trusted proxies (`1` in production behind Caddy) so the gateway reads the client IP from `X-Forwarded-For`. With `0`
     (default) the header is ignored.
@@ -89,7 +90,9 @@ paths:
       description: |
         Calls `GET /health` of each service with a 2 second timeout (`HEALTH_TIMEOUT_MS`) and reports the result,
         together with the deployed backend version.
-        It always answers 200 while the gateway is alive; read the body to know if a service is down.
+        It always answers 200 while the gateway is alive; read the body to know if a service is down or degraded.
+        `degraded` at the top level means at least one service is not `up`. An external monitor should alert when the
+        top-level `status` changes, not on every poll.
         No authentication required.
       operationId: health
       tags: [Health]
@@ -124,6 +127,17 @@ paths:
                       lexicon: { status: down }
                       analytics: { status: up }
                       profile: { status: up }
+                stuckErasure:
+                  summary: An account erasure is stuck (event waiting in the outbox)
+                  value:
+                    status: degraded
+                    version: 1.0.0
+                    services:
+                      iam: { status: degraded, issues: [outbox_backlog] }
+                      recognition: { status: up }
+                      lexicon: { status: up }
+                      analytics: { status: up }
+                      profile: { status: up }
         '429':
           description: Rate limit exceeded (`RATE_LIMITED`)
           content:
@@ -139,14 +153,25 @@ components:
       properties:
         status:
           type: string
-          enum: [up, down]
+          description: |
+            `up` answers and reports no problem; `degraded` answers but leaves data unprocessed (see `issues`);
+            `down` does not answer within the timeout or answers with an error
+          enum: [up, degraded, down]
+        issues:
+          type: array
+          description: |
+            Only with `degraded`. Codes reported by the service: `outbox_backlog`, `outbox_unavailable` (iam),
+            `dead_letters`, `dead_letters_unavailable`, `consumer_retrying` (recognition, analytics, profile). Counts stay internal.
+          items:
+            type: string
+            pattern: '^[a-z_]{1,40}$'
     HealthReport:
       type: object
       required: [status, version, services]
       properties:
         status:
           type: string
-          description: '`ok` only if every service is up'
+          description: '`ok` only if every service is up (a `degraded` or `down` service makes it `degraded`)'
           enum: [ok, degraded]
         version:
           type: string

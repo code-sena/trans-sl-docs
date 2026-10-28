@@ -33,14 +33,16 @@ resolved: reversing a design decision belongs to the team, not to a documentatio
 > **Read this before the rest.** Sections 1–6 describe the **reference model** (DBML v9). The code
 > implements a smaller model. This table is the implemented one, taken from the migrations in
 > `backendTS/services/*/db/` and checked against the production databases on 2026-10-23.
+> Updated on 2026-10-26 with Backend `develop` `2e0816f`; tables marked with † are in `develop` but
+> not yet deployed (production runs v1.3.0).
 
 | Service | Database | Tables that exist | Primary keys |
 |---------|----------|-------------------|--------------|
 | iam | `iam` | `users`, `roles`, `permissions`, `user_roles`, `role_permissions`, `user_tokens`, `outbox_events` | `SERIAL` |
-| recognition | `recognition` + MongoDB | `translations`, `sign_templates`, `erased_users` · collection `gesture_samples` | `SERIAL` |
+| recognition | `recognition` + MongoDB | `translations`, `sign_templates`, `erased_users`, `translation_daily_counts` †, `translation_user_words` † · collection `gesture_samples` | `SERIAL` |
 | lexicon | `lexicon` | `categories`, `sign_lexicon`, `sign_localizations`, `multimedia_resource` | `SERIAL` |
 | analytics | `analytics` | `usage_event`, `erased_users` | `BIGSERIAL` |
-| profile | `profile` | `user_profiles`, `user_preferences`, `notification_types`, `notifications`, `achievements`, `user_achievements`, `achievement_activity`, `achievement_translation_receipts`, `processed_events`, `erased_users` | `UUID` |
+| profile | `profile` | `user_profiles`, `user_preferences`, `notification_types`, `notifications`, `achievements`, `user_achievements`, `achievement_activity`, `achievement_translation_receipts`, `processed_events`, `erased_users`, `admin_recipients` †, `admin_report_runs` †, `challenges` †, `user_challenges` †, `challenge_rewards` † | `UUID` |
 
 **Legacy tables still present in `iam`:** `role`, `user_role` and `password_reset_token`, created by
 `000_users.sql` and replaced by `roles`, `user_roles` and `user_tokens`. No code reads them (only the
@@ -53,7 +55,21 @@ should be dropped when the migrations are unified (H-02).
 with no refresh token ([ADR-002](../05-architecture/decisions/records/ADR-002-jwt-authentication.md)).
 
 **Implemented but not in the reference model:** `outbox_events`, `sign_templates`, `erased_users`,
-`user_profiles`, `processed_events` and the achievement activity tables.
+`user_profiles`, `processed_events`, the achievement activity tables and the tables added after
+2026-10-23:
+
+| Table | Service | Migration | Purpose |
+|-------|---------|-----------|---------|
+| `translation_daily_counts` | recognition | `005_translation_retention.sql` | Translations per user and day (America/Bogota) kept after the 30-day purge, so the user and admin statistics survive the retention |
+| `translation_user_words` | recognition | `005_translation_retention.sql` | Distinct words each user has translated, kept after the purge so `GET /api/translations/me/stats` still counts them |
+| `admin_recipients` | profile | `008_admin_reports.sql` | Administrators seen by profile, who receive the weekly and monthly reports |
+| `admin_report_runs` | profile | `008_admin_reports.sql` | One row per report sent (`WEEKLY`, `MONTHLY`, `MODEL_REMINDER`) and period, so a report is never sent twice |
+| `challenges` | profile | `009_daily_challenges.sql` | Catalog of daily challenges (target count, points, texts per language) |
+| `user_challenges` | profile | `009_daily_challenges.sql` | The challenge assigned to a user for a date, copied from the catalog, with its progress |
+| `challenge_rewards` | profile | `009_daily_challenges.sql` | Points granted for a completed challenge, at most once per assignment |
+
+The retention tables keep a user id and the words translated after the translation itself is
+deleted; account erasure deletes them too.
 
 ---
 
@@ -101,8 +117,7 @@ Ten logical domains: 28 relational tables plus one MongoDB collection. The domai
 > context equally. `audit_logs` and `error_logs` pass it: any domain writes to them. `password_policies`
 > fails it: it is read by one flow, in one context, and by nothing else. It was grouped with them because
 > it *looked* like configuration, which is a statement about the shape of the data, not about who owns
-> it. The full reasoning, and what the move costs, is in [`domains/01-identity.md`](domains/01-identity.md)
-> and [`domains/11-configuration.md`](domains/11-configuration.md).
+> it. The full reasoning, and what the move costs, is in [`domains/01-identity.md`](domains/01-identity.md).
 
 > **`ai_models` and `gesture_samples` share a domain but not a context.** The DBML groups them under
 > `AI` because both are about the recognition model. In the domain map the trained model belongs to the
