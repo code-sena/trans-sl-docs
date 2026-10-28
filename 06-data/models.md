@@ -102,8 +102,7 @@ Ten logical domains: 28 relational tables plus one MongoDB collection. The domai
 > context equally. `audit_logs` and `error_logs` pass it: any domain writes to them. `password_policies`
 > fails it: it is read by one flow, in one context, and by nothing else. It was grouped with them because
 > it *looked* like configuration, which is a statement about the shape of the data, not about who owns
-> it. The full reasoning, and what the move costs, is in [`domains/01-identity.md`](domains/01-identity.md)
-> and [`domains/11-configuration.md`](domains/11-configuration.md).
+> it. The full reasoning, and what the move costs, is in [`domains/01-identity.md`](domains/01-identity.md).
 
 > **`ai_models` and `gesture_samples` share a domain but not a context.** The DBML groups them under
 > `AI` because both are about the recognition model. In the domain map the trained model belongs to the
