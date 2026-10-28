@@ -17,7 +17,7 @@
 | Consent evidence for the account | `users.terms_accepted_at`, `users.terms_version` | Kept while the account exists **and after** — it is the proof |
 | Credentials and tokens | `password_hash`, `refresh_tokens`, `user_tokens` | Hashed, never in clear. Expired and revoked rows purged on a schedule |
 | Login sessions | `identity.user_sessions` | Kept for RF6; `user_id` nulled when the account goes |
-| Translation history | `translation.translations` | The user's own data. Individually deletable (ERF5.5); **cascades away with the account** |
+| Translation history | `translation.translations` | The user's own data. Individually deletable (ERF5.5); **deleted after 30 days** (see §4); **cascades away with the account** |
 | Sign catalog and media | `lexicon.*` | Never personal data. Retired by `status`, not deleted |
 | Gesture samples | `gesture_samples` (MongoDB) | Kept while the authorization holds. A revocation discards **every sample of the affected `capture_session_id`** |
 | Registered devices | `notification.user_devices` | Revoked (`is_active = FALSE`), never deleted. Cascades with the account |
@@ -101,6 +101,7 @@ created without them (INV-002). That is the difference between a checkbox and an
 | `error_logs` | **None** — grows with traffic and incidents | Same decision, same conversation |
 | `usage_events` | **None** — grows with every screen opened | Same. The rollups mean old raw events are less needed over time |
 | `refresh_tokens`, `user_tokens` | Implied by `expires_at` | A scheduled purge of expired and revoked rows. They are credentials; keeping spent ones has no upside |
+| `translations` | **30 days.** recognition-service deletes older rows every 6 hours (`TRANSLATION_RETENTION_DAYS`, 0 turns it off). Their counts and distinct words move first to `translation_daily_counts` and `translation_user_words`, so stats keep their history; both are deleted with the account | Implemented |
 | `gesture_samples` | While consent holds | Explicit maximum retention, restated in the authorization document the performer signs |
 
 **Have this conversation once, for all three log tables.** It is free to decide now and expensive to

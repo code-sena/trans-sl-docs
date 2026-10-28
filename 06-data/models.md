@@ -37,7 +37,7 @@ resolved: reversing a design decision belongs to the team, not to a documentatio
 | Service | Database | Tables that exist | Primary keys |
 |---------|----------|-------------------|--------------|
 | iam | `iam` | `users`, `roles`, `permissions`, `user_roles`, `role_permissions`, `user_tokens`, `outbox_events` | `SERIAL` |
-| recognition | `recognition` + MongoDB | `translations`, `sign_templates`, `erased_users` · collection `gesture_samples` | `SERIAL` |
+| recognition | `recognition` + MongoDB | `translations`, `translation_daily_counts`, `translation_user_words`, `sign_templates`, `erased_users` · collection `gesture_samples` | `SERIAL` |
 | lexicon | `lexicon` | `categories`, `sign_lexicon`, `sign_localizations`, `multimedia_resource` | `SERIAL` |
 | analytics | `analytics` | `usage_event`, `erased_users` | `BIGSERIAL` |
 | profile | `profile` | `user_profiles`, `user_preferences`, `notification_types`, `notifications`, `achievements`, `user_achievements`, `achievement_activity`, `achievement_translation_receipts`, `processed_events`, `erased_users` | `UUID` |
@@ -53,7 +53,8 @@ should be dropped when the migrations are unified (H-02).
 with no refresh token ([ADR-002](../05-architecture/decisions/records/ADR-002-jwt-authentication.md)).
 
 **Implemented but not in the reference model:** `outbox_events`, `sign_templates`, `erased_users`,
-`user_profiles`, `processed_events` and the achievement activity tables.
+`user_profiles`, `processed_events`, the achievement activity tables and the translation retention
+summary (`translation_daily_counts`, `translation_user_words`).
 
 ---
 
