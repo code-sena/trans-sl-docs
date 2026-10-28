@@ -7,6 +7,22 @@
 
 ---
 
+## Implemented today
+
+Taken from the migrations of Backend `develop` `2e0816f` (`services/iam-service/db/`, applied in order by `docker-compose.yml`). Tables marked † are in `develop` but not yet deployed (production runs v1.3.0). One PostgreSQL database `iam`, schema `public` (no `identity`, `authz` or `audit` schemas). Keys are `SERIAL` integers, so other services keep `user_id` as an integer, not a UUID.
+
+| Table | Key columns | Notes |
+|-------|-------------|-------|
+| `users` | `user_id` SERIAL, `name`, `email` UNIQUE (normalized, `ck_users_email_normalized`), `password` (bcrypt hash, NULL for Google / Facebook accounts), `status` (`ACTIVE`, `INACTIVE`, `BLOCKED`), `email_verified_at`, `terms_accepted`, `terms_accepted_at`, `terms_version`, `created_at` | `000`, `005`, `006`, `010`, `013` |
+| `roles`, `permissions`, `user_roles`, `role_permissions` | composite keys on the join tables | Seed: `USER`, `LINGUIST`, `ADMIN` and 13 permissions (`003`) |
+| `user_tokens` | `token_id`, `user_id` (FK, cascade), `token_type` (`EMAIL_VERIFICATION`, `PASSWORD_RESET`, `ACCOUNT_DELETION`), `token_hash`, `attempts`, `expires_at`, `used_at`, `revoked_at` | One live code per user and type (`uq_user_tokens_live`) (`005`, `011`) |
+| `outbox_events` | `event_id` UUID, `type`, `payload` JSONB, `published_at`, `attempts`, `last_error`, `next_attempt_at`, `claimed_until`, `claim_token` | Transactional outbox for `iam.UserDeleted` (`009`, `012`); see ADR-008 |
+| `role`, `user_role`, `password_reset_token` | — | Legacy tables from `000_users.sql`, not read by the code; to drop when migrations are unified (H-02) |
+
+There are no `user_auth_providers`, `user_sessions`, `refresh_tokens`, `password_policies` or audit tables.
+
+> **The sections after this one describe the reference (target) model**, which the code does not fully implement.
+
 ## Database engine
 
 **Engine:** PostgreSQL, database `iam`, schemas `identity`, `authz` and `audit`.

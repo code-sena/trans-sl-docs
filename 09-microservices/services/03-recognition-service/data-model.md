@@ -5,6 +5,23 @@
 
 ---
 
+## Implemented today
+
+Taken from the migrations of Backend `develop` `2e0816f` (`services/recognition-service/db/`, applied in order by `docker-compose.yml`). Tables marked † are in `develop` but not yet deployed (production runs v1.3.0). PostgreSQL database `recognition`, schema `public` (no `translation` or `ai` schemas), plus MongoDB.
+
+| Store | Table / collection | Key columns | Notes |
+|-------|--------------------|-------------|-------|
+| PostgreSQL | `translations` | `translation_id` SERIAL, `user_id` INT (logical, no FK), `input_text`, `output_text`, `type` (`texto_sena`, `sena_texto`, `voz_sena`), `confidence` NUMERIC(4,3), `source`, `is_deleted`, `created_at` | Deleted after 30 days (`005`, `TRANSLATION_RETENTION_DAYS`) |
+| PostgreSQL | `sign_templates` | `template_id` SERIAL, `label`, `kind` (`static`, `motion`, `word`), `features` JSONB, `source`, `created_by` | Templates used by the recognizers in the app (`002`, `004`) |
+| PostgreSQL | `erased_users` | `user_id`, `erased_at` | Accounts already erased; blocks writes with an old JWT (ADR-008) |
+| PostgreSQL | `translation_daily_counts` † | `user_id`, `day`, `total` | Counts kept after the retention purge (`005`) |
+| PostgreSQL | `translation_user_words` † | `user_id`, `word` | Distinct words kept after the purge (`005`) |
+| MongoDB | `gesture_samples` | `_id` (UUID), `sign_code`, `capture_session_id`, `recorded_by` (NULL after erasure), `performed_by`, `consent_granted_at`, `consent_terms_version`, `frames`, `is_validated` | Indexes on `sign_code`, `capture_session_id`, `recorded_by`. As of 2026-10-26 the app does not call `/api/samples`, so it receives no data (decision H-06) |
+
+There are no `translation_signs` or `ai_models` tables; each translation keeps its own `confidence` and `source`.
+
+> **The sections after this one describe the reference (target) model**, which the code does not fully implement.
+
 ## Database engines
 
 | Engine | Content | Justification |
