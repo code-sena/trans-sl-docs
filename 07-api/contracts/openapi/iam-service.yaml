@@ -287,6 +287,9 @@ paths:
         An existing account logs in; a new email creates an `ACTIVE` account without a password (role `USER`,
         publishes `iam.UserRegistered`). A `BLOCKED` account gets `ACCOUNT_BLOCKED`; an account that never
         verified its email gets `EMAIL_NOT_VERIFIED`.
+        Creating the account requires consent (Ley 1581): without `acceptedTerms: true` and `termsVersion`
+        the answer is `400 TERMS_REQUIRED` and nothing is created; the app shows the checkbox and retries
+        with the same token. Existing accounts do not need to send them.
       operationId: googleLogin
       tags: [Auth]
       security: []
@@ -304,7 +307,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: Invalid body (`INVALID_BODY`) or new account without consent (`TERMS_REQUIRED`)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ApiError'
         '401':
           description: Invalid token or unverified Google email (`INVALID_GOOGLE_TOKEN`)
           content:
@@ -349,7 +356,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
         '400':
-          description: Invalid body (`VALIDATION_ERROR`) or the Facebook account shares no email (`FACEBOOK_EMAIL_REQUIRED`)
+          description: Invalid body (`INVALID_BODY`), the Facebook account shares no email (`FACEBOOK_EMAIL_REQUIRED`) or new account without consent (`TERMS_REQUIRED`)
           content:
             application/json:
               schema:
@@ -936,6 +943,16 @@ components:
           minLength: 1
           maxLength: 8192
           description: Google ID token obtained by the client
+        acceptedTerms:
+          type: boolean
+          enum: [true]
+          description: Consent to the terms (Ley 1581). Only required when the login creates a new account (`TERMS_REQUIRED` otherwise)
+        termsVersion:
+          type: string
+          minLength: 1
+          maxLength: 20
+          description: Accepted terms version, stored in `users.terms_version` for new accounts
+          example: '2025-01'
 
     FacebookLoginRequest:
       type: object
@@ -946,6 +963,16 @@ components:
           minLength: 1
           maxLength: 2048
           description: Facebook access token obtained by the client
+        acceptedTerms:
+          type: boolean
+          enum: [true]
+          description: Consent to the terms (Ley 1581). Only required when the login creates a new account (`TERMS_REQUIRED` otherwise)
+        termsVersion:
+          type: string
+          minLength: 1
+          maxLength: 20
+          description: Accepted terms version, stored in `users.terms_version` for new accounts
+          example: '2025-01'
 
     AssignRoleRequest:
       type: object
