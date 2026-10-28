@@ -28,6 +28,51 @@ resolved: reversing a design decision belongs to the team, not to a documentatio
 
 ---
 
+## 0. Implemented today vs this reference model
+
+> **Read this before the rest.** Sections 1–6 describe the **reference model** (DBML v9). The code
+> implements a smaller model. This table is the implemented one, taken from the migrations in
+> `backendTS/services/*/db/` and checked against the production databases on 2026-10-23.
+> Updated on 2026-10-26 with Backend `develop` `2e0816f`; tables marked with † are in `develop` but
+> not yet deployed (production runs v1.3.0).
+
+| Service | Database | Tables that exist | Primary keys |
+|---------|----------|-------------------|--------------|
+| iam | `iam` | `users`, `roles`, `permissions`, `user_roles`, `role_permissions`, `user_tokens`, `outbox_events` | `SERIAL` |
+| recognition | `recognition` + MongoDB | `translations`, `sign_templates`, `erased_users`, `translation_daily_counts` †, `translation_user_words` † · collection `gesture_samples` | `SERIAL` |
+| lexicon | `lexicon` | `categories`, `sign_lexicon`, `sign_localizations`, `multimedia_resource` | `SERIAL` |
+| analytics | `analytics` | `usage_event`, `erased_users` | `BIGSERIAL` |
+| profile | `profile` | `user_profiles`, `user_preferences`, `notification_types`, `notifications`, `achievements`, `user_achievements`, `achievement_activity`, `achievement_translation_receipts`, `processed_events`, `erased_users`, `admin_recipients` †, `admin_report_runs` †, `challenges` †, `user_challenges` †, `challenge_rewards` † | `UUID` |
+
+**Legacy tables still present in `iam`:** `role`, `user_role` and `password_reset_token`, created by
+`000_users.sql` and replaced by `roles`, `user_roles` and `user_tokens`. No code reads them (only the
+account erasure deletes from `user_role` if it exists). In production they hold 2, 0 and 0 rows. They
+should be dropped when the migrations are unified (H-02).
+
+**In the reference model but not implemented:** `user_auth_providers`, `user_sessions`,
+`refresh_tokens`, `password_policies`, `translation_signs`, `ai_models`, `user_devices`,
+`usage_daily_stats`, `session_daily_stats`, `audit_logs`, `error_logs`. Sessions are a single JWT
+with no refresh token ([ADR-002](../05-architecture/decisions/records/ADR-002-jwt-authentication.md)).
+
+**Implemented but not in the reference model:** `outbox_events`, `sign_templates`, `erased_users`,
+`user_profiles`, `processed_events`, the achievement activity tables and the tables added after
+2026-10-23:
+
+| Table | Service | Migration | Purpose |
+|-------|---------|-----------|---------|
+| `translation_daily_counts` | recognition | `005_translation_retention.sql` | Translations per user and day (America/Bogota) kept after the 30-day purge, so the user and admin statistics survive the retention |
+| `translation_user_words` | recognition | `005_translation_retention.sql` | Distinct words each user has translated, kept after the purge so `GET /api/translations/me/stats` still counts them |
+| `admin_recipients` | profile | `008_admin_reports.sql` | Administrators seen by profile, who receive the weekly and monthly reports |
+| `admin_report_runs` | profile | `008_admin_reports.sql` | One row per report sent (`WEEKLY`, `MONTHLY`, `MODEL_REMINDER`) and period, so a report is never sent twice |
+| `challenges` | profile | `009_daily_challenges.sql` | Catalog of daily challenges (target count, points, texts per language) |
+| `user_challenges` | profile | `009_daily_challenges.sql` | The challenge assigned to a user for a date, copied from the catalog, with its progress |
+| `challenge_rewards` | profile | `009_daily_challenges.sql` | Points granted for a completed challenge, at most once per assignment |
+
+The retention tables keep a user id and the words translated after the translation itself is
+deleted; account erasure deletes them too.
+
+---
+
 ## 1. Storage decisions
 
 | Store | Engine | What lives there | Justification |
@@ -37,7 +82,7 @@ resolved: reversing a design decision belongs to the team, not to a documentatio
 | **Object storage** | S3-compatible bucket / filesystem | Videos, images, animations, `.tflite` model artifacts | Binary content never goes in the database. Tables keep a URI (`multimedia_resources.uri`, `ai_models.storage_reference`, `gesture_samples.storage_reference`) |
 
 **RabbitMQ yes, Redis no.** Domain events travel between services over RabbitMQ (topic exchange
-`traduce.events`). Sessions are JWT plus a `refresh_tokens` row in iam-service; adding Redis would be
+`traduce.events`). Sessions are a JWT (the reference model adds a `refresh_tokens` row in iam-service, not implemented — see § 0); adding Redis would be
 infrastructure with no requirement behind it — the same gold-plating test the traceability matrix
 applies to tables.
 
@@ -72,8 +117,7 @@ Ten logical domains: 28 relational tables plus one MongoDB collection. The domai
 > context equally. `audit_logs` and `error_logs` pass it: any domain writes to them. `password_policies`
 > fails it: it is read by one flow, in one context, and by nothing else. It was grouped with them because
 > it *looked* like configuration, which is a statement about the shape of the data, not about who owns
-> it. The full reasoning, and what the move costs, is in [`domains/01-identity.md`](domains/01-identity.md)
-> and [`domains/11-configuration.md`](domains/11-configuration.md).
+> it. The full reasoning, and what the move costs, is in [`domains/01-identity.md`](domains/01-identity.md).
 
 > **`ai_models` and `gesture_samples` share a domain but not a context.** The DBML groups them under
 > `AI` because both are about the recognition model. In the domain map the trained model belongs to the
@@ -265,6 +309,7 @@ samples anonymous or identified?). Both are design reversals that belong to the 
 |---------|------|--------|--------|
 | v0.1 | 2026-09-10 | Generic microservices scaffold replaced with the real model. `traduce_senas_v8.dbml` converted to PostgreSQL DDL, plus the MongoDB collection with its validator. Added conventions, the 21-enum catalog, the constraints migration in full, the normalization assessment, the migration strategy, the Law 1581 lifecycle, two ER diagrams and eleven findings | Juan Mauricio Suaza Solórzano |
 | v0.2 | 2026-09-10 | **Split by domain.** The single document became this overview plus eleven files in `domains/` and six cross-cutting documents. No content lost; the cross-domain diagram in § 4 and the per-domain open-item tables are new | Juan Mauricio Suaza Solórzano |
+| v0.4 | 2026-10-23 | New § 0: the implemented model per service, legacy tables in iam, and what exists only in the reference model (audit finding H-05) | Luis Alejandro Duarte Aldana |
 | v0.3 | 2026-09-10 | **Model v9 — `password_policies` moved from `Configuration` to `Identity`**, and the `Configuration` domain dissolved: eleven domains become ten. The DBML was updated accordingly, and three long-standing items closed with it — DATA-01 (the model file is now `traduce_senas.dbml`, with the version in the header so no pointer goes stale again), GAP-03 (`password_reset_tokens` → `user_tokens`) and GAP-04 (RF2 does persist, as `SECTION_VIEW`). Permission `config.manage` renamed `security.policy.manage`. New: DATA-12 | Juan Mauricio Suaza Solórzano |
 
 ---

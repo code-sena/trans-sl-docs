@@ -28,7 +28,7 @@ const userId = req.user.sub; // req.user comes from the authentication middlewar
 
 **Rules:**
 - Passwords: use **bcrypt** with cost factor ≥ 12. Never MD5 or SHA-1 for passwords
-- JWTs: sign with RS256 (asymmetric). Never HS256 in production with a weak secret
+- JWTs: HS256 with a secret of at least 32 characters is the accepted decision (ADR-002); never a shorter secret. RS256 is the target for production (see `security-policy.md`)
 - Sensitive data in transit: HTTPS mandatory in all environments except local
 - Sensitive data at rest: encrypt with AES-256-GCM the fields marked as PII
 - Never log passwords, tokens, or credit card data
@@ -55,7 +55,7 @@ const user = await userRepository.findOne({ where: { id: userId } });
 ### A04 — Insecure Design
 
 - Every HU that exposes user data must undergo privacy review
-- Bulk query endpoints have mandatory pagination (maximum [100] records per page)
+- Bulk query endpoints have mandatory pagination (maximum 200 records per page; translations history allows 200, notifications 100)
 - Do not expose sequential internal IDs; use UUIDs
 
 ### A05 — Security Misconfiguration
@@ -83,8 +83,8 @@ const user = await userRepository.findOne({ where: { id: userId } });
 ### A07 — Identification and Authentication Failures
 
 - JWT with maximum expiration of **1 hour** for access tokens
-- Refresh tokens with expiration of **[7 days / 30 days]** and rotation on each use
-- Rate limiting on `/auth/login`: maximum [10] attempts per IP in 5 minutes
+- Refresh tokens with rotation on each use — **not implemented yet** (ADR-002); duration to decide with audit finding H-08
+- Rate limiting on `/auth/login` and the other sensitive auth routes: maximum 10 requests per client per minute at the gateway (`AUTH_RATE_LIMIT_MAX`, `429 RATE_LIMITED`)
 - Account lockout after [5] consecutive failed attempts
 
 ### A08 — Software and Data Integrity Failures
@@ -99,7 +99,7 @@ const user = await userRepository.findOne({ where: { id: userId } });
 - Log delete operations with who, when, and what was deleted
 - Security logs are retained for a minimum of **90 days**
 - Automatic alerts configured for:
-  - More than [50] 401/403 errors in 5 minutes
+  - Many 401/403 errors in a short window — threshold pending: there is no alerting yet (see `13-operations/`)
   - Access to a resource from an unexpected country (if applicable)
 
 ### A10 — Server-Side Request Forgery (SSRF)
@@ -116,7 +116,7 @@ const user = await userRepository.findOne({ where: { id: userId } });
 const CreateUserSchema = z.object({
   email: z.string().email().max(255),
   name: z.string().min(1).max(100).trim(),
-  role: z.enum(['ADMIN', 'USER', 'VIEWER']),
+  role: z.enum(['USER', 'LINGUIST', 'ADMIN']),
 });
 
 // The result is typed and sanitized

@@ -8,6 +8,19 @@
 
 ---
 
+## Implemented today
+
+Taken from the migrations of Backend `develop` `2e0816f` (`services/lexicon-service/db/`, applied in order by `docker-compose.yml`). Tables marked † are in `develop` but not yet deployed (production runs v1.3.0). PostgreSQL database `lexicon`, schema `public`, created by `003_lexicon.sql` (the paths `backend/migrations/` and `backend/DB/traduce_senas/` below are from the old monolith).
+
+| Table | Key columns | Notes |
+|-------|-------------|-------|
+| `categories` | `category_id` SERIAL, `name` (unique, case-insensitive), `description` | Seed: `Alfabeto`, `General` |
+| `sign_lexicon` | `lexicon_id` SERIAL, `code` UNIQUE, `type` (`LETTER`, `WORD`, `PHRASE`), `letter` (unique per `language`), `language`, `category_id` (FK), `is_animated`, `display_order`, `status`, `created_by`, `updated_by` | `created_by` / `updated_by` are kept on account erasure on purpose (authorship) |
+| `sign_localizations` | `sign_localization_id`, `lexicon_id` (FK, cascade), `ui_language` (`ES`, `EN` only), `name`, `meaning`, `description` | The app has four languages (ES, EN, FR, PT); FR and PT are not stored here |
+| `multimedia_resource` | `resource_id` SERIAL, `lexicon_id`, `type`, `url`, `mime_type`, `display_order` | Media files are served from `MEDIA_DIR` under `/api/lexicon/media` |
+
+> **The sections after this one describe the reference (target) model**, which the code does not fully implement.
+
 ## Database engine
 
 **Engine:** PostgreSQL (target database `lexicon`; today database `traduce_senas`, schema `public`) plus static media files.

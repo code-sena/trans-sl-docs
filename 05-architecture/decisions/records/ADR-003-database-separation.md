@@ -3,10 +3,20 @@
 ## Status
 
 * Accepted
+* Extended by [ADR-004](ADR-004-microservices-architecture.md) and [ADR-008](ADR-008-database-per-service.md) (one database per service)
 
 ## Date
 
 2026-09-08
+
+## Update 2026-10-26
+
+This ADR was written when the backend was one process. The decision still holds (PostgreSQL for structured data, MongoDB for variable recognition data, no foreign keys between them), but some details no longer describe the system:
+
+* There is no single backend coordinating both engines. Each service owns its own PostgreSQL database, and only `recognition-service` uses MongoDB ([ADR-008](ADR-008-database-per-service.md)).
+* The MongoDB collection is `gesture_samples`, not `movement_samples`. It stores the training samples (frames, consent, `recorded_by`, `performed_by`). Inference results, confidence and model versions are not stored in MongoDB: each translation keeps its confidence and source in PostgreSQL (`translations`), and there is no model registry.
+* Sign templates, which also hold variable frame data, live in PostgreSQL as `JSONB` (`sign_templates.features`).
+* As of 2026-10-26 the app does not send samples to `/api/samples`, so `gesture_samples` receives no data. Whether to connect it, move the samples to PostgreSQL or remove the route and MongoDB is the open decision H-06; the outcome must update this ADR and ADR-008.
 
 ## Context
 
