@@ -31,6 +31,8 @@
 
 ## Recommended tools
 
+The blocks below are syntax samples with an invented system (Orders, IAM). They are not diagrams of this project.
+
 ### PlantUML (for diagrams in code)
 ```plantuml
 @startuml
@@ -74,7 +76,7 @@ For more complex diagrams requiring free placement. Export as SVG to `diagrams/e
 │   └── exports/              ← Exported images (.svg, .png)
 ```
 
-**Naming convention:**
+**Naming convention** (examples of the convention; these files do not exist yet):
 - `c4-context.puml` — C4 Level 1 diagram
 - `c4-containers.puml` — C4 Level 2 diagram
 - `seq-login.puml` — Sequence diagram for the login flow
@@ -88,7 +90,7 @@ The class diagrams for the backend live in `diagrams/source/class-*.puml` (CL-01
 ### `diagram-index.md`
 Registry of all diagrams with their purpose and location.
 
-**Format:**
+**Format** (example row, not a real diagram):
 ```markdown
 | Diagram | Type | Source file | Last updated | Maintained by |
 |---------|------|-------------|--------------|--------------|

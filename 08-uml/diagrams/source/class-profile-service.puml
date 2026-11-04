@@ -309,7 +309,7 @@ class startAdminReportsScheduler <<adapter in>> {
   deps: run, tickMs
   + stop() : Promise<void>
 }
-note bottom of startAdminReportsScheduler : adapters/inbound/scheduler/admin_reports_scheduler.ts\nEs el worker: ejecuta al arrancar y en cada vuelta; un error se registra y no tumba el proceso.\nReportes cada 15 min (PROFILE_ADMIN_REPORTS_TICK_MS), correos cada 60 s.\nSe apaga con PROFILE_ADMIN_REPORTS_ENABLED=false.
+note bottom of startAdminReportsScheduler : adapters/inbound/scheduler/admin_reports_scheduler.ts\nEs el worker: ejecuta al arrancar y en cada vuelta; un error se registra y no tumba el proceso.\nReportes: ADMIN_REPORTS_TICK_MS (por defecto 15 min, mínimo 1 min), correos cada 60 s.\nSe apaga con ADMIN_REPORTS_ENABLED=false (cmd/main.ts).
 startAdminReportsScheduler ..> makeRunAdminReports : run
 startAdminReportsScheduler ..> makeDeliverEmailNotifications : run
 
