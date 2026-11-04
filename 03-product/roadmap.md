@@ -1,9 +1,13 @@
 # Product Roadmap
 
+> The status of each phase was checked against the repositories on 2026-11-04. "Implemented" means the code shows it. Anything the repositories cannot show is marked as not verifiable.
+
 ## Phase 1 — MVP Foundation
 
 ### Goal
 Build the basic structure required for users to access the application and use its main functionality.
+
+**Status:** Implemented. Registration, login with verification code, Google and Facebook sign-in, profile, navigation, language and theme preferences, the sign alphabet, and camera access are in the code.
 
 ### Main features
 - User registration and authentication.
@@ -20,6 +24,8 @@ Build the basic structure required for users to access the application and use i
 
 ### Goal
 Implement the core functionality of Traduce Señas: recognizing signs through the device camera and translating them into understandable output.
+
+**Status:** Implemented, except the validation of translation results, which the repositories cannot show (it belongs to Phase 5). Recognition runs on the device and reads the 54 signs of the LSC-54 dataset.
 
 ### Main features
 - Camera-based sign recognition.
@@ -38,6 +44,8 @@ Implement the core functionality of Traduce Señas: recognizing signs through th
 ### Goal
 Improve the user experience and provide access to previously generated translations.
 
+**Status:** Partly implemented. Translation history and the four interface languages (Spanish, English, French, Portuguese) are in the code. The accessibility work and the interface improvements are not verifiable from the repositories.
+
 ### Main features
 - Translation history.
 - Consultation of previous translations.
@@ -54,6 +62,8 @@ Improve the user experience and provide access to previously generated translati
 ### Goal
 Provide administrators with the tools required to supervise and manage the application.
 
+**Status:** Partly implemented. Administrative access (role-based), usage statistics, admin screens for training samples and the lexicon, and administrator summary emails are in the code. Assigning roles exists in the API, but no user-list screen was found in the client. Monitoring of translation accuracy is not implemented.
+
 ### Main features
 - Administrative access.
 - User management.
@@ -69,6 +79,8 @@ Provide administrators with the tools required to supervise and manage the appli
 
 ### Goal
 Validate the application in realistic scenarios and improve the accuracy and reliability of the system.
+
+**Status:** Not started in the repositories. No evidence of field tests, interpreter validation or accuracy evaluation exists there. Model versioning is not implemented: translations and motion templates store no model version.
 
 ### Main activities
 - Real-world testing of sign recognition.
