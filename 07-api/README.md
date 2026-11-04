@@ -15,18 +15,18 @@ services can work in parallel against an agreed contract.
 
 ## Contract index (`contracts/openapi/`)
 
-> **Based on:** Backend `2993301` (`origin/develop`, 2026-10-16). Each contract lists only routes that exist in the code; every path and method was compared with the `routes.ts` files of each service.
+> **Based on:** Backend `a962982` (`main`). Each contract lists only routes that exist in the code; every path and method was compared with the `routes.ts` files of each service.
 
 One OpenAPI 3.0.3 file per component. They reuse `_shared.yaml` (`ApiError`, `Timestamp`, pagination and the `bearerAuth` security scheme) through `$ref`.
 
 | Contract | Service | Internal port | Public paths (under `/api`) | Operations* |
 |----------|---------|---------------|-----------------------------|-------------|
-| [`api-gateway.yaml`](contracts/openapi/api-gateway.yaml) | api-gateway | 8080 (published) | routing table, `GET /health` and `GET /api/health` | 2 |
-| [`iam-service.yaml`](contracts/openapi/iam-service.yaml) | iam-service | 3001 | `/auth/**`, `/users/**`, `/iam/**` | 17 |
+| [`api-gateway.yaml`](contracts/openapi/api-gateway.yaml) | api-gateway | 8080 (published in development only) | routing table, `GET /health` and `GET /api/health` | 2 |
+| [`iam-service.yaml`](contracts/openapi/iam-service.yaml) | iam-service | 3001 | `/auth/**`, `/users/**`, `/iam/**` | 21 |
 | [`recognition-service.yaml`](contracts/openapi/recognition-service.yaml) | recognition-service | 3002 | `/translations/**`, `/recognition/sign-templates/**` (alias `/sign-templates/**`, deprecated), `/samples/**` | 14 |
 | [`lexicon-service.yaml`](contracts/openapi/lexicon-service.yaml) | lexicon-service | 3003 | `/lexicon/**` (including `/lexicon/media/**`) | 19 |
 | [`analytics-service.yaml`](contracts/openapi/analytics-service.yaml) | analytics-service | 3004 | `/analytics/**` | 6 |
-| [`profile-service.yaml`](contracts/openapi/profile-service.yaml) | profile-service | 3005 | `/profile/**`, `/notifications/**`, `/achievements/**` | 8 |
+| [`profile-service.yaml`](contracts/openapi/profile-service.yaml) | profile-service | 3005 | `/profile/**`, `/notifications/**`, `/achievements/**` | 11 |
 
 \* Operations per file, `GET /health` included. In the service contracts `/health` is the internal endpoint of the service (not routed by the gateway).
 
@@ -36,18 +36,18 @@ Support files: [`_shared.yaml`](contracts/openapi/_shared.yaml) (shared componen
 ### How to read an operation
 
 - `x-requirements` — the FR-xxx / HU-xxx that justify the operation.
-- `deprecated: true` — the route still works but must not be used by new code (the `/api/sign-templates` alias).
+- `deprecated: true` — the route still works but must not be used by new code (the `/api/sign-templates` alias). The current frontend still calls it (`ENDPOINTS.signTemplates` in `src/app/config/api.config.ts`).
 - The access rule of each operation (public, any valid JWT, a permission such as `stats.read`, or the `ADMIN` role) is written in its description and in the header of the file.
 
 ### Conventions common to every contract
 
-- Clients call the gateway only: `http://localhost:8080`. The service ports are internal (Docker Compose does not publish them).
+- Clients call the gateway only: `http://localhost:8080` in development, `https://traducesenas.tech/api` in production (Caddy). The service ports (3001-3005) are not published by either compose file. In development, PostgreSQL (`127.0.0.1:5433`-`5437`), MongoDB (`127.0.0.1:27017`) and the RabbitMQ UI (`127.0.0.1:15672`) are published on loopback only; in production only Caddy publishes 80 and 443.
 - Authentication: `Authorization: Bearer <token>`, JWT (HS256) issued by iam-service in `POST /api/auth/login` (`data.token`). The gateway rejects an invalid token if one is sent;
   each service decides which routes need a session and checks roles and permissions from the token claims.
 - Success envelope: `{ "success": true, "message"?, "data"? }`. profile-service returns plain objects for profile, preferences and notifications (see its contract).
-- Errors: `{ "success": false, "code", "message" }` (`ApiError` in `_shared.yaml`). In recognition-service, the create, history and delete routes of `translations` and all `sign-templates` routes carry no `code` in business errors.
+- Errors: `{ "success": false, "code", "message" }` (`ApiError` in `_shared.yaml`). Every recognition-service error carries a `code`. In profile-service, the `403` answers of achievements and challenges and the `400` of `activity` send only `{ "success": false }`.
 - Pagination is not uniform: notifications use `page`/`limit` with `meta`; lexicon and translation history use `limit`/`offset`.
-- Ids are integers (`SERIAL`) in iam, recognition and lexicon; profile uses UUIDs for its own records. References between services are logical ids, never foreign keys.
+- Ids are integers (`SERIAL`) in iam, recognition and lexicon, except gesture samples (`sampleId`, a UUID generated by the service); profile uses UUIDs for its own records. References between services are logical ids, never foreign keys.
 - Asynchronous integration uses domain events on RabbitMQ (`02-domain/domain-events.md`, [ADR-004](../05-architecture/decisions/records/ADR-004-microservices-architecture.md)).
 
 ### Validating the contracts
@@ -63,7 +63,7 @@ Expected result: "Your API description is valid", with style warnings only (no l
 
 ## Planned, not implemented
 
-These routes appeared in earlier drafts of the contracts but **do not exist** in Backend `2993301`. They were removed from the YAML files so that the contracts describe only what the code does. They stay here as proposals, with the requirement that justified each one; none of them is a commitment.
+These routes appeared in earlier drafts of the contracts but **do not exist** in Backend `a962982`. They were removed from the YAML files so that the contracts describe only what the code does. They stay here as proposals, with the requirement that justified each one; none of them is a commitment.
 
 | Service | Route (as drafted) | Purpose | Requirements |
 |---------|--------------------|---------|--------------|
@@ -86,7 +86,7 @@ Implemented since the first version of this list: Google and Facebook login (`PO
 ## Open items in the contracts
 
 - Pending (not documented as behaviour): a session version in the token (`401 SESSION_REVOKED`, `503 AUTH_UNAVAILABLE` at the gateway).
-- The error format is not uniform inside recognition-service (the errors listed above have no `code`).
+- The error format is not uniform in profile-service (the `{ "success": false }` answers listed in its contract have no `code`).
 - Gamification depends on the approval of RF8.
 
 ---

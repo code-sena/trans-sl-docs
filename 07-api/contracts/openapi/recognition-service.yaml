@@ -7,7 +7,7 @@ info:
     plus MongoDB collection `gesture_samples`). It stores the translation history, the sign templates used by the
     recognizer in the client, and the gesture samples (landmarks only, never video).
 
-    **Based on:** Backend `2993301` (`origin/develop`, 2026-10-16), `services/recognition-service`. Every path below exists in
+    **Based on:** Backend `a962982` (`main`), `services/recognition-service`. Every path below exists in
     the code; routes that are only planned (`/api/models*`, sample validation, session deletion) are listed in
     `07-api/README.md` ("Planned, not implemented").
 
@@ -27,7 +27,7 @@ info:
     Error: `{ "success": false, "code"?: string, "message": string }` (`ApiError` in `_shared.yaml`). Every error carries a `code`: invalid input answers `400 VALIDATION_ERROR`, an unknown id `404 NOT_FOUND`, a deleted account `401 ACCOUNT_DELETED` and a permission check `403` (`PERMISSION_ERROR` or `FORBIDDEN`). Any other failure answers `500 INTERNAL_ERROR` without internal details.
 
     ## Events
-    Publishes `recognition.TranslationProduced` `{ translationId, userId, gloss, text, occurredAt }` after each saved translation.
+    Publishes `recognition.TranslationProduced` `{ translationId, userId, gloss, text, occurredAt, eligible }` after each saved translation, plus `mode` and `sessionId` when the request sends them.
     Consumes `lexicon.SignPublished` and `lexicon.SignWithdrawn` (only logged for now), and `iam.UserDeleted`: deletes the
     user's translations, records the user in `erased_users` and unlinks the gesture samples they recorded (the samples are kept
     without the operator id).
@@ -198,8 +198,6 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Translation'
-        '400':
-          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -247,7 +245,7 @@ paths:
   /api/recognition/sign-templates:
     get:
       summary: List sign templates
-      description: Public. `static` templates are one frame of 63 values (one hand); `motion` templates are 16 frames of 126 values (two hands).
+      description: Public. `static` templates are one frame of 63 values (one hand); `motion` templates are 16 frames of 126 values (two hands); `word` templates are 30 frames of 128 values (hands and shoulders).
       operationId: listSignTemplates
       tags: [Sign templates]
       security: []
@@ -565,6 +563,14 @@ components:
           type: string
           maxLength: 20
           description: Informative only (for example `mediapipe`, `knn`, `mock`, `manual`)
+        mode:
+          type: string
+          enum: [letters, words]
+          description: Optional recognition mode of the client; any other value answers `400 VALIDATION_ERROR`
+        sessionId:
+          type: string
+          pattern: '^[a-zA-Z0-9-]{16,80}$'
+          description: Optional browser session that produced the translation; an invalid value answers `400 VALIDATION_ERROR`
 
     Translation:
       type: object
@@ -654,8 +660,8 @@ components:
 
     TemplateKind:
       type: string
-      description: '`static` = alphabet letter (1 frame x 63 values); `motion` = word (16 frames x 126 values)'
-      enum: [static, motion]
+      description: '`static` = alphabet letter (1 frame x 63 values); `motion` = word of the first engine (16 frames x 126 values); `word` = word of the own model (30 frames x 128 values)'
+      enum: [static, motion, word]
 
     SignTemplate:
       type: object
@@ -685,7 +691,7 @@ components:
 
     ImportTemplatesRequest:
       type: object
-      description: Send `gestures` (with optional `kind` and `source`) or `templates`.
+      description: Send `gestures` (with optional `kind`, default `motion`, and `source`) or `templates`.
       properties:
         kind:
           $ref: '#/components/schemas/TemplateKind'

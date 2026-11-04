@@ -35,7 +35,7 @@ components:
     # Real error format of the gateway and of every service: { success: false, code, message }.
     ApiError:
       type: object
-      description: Error body returned by the gateway and by every service in the Backend (`2993301`)
+      description: Error body returned by the gateway and by every service in the Backend (`a962982`, `main`)
       required: [success, message]
       properties:
         success:
@@ -43,7 +43,7 @@ components:
           enum: [false]
         code:
           type: string
-          description: Stable error code in SCREAMING_SNAKE_CASE (absent in some errors of recognition-service)
+          description: Stable error code in SCREAMING_SNAKE_CASE. Some profile-service answers (403 of achievements and challenges, 400 of activity) send only `success` set to false, without `code`
           example: VALIDATION_ERROR
         message:
           type: string

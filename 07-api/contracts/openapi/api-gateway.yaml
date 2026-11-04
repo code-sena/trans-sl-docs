@@ -3,12 +3,13 @@ info:
   title: API Gateway
   version: 1.0.0
   description: |
-    Single entry point of Traduce Señas (`01-api-gateway`, port 8080, the only port Docker Compose publishes to the host).
+    Single entry point of Traduce Señas (`01-api-gateway`, port 8080). In development (`docker-compose.yml`) it is the only service port
+    published to the host; in production (`docker-compose.prod.yml`) it is not published and Caddy serves 80/443 in front of it.
     The gateway owns no data and no business logic: it applies CORS and rate limits, checks the JWT when one is sent, and forwards
     each request to the service that owns the path prefix. Clients only talk to the gateway; the paths below `/api` are the ones
     documented in each service contract.
 
-    **Based on:** Backend `2993301` (`origin/develop`, 2026-10-16), `services/api-gateway` (`src/route_table.ts`, `src/app.ts`, `src/health.ts`,
+    **Based on:** Backend `a962982` (`main`), `services/api-gateway` (`src/route_table.ts`, `src/app.ts`, `src/health.ts`,
     `src/optional_auth.ts`, `src/cors_options.ts`, `src/proxies.ts`).
 
     ## Routing table
@@ -49,7 +50,7 @@ info:
     `401 UNAUTHORIZED` invalid token, `404 NOT_FOUND` unknown route, `429 RATE_LIMITED`, `502 BAD_GATEWAY` the upstream service does not answer.
 
     ## Pending (in progress by the backend team)
-    The backend team is adding a session version to the token (`401 SESSION_REVOKED`, `503 AUTH_UNAVAILABLE` at the gateway). It is not in Backend `2993301`, so it is not documented as behaviour.
+    The backend team is adding a session version to the token (`401 SESSION_REVOKED`, `503 AUTH_UNAVAILABLE` at the gateway). It is not in Backend `a962982`, so it is not documented as behaviour.
 
 servers:
   - url: https://traducesenas.tech
