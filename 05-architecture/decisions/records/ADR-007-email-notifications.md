@@ -25,7 +25,7 @@ That gap became visible with the administrator reports (weekly summary, monthly 
 
 ## Decision
 
-**We decided:** notifications that must reach a user outside the app are sent by **email**. The `PUSH` channel is dropped. `IN_APP` stays as the notice shown in the bell.
+**We decided:** notifications that must reach a user outside the app are sent by **email**. The `PUSH` channel is dropped: no code creates a `PUSH` notification, although the value stays in the `notification_channel` type and the `CHECK` of `notifications.channel` (`services/profile-service/db/001_profile.sql`). `IN_APP` stays as the notice shown in the bell.
 
 How it works in profile-service:
 
@@ -70,7 +70,7 @@ Without `EMAIL_USER` and `EMAIL_PASS` the worker does not start and the `EMAIL` 
 **Impact on the system:**
 - Affected services: profile-service (worker, `Mailer` port, Nodemailer adapter, migration `008_admin_reports.sql`) and `docker-compose.yml` (`EMAIL_USER`, `EMAIL_PASS` and `APP_URL` for profile-service).
 - Achievement notifications stay `IN_APP` only; sending them by email is a separate decision.
-- Documents that must be updated: `06-data/domains/07-notification.md` (channel and devices). FR-503 and FR-509 (device registration and push device) no longer apply while this ADR is in force.
+- Documents that must be updated: `06-data/domains/07-notification.md` (channel and devices). FR-503 and FR-509 (device registration and push device) are marked Withdrawn in `04-requirements/functional.md` because of this ADR. The `user_devices` table is not implemented.
 
 ---
 
@@ -87,5 +87,5 @@ Without `EMAIL_USER` and `EMAIL_PASS` the worker does not start and the `EMAIL` 
 ## References
 
 - `06-data/domains/07-notification.md` — channels, states and INV-023 to INV-025
-- `04-requirements/functional.md` — FR-501 to FR-509
+- `04-requirements/functional.md` — FR-501 to FR-510 (FR-510 is the admin report delivery)
 - Related to: [ADR-004](ADR-004-microservices-architecture.md) (profile-service owns notifications)
