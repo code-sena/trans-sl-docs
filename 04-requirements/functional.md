@@ -1,8 +1,8 @@
 # Functional Requirements (FR)
 
-> **Status:** 🟡 Living document — v0.2
-> **Last updated:** 2026-10-04
-> **Baseline:** 79 FR across 11 modules (62 Must · 12 Should · 5 Could)
+> **Status:** 🟡 Living document — v0.3
+> **Last updated:** 2026-11-04
+> **Count:** 88 FR across 11 modules (62 Must · 17 Should · 9 Could). 3 are Withdrawn (FR-012, FR-503, FR-509), so 85 are active (59 Must · 17 Should · 9 Could)
 > **Scope:** TraduceSeña 2.0 — React Native / Expo mobile app + Node/Express microservices behind an API gateway (iam, recognition, lexicon, analytics, profile) + PostgreSQL (one database per service) + MongoDB
 
 > Functional requirements define **what the system does**. Each FR is atomic, verifiable
@@ -19,7 +19,7 @@
 
 | Column | Meaning |
 |--------|---------|
-| **FR** | Requirement ID. Series by module (see numbering below) so a module can grow without renumbering |
+| **FR** | Requirement ID. Series by module (see numbering below) so a module can grow without renumbering. A requirement that no longer applies is kept with the status **Withdrawn** and its reason; its ID is never reused |
 | **Requirement** | What the system must do, in testable terms |
 | **SRS** | Originating requirement (RF / ERF) in the SRS. `—` means a cross-cutting technical requirement with no explicit RF (GAP-08) |
 | **HU** | User story that plans it (`user-stories.md`) |
@@ -38,26 +38,28 @@
 | FR-5xx | Notification | `profile-service` | `HU-NOTIF` |
 | FR-6xx | AI | `recognition-service` (PostgreSQL + MongoDB) | `HU-AI` |
 | FR-7xx | Usage | `analytics-service` | `HU-USG` |
-| FR-8xx | Gamification ⚠️ conditional on RF8 | `profile-service` | `HU-GAM` |
+| FR-8xx | Gamification ⚠️ implemented; RF8 not yet in the SRS (GAP-01) | `profile-service` | `HU-GAM` |
 | FR-9xx | Audit / Configuration | `iam-service` | `HU-AUD`, `HU-CFG` |
 | FR-95x | Navigation | Mobile app (UI); events go to `analytics-service` | `HU-NAV` |
 
 ### Summary by module
 
-| Module | Owning service | FRs | Must | Should | Could |
-|--------|----------------|-----|------|--------|-------|
-| Identity | iam-service | 15 | 13 | 2 | 0 |
-| Authorization | iam-service | 4 | 4 | 0 | 0 |
-| Profile | profile-service | 6 | 3 | 3 | 0 |
-| Lexicon | lexicon-service | 10 | 10 | 0 | 0 |
-| Translation | recognition-service | 8 | 6 | 2 | 0 |
-| Notification | profile-service | 9 | 7 | 2 | 0 |
-| AI | recognition-service | 7 | 7 | 0 | 0 |
-| Usage | analytics-service | 6 | 6 | 0 | 0 |
-| Gamification ⚠️ | profile-service | 5 | 0 | 0 | 5 |
-| Audit / Configuration | iam-service | 7 | 4 | 3 | 0 |
-| Navigation | mobile app (UI) | 2 | 2 | 0 | 0 |
-| **Total** | | **79** | **62** | **12** | **5** |
+| Module | Owning service | FRs | Must | Should | Could | Withdrawn |
+|--------|----------------|-----|------|--------|-------|-----------|
+| Identity | iam-service | 15 | 13 | 2 | 0 | 1 (FR-012) |
+| Authorization | iam-service | 4 | 4 | 0 | 0 | 0 |
+| Profile | profile-service | 6 | 3 | 3 | 0 | 0 |
+| Lexicon | lexicon-service | 10 | 10 | 0 | 0 | 0 |
+| Translation | recognition-service | 11 | 6 | 5 | 0 | 0 |
+| Notification | profile-service | 10 | 7 | 3 | 0 | 2 (FR-503, FR-509) |
+| AI | recognition-service | 7 | 7 | 0 | 0 | 0 |
+| Usage | analytics-service | 7 | 6 | 1 | 0 | 0 |
+| Gamification ⚠️ | profile-service | 9 | 0 | 0 | 9 | 0 |
+| Audit / Configuration | iam-service | 7 | 4 | 3 | 0 | 0 |
+| Navigation | mobile app (UI) | 2 | 2 | 0 | 0 | 0 |
+| **Total** | | **88** | **62** | **17** | **9** | **3** |
+
+> The previous summary (79 FR, 62 · 12 · 5) did not match the rows: Translation had 10 rows, Notification 10, Usage 7 and Gamification 9. The numbers above are counted from the rows.
 
 ---
 
@@ -65,7 +67,7 @@
 
 | FR | Requirement | SRS | HU | Priority | Tables |
 |----|-------------|-----|----|----------|--------|
-| FR-001 | The system must register a user with full name, birth date, username, email and a password that satisfies the active policy. The account is created `INACTIVE` until the email is verified | RF1, ERF1.1 | HU-IAM-001 | M | `users` |
+| FR-001 | The system must register a user with full name, email and a password that satisfies the active policy. The account is created `INACTIVE` until the email is verified | RF1, ERF1.1 | HU-IAM-001 | M | `users` |
 | FR-002 | The system must refuse registration unless the terms are accepted, and must store the acceptance timestamp and the terms version (INV-002) | ERF1.1 | HU-IAM-001 | M | `users` |
 | FR-003 | The system must verify the email with a 6-digit code sent to the address | RF1 | HU-IAM-002 | M | `user_tokens` |
 | FR-004 | Verification and recovery codes must be stored only as a hash, expire, be single-use and count failed attempts (INV-015) | RF1 | HU-IAM-002 | M | `user_tokens` |
@@ -76,9 +78,9 @@
 | FR-009 | A user may link several external providers, but one `(provider, external id)` pair belongs to a single account (INV-004) | RF1, ERF1.2 | HU-IAM-005 | M | `user_auth_providers` |
 | FR-010 | The system must let a user recover a forgotten password through a single-use, expiring token | RF1 | HU-IAM-006 | M | `user_tokens` |
 | FR-011 | The system must open a session on successful sign-in | RF1 | HU-IAM-007 | M | `user_sessions` |
-| FR-012 | The system must rotate refresh tokens on every use and must make reuse of a spent token detectable | RF1 | HU-IAM-007 | M | `refresh_tokens` |
+| FR-012 | **Withdrawn.** Former requirement: rotate refresh tokens on every use and detect reuse of a spent token. Reason: no refresh token exists. The session is a single JWT that lasts one day (`JWT_EXPIRES_IN`, default `1d`; ADR-002 does not define refresh) | RF1 | HU-IAM-007 | M | — |
 | FR-013 | The system must close the session on logout and record its duration | RF1 | HU-IAM-008 | M | `user_sessions` |
-| FR-014 | The system must let a user delete their account, anonymizing the row instead of removing it (Law 1581 of 2012) | RF1, RF5 | HU-IAM-009 | S | `users` |
+| FR-014 | The system must let a user delete their account, confirmed with a code sent to their email. The account row is deleted, and an `iam.UserDeleted` event makes the other services erase or unlink their copies (Law 1581 of 2012) | RF1, RF5 | HU-IAM-009 | S | `users`, `outbox_events` |
 | FR-015 | An administrator must be able to list, view, block, restore and deactivate user accounts | RF1, RF6 | HU-IAM-010 | S | `users` |
 
 ---
@@ -138,6 +140,7 @@
 | FR-408 | A model that has produced translations must not be deletable (INV-022) | RF3 | HU-TRA-003 | M | `ai_models` |
 | FR-409 | The history must be grouped by session, showing one card per session | RF3, RF5 | HU-TRA-005 | S | `translations` |
 | FR-410 | Translations must be deleted automatically 30 days after they are created | RF5 | HU-TRA-005 | S | `translations` |
+| FR-411 | An administrator must be able to add a word without retraining the model. The word is recorded as a sign template of kind `word` (30 frames of 128 values) and, on the device, matched with DTW before the model; a match within the distance threshold is accepted ([ADR-011](../05-architecture/decisions/records/ADR-011-word-templates-dtw.md)) | RF3 | — (no HU yet) | S | `sign_templates` |
 
 ---
 
@@ -147,14 +150,14 @@
 |----|-------------|-----|----|----------|--------|
 | FR-501 | An administrator must be able to manage the catalog of notification types and activate or withdraw each one | RF4 | HU-NOTIF-001 | M | `notification_types` |
 | FR-502 | Every notification must be delivered through a visual channel only (`PUSH`, `IN_APP`, `EMAIL`). No audio-only channel may exist (INV-023) ⭐ | RF4, ERF4.1 | HU-NOTIF-002 | M | `notifications` |
-| FR-503 | The system must register the user's devices for push delivery and deactivate a device whose token the provider rejects | RF4 | HU-NOTIF-003 | M | `user_devices` |
+| FR-503 | **Withdrawn** ([ADR-007](../05-architecture/decisions/records/ADR-007-email-notifications.md)). Former requirement: register the user's devices for push delivery and deactivate a device whose token the provider rejects. Reason: push is replaced by email; no device table exists | RF4 | HU-NOTIF-003 | M | — |
 | FR-504 | The system must support scheduled notifications | RF4 | HU-NOTIF-004 | S | `notifications` |
 | FR-505 | The system must distinguish `FAILED` deliveries from `PENDING` ones | RF4 | HU-NOTIF-005 | M | `notifications` |
 | FR-506 | A notification may reference the record that caused it, by type and id, without a foreign key | RF4 | HU-NOTIF-006 | S | `notifications` |
 | FR-507 | The user must be able to mark a notification as read | RF4 | HU-NOTIF-002 | M | `notifications` |
 | FR-508 | With the master switch off, the system must create no new notification through any channel; those already received stay visible (INV-025) | RF4 | HU-PROF-005 | M | `user_preferences` |
-| FR-509 | A notification on the `PUSH` channel must have a target device, and must not have one on other channels (INV-024) | RF4 | HU-NOTIF-003 | M | `user_devices`, `notifications` |
-| FR-510 | Administrators with notifications enabled must receive the weekly and monthly usage reports as an in-app notification and by email, with a button to the admin panel ([ADR-007](../05-architecture/decisions/records/ADR-007-email-notifications.md)) | RF4 | HU-NOTIF-002 | S | `notifications` |
+| FR-509 | **Withdrawn** ([ADR-007](../05-architecture/decisions/records/ADR-007-email-notifications.md)). Former requirement: a `PUSH` notification must have a target device, and no other channel may have one (INV-024). Reason: no `PUSH` notification is created | RF4 | HU-NOTIF-003 | M | — |
+| FR-510 | Administrators with notifications enabled must receive the weekly and monthly usage reports and the weekly model reminder as an in-app notification and by email, with a button to the admin panel ([ADR-007](../05-architecture/decisions/records/ADR-007-email-notifications.md)) | RF4 | HU-NOTIF-002 | S | `notifications`, `admin_report_runs` |
 
 ---
 
@@ -182,15 +185,16 @@
 | FR-704 | An administrator must be able to see sessions and their average duration | RF6 | HU-USG-003 | M | `user_sessions` |
 | FR-705 | Usage events must survive account deletion (`user_id` becomes null) | RF6 | HU-USG-004 | M | `usage_events` |
 | FR-706 | Statistics must be accessible only with the required permission, and always aggregated (INV-012) | RF6 | HU-AUTHZ-002 | M | — |
-| FR-707 | Each web screen must have its own URL, so it can be opened, reloaded and shared directly | RF2 | — | S | — |
+| FR-707 | Each web screen must have its own URL, so it can be opened, reloaded and shared directly | RF2 | HU-NAV-001 | S | — |
 
 ---
 
 ## 9. Gamification (FR-8xx) ⚠️
 
-> **Conditional on RF8, which is not in the SRS** (GAP-01). Nothing in this module is built
-> until the team and the instructor decide. If RF8 is rejected, this series is removed
-> together with its tables and EP-009. HUs are created `⏸ Blocked`.
+> **Implemented in profile-service, but RF8 is not in the SRS** (GAP-01). The achievements (FR-801 … FR-805)
+> and the daily challenges and medals (FR-806 … FR-809) exist in the code. The traceability review still
+> needs RF8 added to the SRS, or the module removed together with its tables and code.
+> The HUs (HU-GAM-001 … HU-GAM-006) are in `user-stories.md`.
 
 | FR | Requirement | SRS | HU | Priority | Tables |
 |----|-------------|-----|----|----------|--------|
@@ -249,3 +253,4 @@
 |---------|------|--------|--------|
 | v0.1 | 2026-09-08 | Catalog created. The README promised it and it did not exist. Priorities derived from the planning HU of each FR. | Juan Mauricio Suaza Solórzano |
 | v0.2 | 2026-10-04 | Scope updated to microservices; owning service added per module (numbering and summary tables). | Documentation |
+| v0.3 | 2026-11-04 | Checked against the code. Withdrawn: FR-012 (no refresh token), FR-503 and FR-509 (push replaced by email, ADR-007). FR-001 without birth date and username; FR-014 is a hard delete with `iam.UserDeleted`; FR-510 covers the model reminder; FR-411 added (word templates, ADR-011); FR-707 linked to HU-NAV-001; gamification marked as implemented. Summary table recounted (88 rows, not 79). | Documentation |

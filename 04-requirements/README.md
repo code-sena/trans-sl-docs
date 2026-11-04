@@ -33,24 +33,25 @@ carries a change log per file so the work is visible as it evolves.
 
 | File | State | Content |
 |------|-------|---------|
-| `functional.md` ⭐ | ✅ v0.1 | 79 functional requirements across 11 modules |
-| `non-functional.md` ⭐ | ✅ v0.1 | 10 NFRs with real metrics for this project |
-| `user-stories.md` | ✅ v0.1 | 11 epics, 53 user stories with Gherkin criteria |
-| `traceability-matrix.md` ⭐ | ✅ v0.1 | SRS→FR→HU→test→module→tables + 10 gaps |
+| `functional.md` ⭐ | ✅ v0.3 | 88 functional requirements across 11 modules; 3 withdrawn, 85 active |
+| `non-functional.md` ⭐ | ✅ v0.2 | 10 NFRs with real metrics for this project |
+| `user-stories.md` | ✅ v0.2 | 11 epics, 55 user stories with Gherkin criteria |
+| `traceability-matrix.md` ⭐ | ✅ v0.5 | SRS→FR→HU→test→module→tables + 14 gaps |
 | `_template-hu.md` | ✅ | Template for a new user story |
 
-### Baseline numbers
+### Counts (checked on 2026-11-04)
 
 | Metric | Value |
 |--------|-------|
-| Functional requirements | 79 (62 Must · 12 Should · 5 Could) |
-| Non-functional requirements | 10 |
-| User stories | 53 across 11 epics |
-| Total story points | 226 |
+| Functional requirements | 88 rows: 62 Must · 17 Should · 9 Could. Withdrawn: FR-012, FR-503, FR-509 (Must). Active: 85 |
+| Non-functional requirements | 10 (NFR-001 … NFR-010) |
+| User stories | 55 across 11 epics (the 53 of the baseline plus HU-GAM-005 and HU-GAM-006) |
+| Total story points | 226 at baseline (HU-GAM-005 and HU-GAM-006 have no points) |
 | Planned sprints | 7 |
-| Tables in the model | 28 relational + 1 MongoDB collection |
-| Requirement coverage | 17/17 SRS requirements have at least one FR |
-| Open gaps | 10 (2 need a decision) |
+| Tables in the reference model (DBML) | 32: 31 PostgreSQL + 1 MongoDB collection |
+| Tables used by the code | 33 PostgreSQL + 1 MongoDB collection; 3 legacy tables in iam. See `06-data/models.md` § 0 |
+| Requirement coverage | 15/15 SRS requirements (RF1–RF7 and 8 ERF) have at least one FR; RF8 is not in the SRS |
+| Open gaps | 14 (2 need a decision: GAP-01, GAP-06) |
 
 ---
 
@@ -117,8 +118,8 @@ The backlog: 11 epics, 53 stories, with acceptance criteria in Gherkin.
 hearing learner, administrator, LSC linguist.
 
 Each story carries story points, MoSCoW priority, target sprint, dependencies
-and module. EP-009 (gamification) is created `⏸ Blocked` pending the RF8
-decision, so nothing gets built before the scope question is settled.
+and module. EP-009 (gamification) is implemented in profile-service; RF8 still has to be added to the SRS
+(GAP-01), or the module removed with its code.
 
 ### `traceability-matrix.md` ⭐
 
@@ -144,14 +145,14 @@ project: the four real roles and the twelve module abbreviations.
 
 | # | Decision | Where | Impact |
 |---|----------|-------|--------|
-| 1 | **Does RF8 (gamification) enter the SRS?** The `achievements` and `user_achievements` tables exist with no requirement behind them. Either RF8 is added, or both tables and the FR-800 series are removed. The RF8 draft and its four user stories are already written and blocked, ready either way. | `traceability-matrix.md` § 6, GAP-01 | 2 tables, 5 FRs, 4 HUs, 13 points |
+| 1 | **Does RF8 (gamification) enter the SRS?** The module is already implemented in profile-service (`achievements`, `user_achievements`, and the challenge tables; FR-801 … FR-809; HU-GAM-001 … 006). Either RF8 is added to the SRS, or the module is removed together with its code. | `traceability-matrix.md` § 6, GAP-01 | 5 tables, 9 FRs, 6 HUs |
 | 2 | **Is `translations.model_id` mandatory?** It is nullable today, but FR-403 requires every translation to record the model that produced it. A nullable field means a translation can exist with no traceability, which defeats the field's stated purpose. | `traceability-matrix.md` § 6, GAP-06 | Traceability of the AI model |
 
 ---
 
 ## Immediate work, no decision needed
 
-Three DBML corrections that close the traceability without changing any design decision:
+Three DBML corrections, already done in model v9 (kept for the record):
 
 - **GAP-02** — remove `sign_translations` (it duplicates `sign_localizations`)
 - **GAP-03** — the traceability comment cites `password_reset_tokens`, a table that does not exist; the real one is `user_tokens`
@@ -159,7 +160,7 @@ Three DBML corrections that close the traceability without changing any design d
 
 And one piece of pending work:
 
-- **GAP-05** — write `migrations/002_constraints.sql`. Six constraints are declared in a DBML comment and four more are missing. A constraint that lives only in a comment is a comment: the database will accept `confidence = 47.3` until the DDL says otherwise.
+- **GAP-05** — write the constraints migration (`06-data/constraints.md` holds the content; no file of that name exists in the backend). Six constraints are declared in a DBML comment and four more are missing. A constraint that lives only in a comment is a comment: the database will accept `confidence = 47.3` until the DDL says otherwise.
 
 ---
 
@@ -222,3 +223,4 @@ And one piece of pending work:
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
 | v0.1 | 2026-09-08 | Baseline. Empty templates replaced with real content reconstructed from the v8 data model. `functional.md` created (the README required it and it did not exist). 10 gaps recorded in the traceability matrix, 2 requiring a decision. | Juan Mauricio Suaza Solórzano |
+| v0.2 | 2026-11-04 | Counts recomputed from the files (88 FR, 55 HU, 32 tables). Gamification described as implemented; the RF8 decision is still open. Decisions table and gaps updated. | Documentation |

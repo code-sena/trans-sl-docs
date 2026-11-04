@@ -1,7 +1,7 @@
 # Non-Functional Requirements (NFR)
 
-> **Status:** 🟡 Living document — v0.2
-> **Last updated:** 2026-09-08
+> **Status:** 🟡 Living document — v0.3
+> **Last updated:** 2026-11-04
 > **Scope:** TraduceSeña 2.0 — React Native / Expo mobile app + Node/Express microservices (iam, recognition, lexicon, analytics, profile + API Gateway) + PostgreSQL per service + MongoDB + RabbitMQ
 
 > NFRs define the **qualities of the system** — not what it does but how well it does it.
@@ -127,10 +127,11 @@ stability is prioritized.
 > If offline translation ever enters scope, it is not one more feature: it decides the inference
 > question by itself, and `02-domain/domain-map.md` §6 has to be revisited before any code is written.
 
-**Health checks:**
+**Health checks (implemented):**
 
-- `GET /health` — Liveness: responds 200 if the process is alive
-- `GET /health/ready` — Readiness: responds 200 only if it can serve traffic (PostgreSQL connected, MongoDB connected, active model resolvable)
+- `GET /health` on every service, and `GET /api/health` on the API Gateway. Each answers `200` while the process is alive. The body is `status: "ok"`, or `status: "degraded"` with an `issues` list (for example a stuck outbox or messages in a dead-letter queue). The gateway's endpoints also aggregate the `/health` of each service.
+- What is checked: iam-service, the outbox backlog; recognition-service and analytics-service, dead-letter queues and consumer retries; profile-service, dead-letter queues; lexicon-service, nothing (always `ok`).
+- What is **not** checked: PostgreSQL, MongoDB and the active model. There is no `/health/ready` endpoint.
 
 ---
 
@@ -158,8 +159,7 @@ asynchronous events over RabbitMQ absorb spikes between services.
 ### Authentication and authorization
 
 - All private endpoints require a valid JWT in the `Authorization: Bearer <token>` header
-- JWT access tokens expire in **1 hour**
-- Refresh tokens valid for **7 days**, with **rotation**: using one revokes it and links it to its replacement (`refresh_tokens.replaced_by_token_id`), so reuse of a spent token is detectable and triggers revocation of the whole session
+- JWT access tokens expire in **1 day** (`JWT_EXPIRES_IN`, default `1d`, `packages/shared/src/config/load_config.ts`). There is no refresh token: a session ends when the JWT expires or the client drops it. *Current implementation.* The earlier target (1-hour JWT, refresh tokens valid 7 days with rotation and reuse detection, FR-012) is **withdrawn**; see `functional.md`.
 - RBAC: roles and permissions per `roles` / `permissions` / `user_roles` / `role_permissions`
 
 ### Brute force protection
@@ -171,7 +171,7 @@ asynchronous events over RabbitMQ absorb spikes between services.
 
 ### Sensitive data
 
-- Passwords: hashed with **bcrypt (cost factor ≥ 12)** or Argon2id — never reversible encryption
+- Passwords: hashed with **bcrypt (cost factor ≥ 12)** or Argon2id — never reversible encryption. *Current implementation:* bcrypt with cost factor 10 (`services/iam-service/src/auth/adapters/outbound/security/password.ts`); the target of 12 is not met yet.
 - Verification codes and reset tokens: stored **only as hashes** (`user_tokens.token_hash`), never in clear text; single-use, with an expiry and a failed-attempt counter
 - Push tokens: treated as credentials, revocable per device
 - PII (personal data): encrypted at rest
@@ -194,8 +194,8 @@ Tools: SAST (SonarQube), dependency scanning (OWASP Dependency-Check), DAST in s
 |-------------|---------------------|
 | Prior, express and informed authorization | `users.terms_accepted_at` + `users.terms_version` — mandatory to create the account (FR-002) |
 | Authorization for biometric-adjacent data | `gesture_samples.consent_granted_at` + `consent_terms_version` — mandatory per sample (FR-602) |
-| Demonstrable consent | Both are `NOT NULL`: a record without proof of consent cannot physically exist in the database |
-| Right of deletion | Account deletion anonymizes the row (FR-014); gesture samples of a withdrawn collaborator are removable by capture session (FR-603) |
+| Demonstrable consent | Reference model: both are `NOT NULL`, so a record without proof of consent cannot exist. *Current implementation:* the registration request requires both, but `users.terms_version` allows `NULL` (migration 013), so the database does not enforce it for accounts created before that migration or by social login |
+| Right of deletion | Account deletion deletes the `users` row and emits `iam.UserDeleted`; each service erases or unlinks its own data (FR-014). *Current implementation: no anonymized row is kept.* Gesture samples of a withdrawn collaborator are removable by capture session (FR-603) |
 | Purpose limitation | Samples are used only for LSC model training; this purpose is stated in the consent document |
 | Data controller | SENA — ADSO program. Named in the privacy notice |
 
@@ -210,19 +210,19 @@ Tools: SAST (SonarQube), dependency scanning (OWASP Dependency-Check), DAST in s
 
 | Pillar | Requirement | Tool |
 |--------|-------------|------|
-| Logs | Structured JSON format + Correlation ID | Pino / Winston |
-| Application error persistence | Every unhandled exception lands in `error_logs` classified by `error_type` | Express error-handling middleware |
-| Change audit | Every change to a sensitive entity lands in `audit_logs` with before and after values | Repository-level interceptor / Prisma or TypeORM middleware |
-| Metrics | RED (Rate, Errors, Duration) per endpoint | prom-client + Prometheus |
-| Dashboards | Latency, error rate, active sessions, translations per day | Grafana |
-| Alerts | Alert within 5 min when an SLI violates its SLO | Alertmanager |
-| Mobile crashes | Crash-free sessions ≥ 99% | Firebase Crashlytics |
+| Logs | Structured JSON format + Correlation ID | Pino / Winston — *Planned, not implemented* (services log with `console`) |
+| Application error persistence | Every unhandled exception lands in `error_logs` classified by `error_type` | Express error-handling middleware — the middleware exists, but *Planned, not implemented* for persistence (`error_logs` does not exist) |
+| Change audit | Every change to a sensitive entity lands in `audit_logs` with before and after values | Repository-level interceptor / Prisma or TypeORM middleware — *Planned, not implemented* (`audit_logs` does not exist) |
+| Metrics | RED (Rate, Errors, Duration) per endpoint | prom-client + Prometheus — *Planned, not implemented* |
+| Dashboards | Latency, error rate, active sessions, translations per day | Grafana — *Planned, not implemented* |
+| Alerts | Alert within 5 min when an SLI violates its SLO | Alertmanager — *Planned, not implemented* |
+| Mobile crashes | Crash-free sessions ≥ 99% | Firebase Crashlytics — *Planned, not implemented* (no Firebase in the backend code reviewed) |
 
-**Correlation ID:** every external request generates a UUID `correlationId`
+**Correlation ID:** *Planned, not implemented.* The goal is that every external request generates a UUID `correlationId`
 propagated across all logs of that transaction and returned in the response
-header, so a user-reported failure can be traced to its exact log line.
+header, so a user-reported failure can be traced to its exact log line. Today no correlation ID is generated or returned.
 
-**Domain metrics worth watching** (beyond the technical ones):
+**Domain metrics worth watching** (beyond the technical ones; *Planned, not implemented*):
 
 - Ratio of `TRANSLATION_FAILED` to `TRANSLATION_COMPLETED` — the health of the AI model in the real world
 - Average confidence of persisted translations — silent model degradation
@@ -250,7 +250,7 @@ header, so a user-reported failure can be traced to its exact log line.
 - PostgreSQL 15+ and MongoDB 6+ as declared dependencies, not assumptions
 - No service depends on the host operating system
 - Environment variables are the only source of environment-specific configuration
-- Mobile app: Android 8.0 (API 26) minimum, iOS 14 minimum
+- Mobile app: Android 7.0 (API 24) minimum, the React Native 0.86 default, since the app does not set its own; iOS minimum not set by the app
 
 ---
 
@@ -276,7 +276,7 @@ header, so a user-reported failure can be traced to its exact log line.
 | Loss of the published model artifact | < 15 min (republish a previous version from `ai_models`) | 0 — versions are preserved |
 | Full infrastructure loss | < 8 h (redeploy from repository + restore backup) | < 24 h |
 
-**Backups:** daily automated dump of PostgreSQL and MongoDB, 30-day retention,
+**Backups:** *Target:* daily automated dump of PostgreSQL and MongoDB, 30-day retention. *Current state:* manual dumps per database ([ADR-008](../05-architecture/decisions/records/ADR-008-database-per-service.md)),
 with a **quarterly restore drill** — a backup nobody has ever restored is a
 hypothesis, not a backup.
 
@@ -304,6 +304,7 @@ hypothesis, not a backup.
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
 | v0.1 | 2026-09-08 | Generic template replaced with real project values. Accessibility promoted to NFR-001. Law 1581/2012 compliance added as a first-class requirement. Availability SLO lowered from 99.9% to 99.5% to match the actual infrastructure. | Juan Mauricio Suaza Solórzano |
+| v0.3 | 2026-11-04 | NFR-005: JWT lifetime and refresh tokens match the code (1 day, no refresh); bcrypt cost recorded as 10 with the 12 target kept. Checked against backend main v1.4.0. | Documentation |
 | v0.2 | 2026-09-08 | Corrected against `02-domain/`: the stack is Node/Express + React Native, not Spring Boot. On-device inference and offline translation were stated as facts; they are an open decision and an out-of-scope item respectively, and are now marked as such. | Juan Mauricio Suaza Solórzano |
 
 ---

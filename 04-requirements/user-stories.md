@@ -1,7 +1,7 @@
 # User Stories — Backlog
 
 > **Status:** 🟡 Living document — v0.2
-> **Last updated:** 2026-09-08
+> **Last updated:** 2026-11-04
 > **ID convention:** `HU-[MODULE]-[NNN]` — the module matches a `TableGroup` in the data model
 > **Modules:** IAM (Identity) · AUTHZ (Authorization) · PROF (Profile) · LEX (Lexicon) · TRA (Translation) · NOTIF (Notification) · AI · USG (Usage) · GAM (Gamification) · AUD (Audit) · CFG (Configuration) · NAV (Navigation)
 
@@ -17,8 +17,8 @@
 | Cut 4 — Optional | Sprint 7 | 8 | 0 | 0 | 0 |
 | **Total** | | **53** | **22** | **0** | **0** |
 
-> Numbers reflect the state of the backlog at baseline. They are updated at each
-> Sprint Planning.
+> Numbers reflect the state of the backlog at baseline (53 HUs, 2026-09-08). They are updated at each
+> Sprint Planning. The catalog now has **55 HUs**: HU-GAM-005 and HU-GAM-006 were added later and are Done.
 
 ---
 
@@ -47,7 +47,7 @@ Per the rule "do not write 'as a user'", these are the four concrete roles in th
 | EP-006 | Visual notifications | Type catalog, devices, delivery, scheduling, read state | 6 |
 | EP-007 | AI model | Sample capture with consent, validation, training, publication | 5 |
 | EP-008 | Usage statistics | Event recording and the administration dashboard | 4 |
-| EP-009 | Gamification ⚠️ | Achievements and progress — **pending RF8 approval** | 4 |
+| EP-009 | Gamification ⚠️ | Achievements, progress, daily challenges and medals — implemented in profile-service; RF8 still pending in the SRS | 6 |
 | EP-010 | Audit and configuration | Change trail, error log, password policy | 3 |
 | EP-011 | Navigation | Movement between the application's sections | 1 |
 
@@ -335,7 +335,7 @@ Scenario 3: Reused link
 
 ### HU-IAM-007 — Session with refresh token rotation {#HU-IAM-007}
 
-**Epic:** EP-001 · **FR:** FR-011, FR-012
+**Epic:** EP-001 · **FR:** FR-011 (FR-012 Withdrawn: no refresh token)
 
 > **As** a user of the mobile app
 > **I want** my session to stay open without asking me for the password every hour
@@ -406,12 +406,12 @@ Scenario 1: Session closed
 > **so that** my information stops being associated with me
 
 ```gherkin
-Scenario 1: Deletion with anonymization
+Scenario 1: Deletion with erasure
   Given I have an active account with translation history
-  When  I confirm the deletion of my account
-  Then  my row is marked as deleted and my personal data is anonymized
-  And   my sessions and usage events survive with no user identity
-  And   my audit trail survives with no user identity
+  When  I confirm the deletion of my account with the code sent to my email
+  Then  my account row is deleted and the other services erase or unlink my data
+  And   my usage events survive with no user identity
+  And   my audit trail survives with no user identity     # FR-902, not built yet
   And   I can no longer sign in with those credentials
 ```
 
@@ -420,7 +420,7 @@ Scenario 1: Deletion with anonymization
 | Story Points | 5 |
 | Priority | Should Have |
 | Target sprint | Sprint 5 |
-| Status | Backlog |
+| Status | Done (iam-service, with erasure in recognition, analytics and profile). Audit trail pending (FR-902) |
 | Dependencies | HU-USG-004 |
 | Module | IAM |
 
@@ -1037,7 +1037,7 @@ Scenario 2: Confidence below the threshold
 
 ### HU-TRA-005 — Translation history {#HU-TRA-005}
 
-**Epic:** EP-005 · **FR:** FR-406
+**Epic:** EP-005 · **FR:** FR-406, FR-409, FR-410
 
 > **As** a frequent user
 > **I want** to consult my previous translations
@@ -1120,7 +1120,7 @@ Scenario 1: Type withdrawn
 
 ### HU-NOTIF-002 — Receive and read visual notifications {#HU-NOTIF-002}
 
-**Epic:** EP-006 · **FR:** FR-502, FR-507 · ⭐ **Accessibility-critical**
+**Epic:** EP-006 · **FR:** FR-502, FR-507, FR-510 · ⭐ **Accessibility-critical**
 
 > **As** a deaf or hard-of-hearing user
 > **I want** every alert to reach me visually
@@ -1157,7 +1157,7 @@ Scenario 3: No audio-only channel exists
 
 ### HU-NOTIF-003 — Device registration for push {#HU-NOTIF-003}
 
-**Epic:** EP-006 · **FR:** FR-503, FR-509
+**Epic:** EP-006 · **FR:** FR-503, FR-509 (both **Withdrawn** by [ADR-007](../05-architecture/decisions/records/ADR-007-email-notifications.md): the reports go by email, so no device is registered)
 
 > **As** a user with more than one device
 > **I want** notifications to reach every device where I signed in
@@ -1184,7 +1184,7 @@ Scenario 3: Push requires a device
 | Story Points | 5 |
 | Priority | Must Have |
 | Target sprint | Sprint 5 |
-| Status | Backlog |
+| Status | Withdrawn (ADR-007) |
 | Module | NOTIF |
 
 ---
@@ -1547,9 +1547,9 @@ Scenario 1: Deletion without data loss
 
 # EP-009 — Gamification ⚠️ pending RF8 approval
 
-> ⚠️ **These four stories only enter the backlog if RF8 is approved and added to
-> the SRS.** If it is not approved, this epic and the `achievements` /
-> `user_achievements` tables are removed. See `traceability-matrix.md` § 6, GAP-01.
+> ⚠️ **These stories are implemented in profile-service, but RF8 is not in the SRS yet.** If the team
+> rejects RF8, this epic, the `achievements` / `user_achievements` and challenge tables and their code are
+> removed together. See `traceability-matrix.md` § 6, GAP-01.
 
 ### HU-GAM-001 — Achievement catalog {#HU-GAM-001}
 
@@ -1570,7 +1570,7 @@ Scenario 1: Achievement created
 | Story Points | 3 |
 | Priority | Could Have |
 | Target sprint | Sprint 7 |
-| Status | Blocked — pending RF8 |
+| Status | Done (profile-service) |
 | Module | GAM |
 
 ---
@@ -1597,7 +1597,7 @@ Scenario 1: Achievement unlocked
 | Story Points | 5 |
 | Priority | Could Have |
 | Target sprint | Sprint 7 |
-| Status | Blocked — pending RF8 |
+| Status | Done (profile-service) |
 | Dependencies | HU-GAM-001, HU-USG-001 |
 | Module | GAM |
 
@@ -1605,7 +1605,7 @@ Scenario 1: Achievement unlocked
 
 ### HU-GAM-003 — Achievement notification {#HU-GAM-003}
 
-**Epic:** EP-009 · **FR:** FR-804
+**Epic:** EP-009 · **FR:** FR-804, FR-809
 
 > **As** a learner
 > **I want** to be told visually the moment I unlock an achievement
@@ -1623,7 +1623,7 @@ Scenario 1: Visual alert on unlock
 | Story Points | 2 |
 | Priority | Could Have |
 | Target sprint | Sprint 7 |
-| Status | Blocked — pending RF8 |
+| Status | Done (profile-service, app) |
 | Dependencies | HU-GAM-002, HU-NOTIF-006 |
 | Module | GAM |
 
@@ -1649,7 +1649,7 @@ Scenario 1: Achievement list
 | Story Points | 3 |
 | Priority | Could Have |
 | Target sprint | Sprint 7 |
-| Status | Blocked — pending RF8 |
+| Status | Done (profile-service, app) |
 | Dependencies | HU-GAM-002 |
 | Module | GAM |
 
@@ -1804,7 +1804,7 @@ Scenario 2: Only one active policy
 
 ### HU-NAV-001 — Navigation between sections {#HU-NAV-001}
 
-**Epic:** EP-011 · **FR:** FR-951, FR-952
+**Epic:** EP-011 · **FR:** FR-707, FR-951, FR-952
 
 > **As** a user of the app
 > **I want** to move between the sections from anywhere

@@ -1,8 +1,8 @@
 # Traceability Matrix
 
-> **Status:** 🟡 Living document — v0.4
-> **Last updated:** 2026-10-24
-> **Baseline:** 79 FR · 10 NFR · 53 HU · 29 tables (28 PostgreSQL + 1 MongoDB collection)
+> **Status:** 🟡 Living document — v0.5
+> **Last updated:** 2026-11-04
+> **Baseline:** 88 FR (85 active, 3 Withdrawn) · 10 NFR · 55 HU · 32 modelled tables (31 PostgreSQL + 1 MongoDB collection); the migrations hold 33 live PostgreSQL tables
 
 > Traceability connects every line of code to its business justification.
 > It answers: "Why does this function exist?" and "Which HU covers this part of the system?"
@@ -30,7 +30,7 @@ If an FR has no table:     either a requirement nobody can persist, or an explic
 | 🟡 In progress | In development in the current sprint |
 | 🔴 Pending | In the backlog, not started |
 | ⏸ Blocked | Has an external blocker |
-| ❌ Cancelled | Removed from scope |
+| ❌ Cancelled / Withdrawn | Removed from scope. A withdrawn FR keeps its ID and states the reason |
 | ❔ Not verified | Not checked against the code yet |
 
 > Since v0.4 (2026-10-24) § 2 shows the real state of each FR, checked against the code; it advances
@@ -67,12 +67,12 @@ develops it, and does every FR trace back to an SRS requirement?
 |-----|-------------|---------------------|--------|
 | RF1 | User management | FR-001 … FR-015 | ✅ Covered |
 | RF2 | Navigation | FR-951, FR-952 | ✅ Covered |
-| RF3 | Sign→text/audio translation | FR-401 … FR-408, FR-601 … FR-607 | ✅ Covered |
-| RF4 | Notifications | FR-501 … FR-509, FR-205 | ✅ Covered |
+| RF3 | Sign→text/audio translation | FR-401 … FR-408, FR-411, FR-601 … FR-607 | ✅ Covered |
+| RF4 | Notifications | FR-501 … FR-510, FR-205 (FR-503 and FR-509 Withdrawn) | ✅ Covered |
 | RF5 | Profile management | FR-201, FR-202, FR-406, FR-407, FR-014 | ✅ Covered |
 | RF6 | Statistics (admin) | FR-701 … FR-706, FR-101 … FR-104, FR-015 | ✅ Covered |
 | RF7 | Sign alphabet | FR-301 … FR-310 | ✅ Covered |
-| **RF8** | **Gamification** | FR-801 … FR-805 | ⚠️ **Proposed, not in the SRS** |
+| **RF8** | **Gamification** | FR-801 … FR-809 | ⚠️ **Implemented, but not in the SRS** (GAP-01) |
 | ERF1.1 | Registration data + terms | FR-001, FR-002, FR-201 | ✅ Covered |
 | ERF1.2 | Google / Facebook login | FR-008, FR-009 | ✅ Covered |
 | ERF3.2 | Audio output | FR-402 | ✅ Covered |
@@ -98,7 +98,7 @@ SRS) + **4 cross-cutting** with no explicit RF.
 
 ## 2. FR → HU → Test → Service matrix
 
-> **Status checked against the code on 2026-10-24** (Backend `develop` v1.2.0, Frontend `develop`). The
+> **Status checked against the code on 2026-11-04** (Backend `main` v1.4.0, Frontend `main` v1.3.1). The
 > "Test" column names the real test files (backend `services/*/tests`, app `src/**/__tests__`); the
 > earlier planned names (`RegisterUser.spec.ts`…) never existed. ✅ implemented and tested · 🟡 partly
 > implemented, or implemented without a test · 🔴 not implemented · ❔ not verified.
@@ -118,9 +118,9 @@ SRS) + **4 cross-cutting** with no explicit RF.
 | FR-009 | Multiple linked providers | HU-IAM-005 | — (no `user_auth_providers` table) | iam-service | 🔴 |
 | FR-010 | Password recovery | HU-IAM-006 | `password_reset.test.ts` | iam-service | ✅ |
 | FR-011 | Session opening | HU-IAM-007 | `jwt_roles.test.ts` (JWT issued); no session record | iam-service | 🟡 |
-| FR-012 | Refresh token rotation | HU-IAM-007 | — (no refresh token, ADR-002; finding H-08) | iam-service | 🔴 |
+| FR-012 | Withdrawn: refresh token rotation (no refresh token exists; the JWT lasts one day) | HU-IAM-007 | — | iam-service | ❌ Withdrawn |
 | FR-013 | Logout with duration | HU-IAM-008 | — (logout only clears the token on the client) | iam-service | 🔴 |
-| FR-014 | Deletion with anonymization | HU-IAM-009 | `account.test.ts`, `atomic_erasure.test.ts`, `user_deleted.test.ts`, `erase_user_profile.test.ts`, `relay_outbox.test.ts` | iam-service | ✅ |
+| FR-014 | Deletion with erasure of the account in every service | HU-IAM-009 | `account.test.ts`, `atomic_erasure.test.ts`, `user_deleted.test.ts`, `erase_user_profile.test.ts`, `relay_outbox.test.ts` | iam-service | ✅ |
 | FR-015 | Account administration | HU-IAM-010 | `iam_use_cases.test.ts`, `is_last_admin.test.ts` (roles); no list or block of users | iam-service | 🟡 |
 
 ### Authorization — `iam-service`
@@ -170,6 +170,7 @@ SRS) + **4 cross-cutting** with no explicit RF.
 | FR-406 | History newest first | HU-TRA-005 | `http_contract.test.ts`; app `translations.service.test.ts`, `HistoryScreen.test.tsx` | recognition-service | ✅ |
 | FR-409 | History grouped by session | HU-TRA-005 | app `HistoryScreen.test.tsx`, e2e `history.spec.ts` | frontend | ✅ |
 | FR-410 | 30-day translation retention | HU-TRA-005 | `translation_retention.test.ts` | recognition-service | ✅ |
+| FR-411 | Words added by the administrator as DTW templates before the model ([ADR-011](../05-architecture/decisions/records/ADR-011-word-templates-dtw.md)) | — (no HU yet) | `ia_sign_template_permissions.test.ts` (backend); app `wordTemplateMatcher.test.ts`, `templates.service.test.ts` | recognition-service + app | ✅ |
 | FR-407 | Logical deletion of an entry | HU-TRA-006 | `http_contract.test.ts`, `controller_errors.test.ts` | recognition-service | ✅ |
 | FR-408 | Model with history is undeletable | HU-TRA-003 | — (no model registry) | recognition-service | 🔴 |
 
@@ -179,13 +180,13 @@ SRS) + **4 cross-cutting** with no explicit RF.
 |----|-------------|----|-----------------------|---------|--------|
 | FR-501 | Administrable type catalog | HU-NOTIF-001 | seeded `notification_types`; not administrable through the API | profile-service | 🟡 |
 | FR-502 | Visual channel only ⭐ | HU-NOTIF-002 | `record_translation.test.ts` (in-app notifications only) | profile-service | ✅ |
-| FR-503 | Device registration | HU-NOTIF-003 | — (no device registration) | profile-service | 🔴 |
-| FR-504 | Scheduled notifications | HU-NOTIF-004 | — (admin reports in the unmerged branch `feat/profile-admin-notifications`) | profile-service | 🔴 |
-| FR-505 | FAILED vs PENDING state | HU-NOTIF-005 | status type exists (`notification.ts`); no delivery channel that can fail | profile-service | 🟡 |
+| FR-503 | Withdrawn: device registration (ADR-007) | HU-NOTIF-003 | — | profile-service | ❌ Withdrawn |
+| FR-504 | Scheduled notifications | HU-NOTIF-004 | `scheduled_at` drives the email worker and the admin report scheduler (`deliver_email_notifications.test.ts`, `admin_reports_scheduler.test.ts`); there is no general scheduling API | profile-service | 🟡 |
+| FR-505 | FAILED vs PENDING state | HU-NOTIF-005 | `deliver_email_notifications.test.ts`: an EMAIL row becomes `FAILED` when SMTP rejects it | profile-service | ✅ |
 | FR-506 | Reference to the originating record | HU-NOTIF-006 | `record_translation.test.ts` | profile-service | ✅ |
 | FR-507 | Mark as read | HU-NOTIF-002 | `preferences_permissions.test.ts` | profile-service | ✅ |
 | FR-508 | Master switch suppresses delivery | HU-PROF-005 | `record_translation.test.ts`, `validation.test.ts` | profile-service | ✅ |
-| FR-509 | Push requires a device | HU-NOTIF-003 | — (no push) | profile-service | 🔴 |
+| FR-509 | Withdrawn: push requires a device (ADR-007) | HU-NOTIF-003 | — | profile-service | ❌ Withdrawn |
 | FR-510 | Administrator reports by email ([ADR-007](../05-architecture/decisions/records/ADR-007-email-notifications.md)) | HU-NOTIF-002 | `admin_report_domain.test.ts`, `run_admin_reports.test.ts`, `admin_reports_scheduler.test.ts`, `deliver_email_notifications.test.ts` | profile-service | ✅ |
 
 ### AI — `recognition-service`
@@ -210,9 +211,9 @@ SRS) + **4 cross-cutting** with no explicit RF.
 | FR-704 | Sessions and average duration | HU-USG-003 | — (no session duration in analytics) | analytics-service (session facts come from iam-service) | 🔴 |
 | FR-705 | Events survive deletion | HU-USG-004 | `atomic_erasure.test.ts`, `user_deleted.test.ts` (analytics) | analytics-service | ✅ |
 | FR-706 | Statistics require permission | HU-AUTHZ-002 | `stats_routes.test.ts` | analytics-service | ✅ |
-| FR-707 | Own URL per web screen | — | app `linking.test.ts` | frontend | ✅ |
+| FR-707 | Own URL per web screen | HU-NAV-001 | app `linking.test.ts` | frontend | ✅ |
 
-### Gamification ⚠️ — `profile-service`
+### Gamification — `profile-service` (implemented; RF8 pending in the SRS)
 
 | FR | Description | HU | Test that verifies it | Service | Status |
 |----|-------------|----|-----------------------|---------|--------|
@@ -226,7 +227,7 @@ SRS) + **4 cross-cutting** with no explicit RF.
 | FR-808 | Medals for challenge points ([ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md)) | HU-GAM-006 | `challenge_reward_achievements*.test.ts`, `challenge_reward_summary.test.ts` | profile-service | ✅ |
 | FR-809 | On-screen unlock and challenge notices | HU-GAM-003 | app `AchievementUnlockAlerts.test.tsx` | frontend | ✅ |
 
-> **Blocker:** RF8 does not exist in the SRS. See § Gaps, GAP-01.
+> **Open at SRS level:** RF8 does not exist in the SRS yet, but the module is implemented. See § Gaps, GAP-01.
 
 ### Audit and configuration — `iam-service`
 
@@ -266,7 +267,7 @@ that owns them (database per service; no foreign keys across services).
 | `users` | FR-001 … FR-007, FR-014, FR-015, FR-201, FR-202 | ✅ Justified |
 | `user_auth_providers` | FR-008, FR-009 | ✅ Justified |
 | `user_sessions` | FR-011, FR-013, FR-704 | ✅ Justified |
-| `refresh_tokens` | FR-012 | ✅ Justified |
+| `refresh_tokens` | FR-012 (withdrawn) | ❌ Not justified: FR-012 is withdrawn and the table is not in the code |
 | `user_tokens` | FR-003, FR-004, FR-010 | ✅ Justified |
 | `password_policies` | FR-905 … FR-907 | ✅ Justified — **Identity domain since model v9** (DATA-12) |
 | `roles` | FR-101, FR-104 | ✅ Justified |
@@ -282,10 +283,13 @@ that owns them (database per service; no foreign keys across services).
 |-------|---------------------|--------|
 | `user_preferences` | FR-203 … FR-206, FR-508 | ✅ Justified |
 | `notification_types` | FR-501 | ✅ Justified |
-| `user_devices` | FR-503, FR-509 | ✅ Justified |
+| `user_devices` | FR-503, FR-509 (withdrawn) | ❌ Not justified: withdrawn with ADR-007; not in the code |
 | `notifications` | FR-502, FR-504 … FR-507, FR-804 | ✅ Justified (FR-804 conditional on RF8) |
 | `achievements` | FR-801 | ⚠️ **GAP-01: depends on RF8** |
 | `user_achievements` | FR-802, FR-803, FR-805 | ⚠️ **GAP-01: depends on RF8** |
+| `challenges` | FR-806 | ✅ Justified (ADR-009) — RF8 is still missing from the SRS (GAP-01) |
+| `user_challenges` | FR-806, FR-807 | ✅ Justified (ADR-009) — GAP-01 |
+| `challenge_rewards` | FR-807, FR-808 | ✅ Justified (ADR-010) — GAP-01 |
 
 ### `lexicon-service` (PostgreSQL `lexicon`)
 
@@ -326,14 +330,16 @@ These FRs are intentionally not persisted by a table of their own. They are not 
 | FR-402 | Audio output is a UI behaviour; the delivery mode is recorded by FR-403 (`translations.output_mode`) |
 | FR-405 | Visual feedback of a failed recognition (UI); the failure is counted as `TRANSLATION_FAILED` through FR-702 |
 | FR-706 | Access-control rule (permission `stats.read`, aggregated output, INV-012); enforced over `role_permissions` and `usage_events`, stores nothing |
+| FR-707 | Own URL per web screen: a routing rule of the web app; stores nothing |
 | FR-952 | UI rule (no dead-end screens); stores nothing |
 
 ### Result
 
-- **29 tables** (28 PostgreSQL + 1 MongoDB collection): **25 justified**, 2 conditional on RF8
-  (GAP-01), 2 rollup tables whose FR text is missing (GAP-11).
-- **79 FRs**: **74 persisted** in a table (listed above) and **5 with no persistence** (FR-401, FR-402,
-  FR-405, FR-706, FR-952).
+- **32 modelled tables** (31 PostgreSQL + 1 MongoDB collection; the migrations hold 33 live PostgreSQL tables, see `06-data/models.md`): **26 justified** by an active FR; 2 conditional on RF8
+  (GAP-01); 2 rollup tables whose FR text is missing (GAP-11); 2 justified only by withdrawn FRs
+  (`refresh_tokens`, `user_devices`).
+- **88 FRs**: **79 active FRs persisted** in a table (listed above); **6 active with no persistence**
+  (FR-401, FR-402, FR-405, FR-706, FR-707, FR-952); **3 withdrawn** (FR-012, FR-503, FR-509).
 
 ---
 
@@ -349,8 +355,8 @@ These FRs are intentionally not persisted by a table of their own. They are not 
 | NFR-003 | Availability 99.5% | SLO monitoring | Prometheus + Grafana | 🔴 Pending |
 | NFR-003 | Graceful degradation with no connection | Test in airplane mode | Manual + instrumented test | 🔴 Pending |
 | NFR-004 | 500 concurrent users | Load test | k6 | 🔴 Pending |
-| NFR-005 | JWT 1 h + rotating refresh | Security contract test | Jest + Postman | 🔴 Pending |
-| NFR-005 | bcrypt cost ≥ 12 | Configuration test | Jest | 🔴 Pending |
+| NFR-005 | JWT valid 1 day (current: `JWT_EXPIRES_IN` default `1d`); the 1-hour target with rotating refresh tokens is not met (FR-012 withdrawn) | Security contract test | Jest + Postman | 🔴 Pending |
+| NFR-005 | bcrypt cost ≥ 12 (current implementation: cost 10, `password.ts`) | Configuration test | Jest | 🔴 Pending |
 | NFR-005 | Consent per sample (Law 1581) | `NOT NULL` constraint + `ConsentRequired.spec.ts` | Jest | 🔴 Pending |
 | NFR-005 | OWASP Top 10 | Static analysis + DAST | SonarQube + OWASP ZAP | 🔴 Pending |
 | NFR-006 | Correlation ID in every log | Integration test | Jest + Supertest | 🔴 Pending |
@@ -373,7 +379,7 @@ These FRs are intentionally not persisted by a table of their own. They are not 
 | HU-IAM-004 | Progressive lockout | FR-006, FR-007 | 2 | 5 |
 | HU-IAM-005 | Google / Facebook | FR-008, FR-009 | 2 | 8 |
 | HU-IAM-006 | Password recovery | FR-010 | 2 | 5 |
-| HU-IAM-007 | Session and rotation | FR-011, FR-012 | 2 | 5 |
+| HU-IAM-007 | Session and rotation | FR-011 (FR-012 withdrawn) | 2 | 5 |
 | HU-AUTHZ-001 | Roles and permissions | FR-101, FR-102 | 2 | 5 |
 | HU-AUTHZ-002 | Access control | FR-103, FR-104, FR-706 | 2 | 3 |
 | HU-PROF-001 | Edit profile | FR-201 | 3 | 3 |
@@ -384,7 +390,7 @@ These FRs are intentionally not persisted by a table of their own. They are not 
 | HU-LEX-003 | Sign detail | FR-303 | 3 | 5 |
 | HU-LEX-004 | Alphabet | FR-304 | 3 | 3 |
 | HU-LEX-005 | Code and localization | FR-305, FR-306 | 3 | 5 |
-| HU-NAV-001 | Navigation | FR-951, FR-952 | 3 | 5 |
+| HU-NAV-001 | Navigation | FR-707, FR-951, FR-952 | 3 | 5 |
 | HU-PROF-004 | Language | FR-204 | 4 | 5 |
 | HU-PROF-005 | Notification switch | FR-205, FR-508 | 4 | 2 |
 | HU-AI-005 | Publish model | FR-606 | 4 | 5 |
@@ -392,7 +398,7 @@ These FRs are intentionally not persisted by a table of their own. They are not 
 | HU-TRA-002 | Audio output | FR-402 | 4 | 3 |
 | HU-TRA-003 | Persist translation | FR-403, FR-404, FR-408 | 4 | 5 |
 | HU-TRA-004 | Failure feedback | FR-405 | 4 | 3 |
-| HU-TRA-005 | History | FR-406 | 4 | 3 |
+| HU-TRA-005 | History | FR-406, FR-409, FR-410 | 4 | 3 |
 | HU-TRA-006 | Delete entries | FR-407 | 4 | 2 |
 | HU-USG-001 | Event recording | FR-701, FR-702 | 4 | 5 |
 | HU-IAM-009 | Account deletion | FR-014 | 5 | 5 |
@@ -400,8 +406,8 @@ These FRs are intentionally not persisted by a table of their own. They are not 
 | HU-LEX-006 | Sign administration | FR-307, FR-308, FR-310 | 5 | 8 |
 | HU-LEX-007 | Multimedia resources | FR-309 | 5 | 5 |
 | HU-NOTIF-001 | Type catalog | FR-501 | 5 | 3 |
-| HU-NOTIF-002 | Receive and read ⭐ | FR-502, FR-507 | 5 | 5 |
-| HU-NOTIF-003 | Device registration | FR-503, FR-509 | 5 | 5 |
+| HU-NOTIF-002 | Receive and read ⭐ | FR-502, FR-507, FR-510 | 5 | 5 |
+| HU-NOTIF-003 | Device registration (withdrawn, ADR-007) | FR-503, FR-509 (both withdrawn) | 5 | 5 |
 | HU-USG-004 | Statistics survive deletion | FR-705 | 5 | 3 |
 | HU-AUD-001 | Audit trail | FR-901, FR-902 | 5 | 5 |
 | HU-AUD-002 | Error log | FR-903, FR-904 | 5 | 3 |
@@ -414,10 +420,12 @@ These FRs are intentionally not persisted by a table of their own. They are not 
 | HU-NOTIF-006 | Reference to the record | FR-506 | 6 | 3 |
 | HU-USG-002 | Most visited sections | FR-703 | 6 | 5 |
 | HU-USG-003 | Session statistics | FR-704 | 6 | 3 |
-| HU-GAM-001 ⏸ | Achievement catalog | FR-801 | 7 | 3 |
-| HU-GAM-002 ⏸ | Progress | FR-802, FR-803 | 7 | 5 |
-| HU-GAM-003 ⏸ | Achievement notification | FR-804 | 7 | 2 |
-| HU-GAM-004 ⏸ | Consult achievements | FR-805 | 7 | 3 |
+| HU-GAM-001 | Achievement catalog | FR-801 | 7 | 3 |
+| HU-GAM-002 | Progress | FR-802, FR-803 | 7 | 5 |
+| HU-GAM-003 | Achievement notification | FR-804, FR-809 | 7 | 2 |
+| HU-GAM-004 | Consult achievements | FR-805 | 7 | 3 |
+| HU-GAM-005 | Daily challenge (implemented) | FR-806, FR-807 | — | — |
+| HU-GAM-006 | Medals for challenge points (implemented) | FR-808 | — | — |
 
 ### Load per sprint
 
@@ -429,7 +437,7 @@ These FRs are intentionally not persisted by a table of their own. They are not 
 | Sprint 4 | 10 | 46 | ⚠️ **Overloaded** — contains the 13-point core story |
 | Sprint 5 | 10 | 45 | ⚠️ **Overloaded** — administration |
 | Sprint 6 | 9 | 42 | ⚠️ **Overloaded** — AI and statistics |
-| Sprint 7 | 4 | 13 | Gamification, blocked |
+| Sprint 7 | 4 | 13 | Gamification (HU-GAM-001 to 004 planned; implemented in profile-service, see § 2). HU-GAM-005 and 006 have no sprint in the planning |
 
 > ⚠️ **Planning warning.** Sprints 4, 5 and 6 exceed 40 points. With a team of
 > 4 and a velocity yet to be measured, that is very likely more than fits. The
@@ -444,7 +452,7 @@ These FRs are intentionally not persisted by a table of their own. They are not 
 
 | ID | Gap type | Description | Required action | Owner | Priority |
 |----|----------|-------------|-----------------|-------|----------|
-| **GAP-01** | Table without an FR | `achievements` and `user_achievements` exist in the model with no SRS requirement behind them. In a traceability review this reads as gold-plating | **Decision.** Approve RF8 and add it to the SRS, **or** remove both tables, their two `Ref`s, the `Gamification` TableGroup, the FR-800 series and EP-009. There is no third option: either the requirement exists or the tables do not | Team + instructor | **High** |
+| **GAP-01** | Tables without an SRS requirement | `achievements`, `user_achievements` and the challenge tables (`challenges`, `user_challenges`, `challenge_rewards`) are implemented in profile-service, but the SRS has no RF8. In a traceability review this reads as gold-plating | **Decision still open.** Add RF8 to the SRS, **or** remove the module together with its code, its tables, the `Gamification` TableGroup, the FR-800 series and EP-009. There is no third option: either the requirement exists or the tables do not | Team + instructor | **High** |
 | **GAP-02** | Duplicate table | `sign_translations` and `sign_localizations` were the same table twice. ✅ **Already removed from the v8 model** (see `06-data/domains/04-lexicon.md`); no longer in § 3. Recorded so the fix is not undone | None — keep `sign_localizations` (its `(ui_language, name)` index serves FR-302) | Juan Mauricio | Closed |
 | **GAP-03** | Non-existent table cited | The traceability comment at the end of the DBML cited `password_reset_tokens`. ✅ **Closed in v9** — it now cites `user_tokens` | None | Juan Mauricio | Closed |
 | **GAP-04** | Incorrect statement | The DBML stated RF2 is "solo UI, sin persistencia", but every section entry is persisted as `SECTION_VIEW` in `usage_events`. ✅ **Closed in v9** | None | Juan Mauricio | Closed |
@@ -452,7 +460,7 @@ These FRs are intentionally not persisted by a table of their own. They are not 
 | **GAP-06** | Nullable field that should not be | `translations.model_id` is nullable, but FR-403 requires every translation to record the model that produced it and FR-408 relies on that link. Nullable means a translation can exist with no traceability, defeating the field's stated purpose. Likely reason: translations queued while the connection was down | **Decision.** Make it `not null` and resolve the active model before insert — whichever side runs inference knows which version it used. Alternatively keep it nullable and document exactly what `NULL` means, plus a backfill job | Team | Medium |
 | **GAP-07** | Enum values with no consumer | `reference_entity` declares `CATEGORY`, `AI_MODEL` and `USER`, which no FR produces. `usage_section.ACHIEVEMENTS` depends on GAP-01 | Low impact — an unused enum value costs nothing at runtime. Either document them as reserved extension points or trim them, so a future reader does not hunt for code that does not exist | Juan Mauricio | Low |
 | **GAP-08** | RF without an explicit SRS entry | Audit, error handling, password policy and Law 1581 compliance have tables and FRs but no RF in the SRS. Unlike GAP-01 these are not gold-plating — they are cross-cutting technical requirements every system needs — but the traceability does not close cleanly without them | Name them explicitly in the SRS as cross-cutting requirements | Team | Medium |
-| **GAP-09** | FR without a test | Every FR is at 🔴 Pending — no test exists yet | Write the test alongside each HU, never after | Team | Expected at baseline |
+| **GAP-09** | FR without a test | The FRs marked 🔴 in § 2 have no test yet | Write the test alongside each HU, never after | Team | Medium |
 | **GAP-10** | Overloaded sprints | Sprints 4, 5 and 6 exceed 40 points with velocity still unmeasured | Measure real velocity in Sprint 1 and rebalance from Sprint 4 onwards | Team | Medium |
 | **GAP-11** | Tables without an FR | `usage_daily_stats` and `session_daily_stats` (`06-data/domains/08-usage.md`, DATA-03) are rollup caches with no requirement text of their own, and `02-domain/domain-map.md` says Usage Analytics "owns no aggregated data". By the matrix rule a table with no FR does not enter the model | Add an FR (or extend FR-703/FR-704) stating the rollup as a cache with a recompute job, and fix the domain map sentence | Team | Medium |
 | **GAP-12** | Stale counts in this matrix | Through v0.2 the baseline said 30 tables and § 3 listed 28 rows (including the already-removed `sign_translations`); the model v9 has 29. The "17/17 SRS" and "77/79 persisted" figures in § 7 were also wrong, and 17 FRs were reported as missing from § 3 although most were covered by ranges | ✅ Fixed in v0.3 (SRS 15/15, 74/79 persisted + 5 explicit no-persistence, 25/29 tables) | Documentation | Closed |
@@ -483,11 +491,11 @@ well built:
 | Check | Result |
 |-------|--------|
 | SRS requirements with at least one FR | 15 / 15 ✅ (RF1–RF7 + 8 ERF). Not counted: RF8 (proposed, not in the SRS) and 4 cross-cutting rows with no RF |
-| FRs with at least one HU | 79 / 79 ✅ |
-| HUs with a defined test case | 53 / 53 ✅ |
-| Tests implemented | 0 / 53 🔴 (expected at baseline) |
-| Tables justified by an FR | 25 / 29 ⚠️ (GAP-01 ×2, GAP-11 ×2) |
-| FRs with a table that persists them | 74 / 79 ✅ (the other 5 — FR-401, FR-402, FR-405, FR-706, FR-952 — have no persistence by design, see § 3) |
+| FRs with at least one HU | 84 / 85 active ⚠️ (FR-411 has no HU yet) |
+| HUs with acceptance criteria (Gherkin) | 55 / 55 ✅ |
+| Active FRs implemented and tested (✅) | 57 / 85 (10 🟡 partial, 16 🔴 not implemented, 2 ❔ not verified) |
+| Tables justified by an active FR | 26 / 32 ⚠️ (GAP-01 ×2, GAP-11 ×2, and 2 justified only by withdrawn FRs) |
+| Active FRs with a table that persists them | 79 / 85 ✅ (the other 6 — FR-401, FR-402, FR-405, FR-706, FR-707, FR-952 — have no persistence by design, see § 3) |
 | NFRs with a defined verification method | 10 / 10 ✅ |
 | NFRs verified | 0 / 10 🔴 (expected at baseline) |
 
@@ -511,6 +519,7 @@ well built:
 | v0.1 | 2026-09-08 | Generic template replaced with the real matrix. Added the SRS → FR section and the FR → tables section, which is what surfaced GAP-01 and GAP-02. | Juan Mauricio Suaza Solórzano |
 | v0.2 | 2026-09-08 | Test file names and tooling corrected to the real stack (Node/Express + Jest, not Java + JUnit). | Juan Mauricio Suaza Solórzano |
 | v0.4 | 2026-10-24 | § 2 checked against the code: every FR now names its real test files and its real status (47 ✅, 10 🟡 partial, 20 🔴 not implemented, 2 ❔ not verified); the planned `*.spec.ts` names were removed. New status ❔. § 3 points to the implemented model in `06-data/models.md` § 0. Audit finding H-05. | Documentation |
+| v0.5 | 2026-11-04 | Checked against the code (backend main v1.4.0). FR-012 and FR-503 / FR-509 Withdrawn; FR-411 added (word templates); FR-504 and FR-505 statuses corrected; FR-707 linked to HU-NAV-001; challenge tables and `sign_templates` discussed in § 3; 32 tables (31 + 1 MongoDB); 88 FR (85 active); 55 HU linked (HU-GAM-005/006 added to § 5); RF4/RF8 rows include FR-510 and FR-806 … FR-809; NFR-005 JWT and bcrypt rows match the code; coverage counts recomputed | Documentation |
 | v0.3 | 2026-10-04 | "Module" column renamed to "Service" (iam, profile, lexicon, recognition, analytics) with a module → service table. § 3 regrouped by service; added FR-202, FR-302 and FR-804 to the tables that persist them; listed FR-401, FR-402, FR-405, FR-706 and FR-952 as explicit "no persistence". Added the `usage_daily_stats` and `session_daily_stats` rows; removed the already-dropped `sign_translations`. § 7 corrected (SRS 15/15, tables 25/29, FRs persisted 74/79). Closed GAP-02/03/04; added GAP-11 … GAP-14. | Documentation |
 
 ---
