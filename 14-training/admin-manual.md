@@ -1,9 +1,10 @@
 # Administrator Manual
 
-> **Version:** 1.1 · **Date:** 2026-10-27 (section 4.5 and notifications switch updated) · **Audience:** people who manage roles, training and statistics
+> **Version:** 1.2 · **Date:** 2026-11-04 (sections 4.3, 4.4, 6, 7, 8 and known issues updated) · **Audience:** people who manage roles, training and statistics
 > **Based on:** Docs `cc30cd7` · Backend `origin/develop` `b29a2fa` · Frontend `origin/develop` `06e7f39`
 > **Adapted from:** the English administrator manual v1.4 (2026-10-07), re-checked against the code. Where the
 > older manual and the code disagree, this document follows the code.
+> **Update 2026-11-04:** checked against the code of Backend v1.4.0 and Frontend v1.3.1 (the commit hashes above are older).
 > **Notation:** `path@branch` means "file `path` on that branch" of Backend or Frontend.
 > **Status:** draft written by an agent; human review pending.
 
@@ -44,7 +45,8 @@ permissions of each role in `services/iam-service/db/003_iam_roles_permissions.s
 The three base roles cannot be deleted, and neither can a role that is assigned to someone.
 
 Roles and permissions are written **inside the session token (JWT)** when the person signs in. The token lasts
-1 day (`DEFAULT_JWT_EXPIRES_IN = '1d'`, `packages/shared/src/config/load_config.ts@origin/develop`).
+1 day (`DEFAULT_JWT_EXPIRES_IN = '1d'`, `packages/shared/src/config/load_config.ts@origin/develop`). There is no refresh
+token: when it expires, the person signs in again.
 
 > **Changes are not immediate.** After you grant a role the person must sign out and sign in again. After you
 > **remove** a role (or block an account) the old token **keeps its permissions until it expires**: recognition,
@@ -243,11 +245,10 @@ The **Statistics** tab appears to accounts with `stats.read`. It loads three sou
 The app records a section visit (`POST /api/analytics/events`, `SECTION_VIEW` for TRANSLATION, ALPHABET, HISTORY)
 every time a signed-in user opens one of those sections; failures are ignored silently.
 
-> **Known issue (found by reading the code, not tested end to end):** `GET /api/analytics/reports/sections`
-> requires `from` and `to` (`YYYY-MM-DD`); without them the service answers 400 `VALIDATION_ERROR`
-> (`parseDateRange` in `services/analytics-service/src/domain/rules.ts@origin/develop`). The frontend calls the
-> route without parameters (`stats.service.ts@origin/develop`). Because the three requests are awaited together,
-> the Statistics screen may fail to load. Report it to the technical team before relying on this screen.
+> **Note:** `GET /api/analytics/reports/sections` requires `from` and `to` (`YYYY-MM-DD`); without them it answers
+> 400 `VALIDATION_ERROR` (`parseDateRange` in `services/analytics-service/src/domain/rules.ts`). The app sends both:
+> the last 30 calendar days, Colombian time (`src/feature/Stats/services/stats.service.ts` of Frontend). The three
+> requests of the screen are awaited together, so if one of them fails the whole Statistics screen fails to load.
 > The OpenAPI contract also differs from the code: it documents `/api/analytics/sections`, the code serves
 > `/api/analytics/reports/sections`.
 
@@ -272,8 +273,10 @@ confirmed) or `BLOCKED`.
 - **Forgotten password:** the app has the full flow (request code, enter code, new password), and the server sends
   the code by e-mail if the mail account is configured. Without the mail account the person cannot recover the
   password by themselves; consult the technical team.
-- **Delete account:** Profile has a **Delete account** option (password required), but it **likely fails in the
-  Docker deployment** (see the Known issue in section 6). Do not rely on it.
+- **Delete account:** Profile has a **Delete account** option. It asks for the password, or for a code sent by e-mail
+  when the account has no password. It erases the account in iam and writes `iam.UserDeleted` to the outbox; the
+  other services erase their copies when they consume it. Not tested end to end in this review: check the result
+  in each database before you confirm a deletion request to a person.
 
 ### 4.5 Weekly and monthly reports by e-mail
 
@@ -344,7 +347,9 @@ Incident handling and monitoring: [13-operations/incident-management.md](../13-o
 [lexicon-service](../09-microservices/services/04-lexicon-service/runbook.md),
 [analytics-service](../09-microservices/services/05-analytics-service/runbook.md),
 [profile-service](../09-microservices/services/06-profile-service/runbook.md).
-No monitoring or alerting system is deployed today; the runbooks assume Docker Compose.
+There is no monitoring or alerting stack today: neither the code nor `docker-compose.yml` has metrics, dashboards or
+alerts. What exists: the `/health` endpoints (the gateway's `GET /health` reports the state of each service) and the
+Docker logs, capped at 10 MB × 3 files per container. The runbooks assume Docker Compose.
 
 ## 6. Personal data and Law 1581
 
@@ -353,21 +358,16 @@ authorization; the right to know, correct and delete data).
 
 Real status in this version:
 
-- **Known issue: Delete account likely fails in the Docker deployment** (found by code review, **not tested**;
-  needs a Backend fix). The app has the option (Profile > Delete account, `DELETE /api/users/me`, password
-  required), but `erase` in
-  `services/iam-service/src/users/adapters/outbound/postgres/account_repository.ts@origin/develop` runs
-  `DELETE FROM public.translations` and `UPDATE public.usage_events` inside the **iam** database. Those tables
-  belong to recognition and analytics, and `docker-compose.yml@origin/develop` only creates the identity tables in
-  `postgres-iam` (000, 003, 005, 006). The query would fail, the transaction would roll back and the person would
-  probably get a server error and keep the account. This matters for the **right to deletion (supresión)** of
-  Law 1581 of 2012: do **not** tell users that their account can be deleted from the app. Handle each deletion
-  request manually with the team, in every database that holds the person's data. In addition, the use case does
-  not emit a `UserDeleted` event yet (`delete_account.ts@origin/develop`), so other services would not be told
-  even if the deletion worked.
-- The translation history "deletion" in the app marks the record as deleted; check
-  [03-recognition-service data model](../09-microservices/services/03-recognition-service/data-model.md) before
-  stating that it is erased.
+- **Delete account** (Profile, `DELETE /api/users/me`) erases the account in iam: its tokens, its roles and the
+  `users` row, in one transaction (`erase` in `services/iam-service/src/users/adapters/outbound/postgres/account_repository.ts`).
+  In the same transaction it writes `iam.UserDeleted` to `outbox_events`, and the relay publishes it. recognition,
+  analytics and profile erase their own data when they consume the event. The flow was read in the code and not
+  tested end to end in this review. Keep the rule of section 2.1 in mind: the token of an erased account keeps
+  working for the services that only validate it until it expires.
+- Deleting a translation in the app marks it as deleted (`is_deleted`). The record is removed for good by the
+  retention job after `TRANSLATION_RETENTION_DAYS` days (default **30**; the statistics keep the counts), and all
+  the translations of a user are removed when the account is erased. See the
+  [03-recognition-service data model](../09-microservices/services/03-recognition-service/data-model.md).
 - The reference data model has an open item about gesture samples and the identity of the person who produces
   them (ALIGN-02 in [06-data/open-items.md](../06-data/open-items.md)); regulation requires samples to be unlinked
   from identity. Review it with the team.
@@ -391,16 +391,16 @@ Real status in this version:
 | **Gateway rate limits** | The gateway applies a general rate limit and a stricter limit to login, forgot-password, verify-code and reset-password (`app.ts@origin/develop` of api-gateway). Limits are configurable through environment variables. | Review the values for your installation. |
 | **Verification and recovery codes** | Generated with a cryptographic generator; expire after 15 minutes; 5 attempts; 60 s between sends and 5 sends per hour. | Nothing to do; informational. |
 | **Biometric samples** | Gesture samples are biometric data. The `/api/samples` API is limited to ADMIN. | Share ADMIN only with trusted people. |
-| **Delete account likely fails** | See section 6 (code review, not tested). | Handle each deletion request manually. |
-| **No CI, no staging** | Changes are not verified by an automatic pipeline. | Ask developers to run `npm run build` and `npm test` before merging. |
-| **Statistics screen** | May fail to load (see 4.3). | Do not base decisions on it until it is fixed. |
+| **Account deletion not tested end to end** | See section 6 (code read, not tested in this review). | Check the result in every database for each deletion request. |
+| **No staging environment** | CI runs the build and the tests on pull requests (Backend and Frontend), but there is no staging environment to try changes first. | Ask developers to run `npm run build` and `npm test` (Backend) or `npm run typecheck` and `npm test` (Frontend) before merging. |
+| **Statistics screen** | Loads three services at once; if one fails, the whole screen fails (see 4.3). | Check the Statistics tab after each deployment. |
 
 ## 8. What the system does not do
 
 - It does not translate from text or speech to signs, and it has no 3D avatar.
 - It does not replace a certified interpreter.
-- Camera recognition works only in the web version.
-- The Google and Facebook sign-in buttons do not work.
+- Alphabet recognition works only in the web version. Words recognition also works on a phone, in an embedded web page.
+- Google and Facebook sign-in work only when their IDs are configured. Facebook needs `EXPO_PUBLIC_FACEBOOK_APP_ID` in the Frontend and `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET` in the Backend; Google needs `GOOGLE_CLIENT_IDS` in the Backend (the Frontend has built-in client IDs for web and Android). A platform without its ID shows a notice instead of signing in. Not tested end to end in this review.
 - It does not send push notifications to the phone (ADR-007 discarded them): administrators receive the reports
   by e-mail (section 4.5). Users see on-screen notices of achievements and daily challenges, which are not e-mailed.
 
@@ -408,10 +408,10 @@ Real status in this version:
 
 | # | Issue |
 |---|-------|
-| 1 | Frontend port `:3000` vs gateway `:8080`, and the frontend nginx pointing to `backend:3000` and `lexicon:3003`: see [technical-onboarding.md](technical-onboarding.md#known-issues). The app cannot reach the gateway out of the box until it is fixed. |
-| 2 | Statistics section report called without `from` and `to` (section 4.3). |
+| 1 | Resolved in code: the app calls `https://traducesenas.tech/api` by default. For a local gateway set `EXPO_PUBLIC_API_URL=http://localhost:8080/api`. The frontend `nginx.conf` only serves the static web (see [technical-onboarding.md](technical-onboarding.md#known-issues)). |
+| 2 | The Statistics section report now receives `from` and `to` (section 4.3). Not tested end to end. |
 | 3 | The OpenAPI contract of analytics-service documents a path that differs from the code (section 4.3). |
 | 4 | **The contracts in `07-api` do not reflect `develop`; the code is the source of truth.** `iam-service.yaml` lacks `/api/iam/*`, `/api/users/stats`, `/api/auth/verify-email` and `/resend-verification`; `recognition-service.yaml` lacks `/api/translations/stats` and `/api/translations/me/stats`. |
-| 5 | **Delete account likely fails in the Docker deployment** (section 6; code review, not tested; needs a Backend fix). |
+| 5 | **Delete account** is implemented through the outbox (section 6). Not tested end to end in this review. |
 | 6 | Revoking roles or blocking accounts is not immediate (sections 2.1 and 4.4). |
-| 7 | The frontend image's nginx proxies to hosts that do not exist in the Backend compose (see the technical onboarding known issues). |
+| 7 | Resolved: production traffic goes through Caddy (Backend `docker-compose.prod.yml`). The frontend `nginx.conf` does not proxy `/api`. |

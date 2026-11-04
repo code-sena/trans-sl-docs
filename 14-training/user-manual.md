@@ -1,11 +1,13 @@
 # User Manual
 
-> **Version:** 1.1 · **Date:** 2026-10-27 · **Audience:** people who use the app to translate signs
+> **Version:** 1.2 · **Date:** 2026-11-04 · **Audience:** people who use the app to translate signs
 > **Based on:** Docs `cc30cd7` · Backend `origin/develop` `b29a2fa` · Frontend `origin/develop` `06e7f39`
 > **Update 2026-10-27:** sections 4.1, 5.4, 5.5 and the new 5.6 and 5.7 were re-read against Frontend
 > `develop` (version 1.2.0) and profile-service: daily challenges, challenge-point medals, achievement and
 > challenge notices, History grouped by session, one address per screen. The rest of the manual still
 > reflects the earlier build.
+> **Update 2026-11-04:** sections 3, 5.1, 5.5, 6 and 7 were re-checked against the code of Backend v1.4.0 and
+> Frontend v1.3.1 (the commit hashes above are older): mobile recognition and account deletion.
 > **Adapted from:** the Spanish user manual v1.2 (2026-10-05). Every screen was re-checked against
 > `src/feature/*/pages/*` and `src/app/routes/*` of Frontend `origin/develop`, and against
 > [12-ux-ui/navigation-map.md](../12-ux-ui/navigation-map.md).
@@ -40,7 +42,7 @@ What it does **not** do (outside the MVP, see [01-context/scope.md](../01-contex
 | You need | Detail |
 |----------|--------|
 | A device with a camera | A computer with a webcam, or a phone. |
-| A recent web browser | **Camera recognition only works in the web version.** On a phone the app shows a notice: "Sign recognition is not available on mobile yet. Use the web version to translate with the camera." |
+| A recent web browser, or a phone | The web version works in a recent browser. On a phone, **Words** mode runs inside the app in an embedded web page, so it needs the internet. **Alphabet** mode is not available on a phone: the app shows "Sign recognition is not available on mobile yet. Use the web version to translate with the camera." |
 | Internet | The app downloads the recognition tools (MediaPipe) when you open the camera. |
 | Camera permission | The browser asks the first time. You must accept. |
 | Good light | Light from the front or above; avoid windows or lamps behind you. |
@@ -152,8 +154,9 @@ After signing in you see tabs: **Translation**, **Alphabet** and **History**, pl
 
 The **Translation** screen has two modes, chosen with two buttons:
 
-- **Words**: recognizes whole LSC words. It is the default mode. Web only.
-- **Alphabet**: recognizes letters (finger spelling).
+- **Words**: recognizes whole LSC words. It is the default mode. Works on the web and on a phone (on a phone the
+  camera page is embedded in the app).
+- **Alphabet**: recognizes letters (finger spelling). Web only.
 
 ![Translation screen](../assets/14-training/usuario-05-traduccion.png)
 *Translation screen, Words mode.*
@@ -235,7 +238,7 @@ translate again yet.
 | **Terms and conditions** / **Privacy policy** | The legal texts of the app. See section 7. |
 | **Achievements** | Medals (bronze, silver, gold) with your progress, grouped by category. Some are still marked "Coming soon". See section 5.6. |
 | **Sign out** | Leaves your account. |
-| **Delete account** | Asks for your password. **Known issue: it likely fails in the Docker deployment.** See section 7. |
+| **Delete account** | Asks for your password, or for a 6-digit code sent by e-mail if your account has no password (for example, one created with Google). See section 7. |
 
 At the top of the Profile screen you see **four indicators** that adapt to the screen width (in a row on a wide
 screen, in a grid on a phone): **Translations**, **Distinct texts**, **Available achievements** (how many you have
@@ -288,11 +291,11 @@ you opened the app. The same notice is also saved in your notifications list as 
 - **Camera and light.** The model learned from people recorded under certain conditions. With another camera,
   distance or low light it can fail even if your sign is right.
 - **It can be wrong.** Always check the text. Do not use the app as the only source in important situations.
-- **Recognition only on the web.** On a phone, camera recognition is not available yet.
+- **Alphabet only on the web.** On a phone only the Words mode recognizes signs.
 - **One direction only.** Sign to text or voice.
 - **Google and Facebook sign-in:** not verified in this update (see section 4.4).
 - **Reuse in History:** only shows a message.
-- **Delete account:** likely fails (see section 7).
+- **Delete account:** not tested end to end in this review (see section 7).
 - **Statistics:** only administrators see the usage statistics.
 
 ## 7. Your data and privacy
@@ -304,11 +307,11 @@ you opened the app. The same notice is also saved in your notifications list as 
 - When you create an account, your **e-mail and name are copied to the profile service**; analytics keeps only your user id.
 - Colombian law (Law 1581 of 2012 and Decree 1377 of 2013) gives you the right to know, correct and ask for the
   deletion of your data.
-- **Known issue: Delete account likely fails in the Docker deployment** (found by reading the Backend code, not
-  tested; it needs a Backend fix). The deletion runs queries on tables that do not exist in the identity database,
-  so you would probably see an error and keep your account. The **right to deletion** of Law 1581 of 2012 therefore
-  cannot be assumed to work from the app: ask the person who administers the app to handle your request manually,
-  including data kept by other services such as your translation history.
+- **Delete account** erases your account in the identity service and publishes an event so that the translation,
+  analytics and profile services erase their copies of your data. Translations are also deleted automatically after
+  **30 days**; the statistics keep only the counts. This is how the **right to deletion** of Law 1581 of 2012 is
+  exercised from the app. The flow was checked in the code and not tested end to end in this review. If it fails,
+  ask the person who administers the app to handle your request manually.
 - The legal texts shown by the app (Terms, Privacy policy) have not been checked against how this version works;
   this manual does not repeat their claims.
 

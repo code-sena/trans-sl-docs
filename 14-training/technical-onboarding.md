@@ -1,10 +1,13 @@
 # Technical Onboarding
 
-> **Version:** 1.1 · **Date:** 2026-10-27
+> **Version:** 1.2 · **Date:** 2026-11-04
 > **Based on:** Docs `cc30cd7` · Backend `origin/develop` `b29a2fa` · Frontend `origin/develop` `06e7f39`
 > **Update 2026-10-27:** profile migrations 001-010, Playwright E2E and CI of the Frontend, profile-service
 > mail variables, and the known issues that the current `develop` code has overtaken (marked "outdated").
 > The rest was not re-read.
+> **Update 2026-11-04:** scripts of the Frontend (`test`, `e2e`), Backend and Frontend CI, Caddy in production,
+> Liquibase status, gateway `depends_on`, API address and the known issues were checked against the code of
+> Backend v1.4.0 and Frontend v1.3.1 (the commit hashes above are older).
 > **Notation:** `path@branch` means "file `path` on that branch", read with `git show origin/develop:<path>`.
 > **Status:** draft written by an agent; human review pending.
 
@@ -89,7 +92,7 @@ without Docker nothing creates the tables (see the migrations FAQ).
 
 ### 5. Start the frontend
 
-Scripts that exist in `package.json@origin/develop` of Frontend: `start`, `android`, `ios`, `web`, `typecheck`.
+Scripts in `package.json` of the Frontend: `start`, `android`, `ios`, `web`, `typecheck`, `test` (Jest) and `e2e` (Playwright).
 
 ```bash
 cd Frontend
@@ -99,14 +102,15 @@ npm start          # Expo dev server; or: npm run web / npm run android / npm ru
 npm run typecheck  # tsc --noEmit
 ```
 
-There is no `test`, `lint` or `build` script in the Frontend. The web build used by Docker is
-`npx expo export --platform web` (`Dockerfile@origin/develop` of Frontend).
+There is no `lint` or `build` script in the Frontend. The web build used by Docker is
+`npx expo export --platform web` (`Dockerfile` of the Frontend).
 
-> **Known issue:** the frontend will not reach the gateway out of the box. See [Known issues](#known-issues), item 1.
+> **API address:** `src/app/config/api.config.ts` uses `https://traducesenas.tech/api` by default. To work against a
+> local gateway, set `EXPO_PUBLIC_API_URL=http://localhost:8080/api` in `.env` (it is read at build time). See
+> [Known issues](#known-issues), item 1.
 >
-> **Docker build of the frontend:** `nginx.conf@origin/develop` of Frontend proxies `/api/` to `http://backend:3000`
-> and `/api/lexicon/` to `http://lexicon:3003`. Those hosts do not exist in the Backend compose (the entry point
-> is `api-gateway:8080`), so the image built from that Dockerfile cannot reach the backend as it is.
+> **Frontend nginx:** `nginx.conf` only serves the static web and has no `/api` proxy. In production, Caddy
+> (Backend `docker-compose.prod.yml`) terminates HTTPS and sends `/api/*` to `api-gateway`.
 
 ### 6. Read, in this order
 
@@ -163,7 +167,7 @@ npm test          # builds @traduce/shared, then scripts/run-tests.js runs every
 `packages/shared` has tests. Coverage is not collected by default; on 2026-10-16 it was 88.5 % of lines.
 Three PostgreSQL suites are skipped unless `PROFILE_TEST_DATABASE_URL` points to a disposable database.
 
-Frontend (version 1.2.0): `npm test` (Jest + `jest-expo`, tests in `src/**/__tests__/`: services, auth forms, vision
+Frontend (version 1.3.1): `npm test` (Jest + `jest-expo`, tests in `src/**/__tests__/`: services, auth forms, vision
 classifiers, template stores, profile and challenges) and `npm run typecheck`.
 
 **End-to-end tests (Playwright).** `npm run e2e` in the Frontend runs `playwright test` (`playwright.config.ts`,
@@ -176,6 +180,10 @@ viewport and a fake camera. Install the browser once with `npx playwright instal
 **CI (Frontend).** `.github/workflows/ci.yml` runs on every PR and push to `develop` and `main`: typecheck, Jest with
 coverage, web export, SonarCloud (if the token exists), Docker image smoke test, and the E2E job, which starts the
 public Backend `main` with Compose and no SMTP.
+
+**CI (Backend).** `.github/workflows/ci.yml` runs on every pull request and push to `develop` and `main`: `npm ci --ignore-scripts`,
+`npm rebuild bcrypt`, `npm run build` and `npm test`. It starts a disposable PostgreSQL 16 for the PostgreSQL integration
+tests of profile-service.
 
 Commands to measure coverage, the figures per service and the known gaps are in
 [`11-quality/testing-strategy.md`](../11-quality/testing-strategy.md).
@@ -236,7 +244,8 @@ Where migrations really are in Backend `develop`: each service owns its database
 
 - numbered SQL files (`000_users.sql`, `003_iam_roles_permissions.sql`, `001_translations.sql`, `003_lexicon.sql`, ...);
 - a Liquibase set: `master.xml`, `changelogs/*.xml` and `liquibase.properties.example`. **`profile-service/db/` has
-  only numbered SQL files and no Liquibase set.**
+  only numbered SQL files and no Liquibase set.** Nothing runs the Liquibase set: `docker-compose.yml` mounts only the
+  numbered `.sql` files, and no script of the repository refers to Liquibase. Apply the numbered files.
 
 **Profile migrations in force (001 to 010).** Source: `services/profile-service/db/` and the header of `docker-compose.yml@origin/develop`.
 
@@ -259,7 +268,7 @@ docker compose exec -T postgres-profile psql -X -v ON_ERROR_STOP=1 -U postgres -
 docker compose exec -T postgres-profile psql -X -v ON_ERROR_STOP=1 -U postgres -d profile < services/profile-service/db/010_challenge_reward_achievements.sql
 ```
 
-Others have their own manual steps too (iam 009, 010, 011, 013; recognition 003 to 005; analytics 002), see the header of the compose.
+Others have their own manual steps too (iam 009, 010, 011 and 013; recognition 003 to 005; analytics 002), see the header of the compose. The header does not list iam `012_outbox_claim_token.sql`, which the volumes do mount: for an existing iam database, apply it too if it is missing.
 Restart `profile-service` afterwards. `009` is idempotent: if it was applied with an older version, run it again.
 
 `docker-compose.yml@origin/develop` mounts **only the `.sql` files, each one by name**, into `/docker-entrypoint-initdb.d`
@@ -293,7 +302,9 @@ Workspace names: `@traduce/api-gateway`, `@traduce/iam-service`, `@traduce/recog
 The service needs its own PostgreSQL database and the same `JWT_SECRET` as the others.
 
 With Docker, name the service (Compose starts its `depends_on` too). Services 3001-3005 are **not published** to the host,
-so also start the gateway to reach it: `docker compose up --build api-gateway iam-service` (the gateway `depends_on` `iam-service` and `lexicon-service`, so the lexicon starts too).
+so to reach them through the gateway start `api-gateway`: `docker compose up --build api-gateway`. The gateway `depends_on`
+the five services with `condition: service_healthy`, so it starts after each one answers its health check, and each
+service starts its own database (and RabbitMQ, and MongoDB for recognition) first.
 Service names in `docker-compose.yml@origin/develop`: `api-gateway`, `iam-service`, `recognition-service`,
 `lexicon-service`, `analytics-service`, `profile-service`.
 
@@ -312,16 +323,16 @@ There is no route for it. See [admin-manual.md](admin-manual.md#3-creating-the-f
 
 | # | Issue | Detail |
 |---|-------|--------|
-| 1 | **Port mismatch: frontend `:3000` vs gateway `:8080`** (see also item 8) | `src/app/config/api.config.ts@origin/develop` (Frontend) sets `API_BASE_URL` in development to `http://localhost:3000/api` (web) or `http://<host>:3000/api` (native), but the gateway listens on `:8080` (`README.md@origin/develop` of Backend: "the frontend must point to the gateway"). Not fixed in code yet; do not edit it as part of onboarding, report it to the Tech Lead. |
+| 1 | **Resolved in code: API address** (updated 2026-11-04) | `src/app/config/api.config.ts` (Frontend) uses `https://traducesenas.tech/api` by default. The old `:3000` value is no longer in the code. For a local gateway (`:8080`, see the Backend `README.md`) set `EXPO_PUBLIC_API_URL=http://localhost:8080/api`. Not tested end to end in this review. |
 | 2 | **`10-devops/local-setup.md` does not match Backend `develop`** | The Backend `README.md` is the reference for starting the system. Check the document against it before trusting a port, variable or command from `local-setup.md`. |
-| 3 | **CI only in the Frontend, no staging** (updated 2026-10-27) | The Frontend has CI (typecheck, Jest, build, Docker, Playwright E2E; see Tests and build). The Backend workflows were not found in the local copy; check before assuming. There is still no staging environment. ADR-006 describes CI and static analysis. |
+| 3 | **No staging environment** (updated 2026-11-04) | Both repositories have CI (see Tests and build). There is still no staging environment. ADR-006 describes CI and static analysis. |
 | 4 | **ADR for the microservices decision** (outdated, 2026-10-27) | [ADR-004](../05-architecture/decisions/records/ADR-004-microservices-architecture.md) now exists; this item was written when only ADR-001 to ADR-003 existed. See [05-architecture/decisions/](../05-architecture/decisions/README.md). |
 | 5 | **`dev` vs `develop`** | See [Git flow](#git-flow). |
 | 6 | **Migrations duplicated** | SQL files and Liquibase in parallel, and `06-data/migration-strategy.md` describes a third tool. See the FAQ. |
-| 7 | **Social login** (outdated, 2026-10-27; re-verify) | Written when the Google button had no action and `/auth/facebook` did not exist. Today iam-service has `google_login.ts`, `facebook_login.ts` and token verifiers, and the Frontend has `useGoogleLogin` and `useFacebookLogin`. It was not tested end to end for this update. |
-| 8 | **Frontend image does not reach the backend** | `nginx.conf@origin/develop` of Frontend sends `/api/` to `http://backend:3000` and `/api/lexicon/` to `http://lexicon:3003`; neither host exists in the Backend compose (the gateway is `api-gateway:8080`). Together with item 1, the frontend cannot reach the backend out of the box, in development or in the Docker build. |
+| 7 | **Social login** (updated 2026-11-04) | The Google and Facebook buttons exist in the Frontend (`GoogleLoginButton.tsx`, `FacebookLoginButton.tsx`) and call iam (`POST /api/auth/google` and `/api/auth/facebook`). A platform without its ID shows a notice instead of signing in. Not tested end to end. |
+| 8 | **Outdated: frontend nginx** (updated 2026-11-04) | `nginx.conf` of the Frontend only serves the static web; it has no `/api` proxy. The `/api` route in production is Caddy's job (Backend `docker-compose.prod.yml`). |
 | 9 | **API contracts out of date** | The OpenAPI files in `07-api` do not reflect `develop`: `iam-service.yaml` lacks `/api/iam/*`, `/api/users/stats`, `/api/auth/verify-email` and `/resend-verification`; `recognition-service.yaml` lacks `/api/translations/stats` and `/me/stats`; `analytics-service.yaml` documents `/api/analytics/sections` while the code serves `/reports/sections`. The code is the source of truth: update the contract when you touch an endpoint. |
-| 10 | **Delete account likely fails in Docker** (outdated, 2026-10-27; re-verify) | Written about an earlier `account_repository.ts`. The current one deletes tokens and roles in iam, writes an `iam.UserDeleted` event to the `outbox_events` table, and the other services erase their own data when they consume it (profile, recognition and analytics have `*.user-deleted` queues). Check with a real test before telling users either way. |
+| 10 | **Delete account** (updated 2026-11-04) | Implemented: iam deletes the account's tokens and roles and writes `iam.UserDeleted` to `outbox_events` in the same transaction. profile, recognition and analytics erase their own data when they consume it (`*.user-deleted` queues). Not tested end to end in this review. |
 
 ---
 

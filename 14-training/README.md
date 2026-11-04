@@ -1,6 +1,6 @@
 # 14 — Training
 
-> **Version:** 1.0 · **Date:** 2026-10-12 · **Language:** English ([ADR-001](../05-architecture/decisions/records/ADR-001-documentation-language.md) and [documentation-rules.md](../00-governance/documentation-rules.md))
+> **Version:** 1.1 · **Date:** 2026-11-04 · **Language:** English ([ADR-001](../05-architecture/decisions/records/ADR-001-documentation-language.md) and [documentation-rules.md](../00-governance/documentation-rules.md))
 > **Based on:** Docs `cc30cd7` · Backend `origin/develop` `b29a2fa` · Frontend `origin/develop` `06e7f39`
 > **Status:** draft written by an agent; human review pending.
 
@@ -57,18 +57,19 @@ There is no other manual in this folder. Screenshots used by the manuals are in
   When the code changes, re-check and update the header.
 - Document what exists in the code. Anything that is not connected yet is marked **Known issue** or **Not connected**.
 - No real secrets, no personal e-mails, no unverified URLs or ports.
-- Do not promise CI, staging, production or test coverage: none of them exists today.
+- Do not promise a staging environment, or a coverage figure that nobody has measured. CI exists in the Backend and in the
+  Frontend (see [technical-onboarding.md](technical-onboarding.md#tests-and-build)); production runs on a VPS behind Caddy.
 
 ## Known issues that affect these manuals
 
 | # | Issue | Where it shows up |
 |---|-------|-------------------|
-| 1 | The frontend in development points to `:3000/api` but the gateway listens on `:8080`; the frontend image's `nginx.conf` proxies to `backend:3000` and `lexicon:3003`, hosts that do not exist in the Backend compose | [technical-onboarding.md](technical-onboarding.md#known-issues) |
+| 1 | Resolved in code: the frontend calls `https://traducesenas.tech/api` by default; a local gateway needs `EXPO_PUBLIC_API_URL=http://localhost:8080/api` | [technical-onboarding.md](technical-onboarding.md#known-issues) |
 | 2 | [10-devops/local-setup.md](../10-devops/local-setup.md) does not fully match Backend `develop` | [technical-onboarding.md](technical-onboarding.md#known-issues) |
-| 3 | There is no CI and no staging environment | [technical-onboarding.md](technical-onboarding.md#known-issues) |
-| 4 | There is no ADR for the microservices decision (only ADR-001 to ADR-003 exist) | [technical-onboarding.md](technical-onboarding.md#known-issues) |
-| 5 | Google and Facebook sign-in are not working | [user-manual.md](user-manual.md#4-signing-in) |
-| 6 | Delete account likely fails in the Docker deployment (code review, not tested; needs a Backend fix) | [admin-manual.md](admin-manual.md#6-personal-data-and-law-1581), [user-manual.md](user-manual.md#7-your-data-and-privacy) |
+| 3 | There is no staging environment (CI exists in both repositories) | [technical-onboarding.md](technical-onboarding.md#known-issues) |
+| 4 | Outdated: ADR-004 now records the microservices decision | [technical-onboarding.md](technical-onboarding.md#known-issues) |
+| 5 | Google and Facebook sign-in buttons exist; they need their IDs configured and are not tested end to end | [user-manual.md](user-manual.md#4-signing-in) |
+| 6 | Account deletion is implemented through the outbox; not tested end to end in this review | [admin-manual.md](admin-manual.md#6-personal-data-and-law-1581), [user-manual.md](user-manual.md#7-your-data-and-privacy) |
 | 7 | The OpenAPI contracts in `07-api` do not reflect Backend `develop`; the code is the source of truth | [technical-onboarding.md](technical-onboarding.md#known-issues) |
 
 ## Correlations
