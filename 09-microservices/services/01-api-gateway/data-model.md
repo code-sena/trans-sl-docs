@@ -7,9 +7,7 @@
 
 ## Implemented today
 
-No database. The routing table is code, not a configuration file: `services/api-gateway/src/route_table.ts` (prefix per service and the public prefixes). Rate-limit counters live in process memory (`express-rate-limit`), as described below. `GET /health` and `/api/health` read the `/health` of each service on every call and keep nothing.
-
-> **The sections after this one describe the reference (target) model**, which the code does not fully implement.
+No database. The routing table is code: `services/api-gateway/src/route_table.ts` (prefixes per service and the prefixes that skip token verification). Rate-limit counters live in process memory (`express-rate-limit`), so they reset on restart. `GET /health` and `/api/health` call the `/health` of each service on every request and keep nothing.
 
 ## Database engine
 
@@ -19,15 +17,14 @@ No database. The routing table is code, not a configuration file: `services/api-
 
 | Item | Where | Notes |
 |------|-------|-------|
-| Routing table | Configuration file versioned in Git (`gateway.routes.json`, target) | Same content as the routing table in [README.md](./README.md) |
+| Routing table | `src/route_table.ts` | Code, versioned in Git. A change ships with a new image |
 | Rate-limit counters | In process memory, per gateway instance | Lost on restart; acceptable because the limit is a protection, not a business rule. If the gateway is scaled to several instances the effective limit is multiplied by the number of instances |
-| JWT verification key | Environment variable `JWT_VERIFY_KEY` | Never logged |
+| JWT secret | Environment variable `JWT_SECRET` | Not logged by the gateway |
 
 ## Schema migration
 
-Not applicable. A routing change is a configuration change deployed with the gateway.
+Not applicable. A routing change is a code change deployed with the image.
 
 ## Data it handles in transit
 
-The `Authorization` header and the request body pass through; neither is stored. Access logs record method, path,
-status, latency, `sub` and correlation id, never the token or the body.
+The `Authorization` header and the request body pass through; the body is not parsed and neither is stored. The gateway writes no access log: it logs only upstream errors, without the token or the body.

@@ -7,7 +7,7 @@
 
 ## Implemented today
 
-Taken from the migrations of Backend `develop` `2e0816f` (`services/analytics-service/db/`, applied in order by `docker-compose.yml`). Tables marked † are in `develop` but not yet deployed (production runs v1.3.0). PostgreSQL database `analytics`, schema `public` (no `usage` schema).
+Taken from the migrations of Backend `main` `a962982` (`services/analytics-service/db/001_usage_event.sql` and `002_erased_users.sql`, mounted by `docker-compose.yml`). PostgreSQL database `analytics`, schema `public` (no `usage` schema).
 
 | Table | Key columns | Notes |
 |-------|-------------|-------|
@@ -20,7 +20,7 @@ There are no `usage_daily_stats` or `session_daily_stats` rollups; reports aggre
 
 ## Database engine
 
-**Engine:** PostgreSQL, database `analytics`, schema `usage`.
+**Engine:** PostgreSQL, database `analytics` (schema `public` today; the target schema is `usage`).
 **Justification:** an append-only log plus small rollup tables, queried by date and by dimension; indexes and `GROUP BY` cover the
 dashboard. Monthly partitioning of `usage_events` is not needed at this scale (DATA-10).
 
@@ -95,9 +95,8 @@ Primary key `(stat_date, section, event_type)`. The index `idx_daily_stats_date_
 
 ## Schema migration
 
-**Tool:** Liquibase (one migration set per service).
-**Script location:** `analytics-service/db/changelog/`.
-**Naming convention:** `NNN-description.xml` / `.sql`.
+**Today:** plain SQL in `services/analytics-service/db/` (`001_usage_event.sql`, `002_erased_users.sql`), applied by Docker Compose when the volume is created.
+**Target:** Liquibase (one migration set per service), under `analytics-service/db/changelog/`, naming `NNN-description.xml` / `.sql`.
 
 **Rollback policy:**
 - Schema changes have a rollback block. The rollup tables can always be dropped and rebuilt from `usage_events`.

@@ -9,16 +9,16 @@ Traduce Señas is a microservices architecture: one API gateway and five domain 
 
 ```
 services/
-├── 01-api-gateway/          :8080  edge: routing, JWT validation, rate limit, CORS
-├── 02-iam-service/          :3001  identity, roles, consent, audit
-├── 03-recognition-service/  :3002  translation (core), models, gesture samples (PostgreSQL + MongoDB)
+├── 01-api-gateway/          :8080  edge: routing, JWT check (when a token is sent), rate limit, CORS
+├── 02-iam-service/          :3001  identity, roles and permissions (consent and audit are not implemented)
+├── 03-recognition-service/  :3002  translation (core), sign templates, gesture samples (PostgreSQL + MongoDB)
 ├── 04-lexicon-service/      :3003  sign catalog and media
 ├── 05-analytics-service/    :3004  usage statistics
-└── 06-profile-service/      :3005  preferences, notifications, achievements
+└── 06-profile-service/      :3005  preferences, notifications, achievements, daily challenges
 ```
 
 The full inventory, with events, dependencies and extraction status, is in [`service-catalog.md`](./service-catalog.md).
-Services communicate through REST (via the gateway) and domain events over RabbitMQ.
+Services communicate through REST (via the gateway), domain events over RabbitMQ and, in two places, internal HTTP (profile-service reads statistics and administrator ids).
 
 ## Structure of each microservice
 
@@ -42,65 +42,13 @@ services/
 
 ---
 
-## Cross-cutting documents (apply to ALL services)
+## Cross-cutting documents
 
 ### `service-catalog.md` ⭐ (Start here)
 Registry of all microservices in the system: responsibility, contexts, data, port, events, dependencies and extraction status.
 **Update when you add, remove or rename a service, and when an extraction status changes.**
 
-### `service-boundary-rules.md` ⭐
-The rules that define where each service ends.
-**Fill in:** criteria for deciding if something belongs to service A or B. These rules prevent
-services from overlapping or leaving responsibilities in limbo.
-
-**Include:**
-- How do we decide boundaries? (by domain, by team, by data lifecycle)
-- What to do when something "could go in either one"?
-- The "database" rule: if two things share a DB, they are the same service or there is a design error
-
-### `communication-patterns.md` ⭐
-How services communicate with each other.
-**Fill in:** what uses REST (synchronous), what uses events (asynchronous), why, concrete examples.
-
-**Patterns to document:**
-- Request/Response (REST/gRPC): when to use it, when not to
-- Events/Messages (RabbitMQ/Kafka): when to use it, how delivery is guaranteed
-- API Gateway: what goes through it, what does not
-- Service Discovery: how services find each other
-
-### `event-catalog.md` ⭐
-Catalog of all system events.
-**Fill in:** name, payload, who publishes, who consumes, on which topic/exchange.
-
-**Format:**
-```markdown
-| Event | Payload (key fields) | Published by | Consumed by | Topic/Exchange |
-|-------|---------------------|--------------|-------------|----------------|
-| UserCreated | userId, email, role | iam | actors, audit | users.events |
-```
-
-### `data-ownership-matrix.md` ⭐
-Who is the authoritative owner of each piece of data.
-**Fill in:** for each business entity, which service has the "official version".
-
-**Format:**
-```markdown
-| Entity | Owner service | Others that have a copy | How it is synchronized |
-|--------|--------------|------------------------|----------------------|
-| User | iam | actors (basic data) | UserCreated event |
-```
-
-### `dependency-map.md`
-Dependency map between services.
-**Fill in:** graph (can be ASCII) showing which service depends on which.
-Red alert: if the graph has cycles → there is a design problem.
-
-### `storage-and-documents.md`
-How the system handles file storage.
-**Fill in:** which service handles files, where they are stored (S3, MinIO, local), naming policy.
-
-### `service-readiness-checklist.md`
-Checklist that every service must meet before going to production.
+The other cross-cutting documents of the template (`service-boundary-rules.md`, `communication-patterns.md`, `event-catalog.md`, `data-ownership-matrix.md`, `dependency-map.md`, `storage-and-documents.md`, `service-readiness-checklist.md`) are not written yet. Their content for today's system is in `service-catalog.md` (dependency map, data ownership, communication rules), and the events in each service's `events.md`.
 
 ---
 
@@ -118,11 +66,4 @@ Checklist that every service must meet before going to production.
 
 ## Service numbering
 
-Number services to indicate implicit dependencies:
-services with lower numbers tend to be more fundamental.
-
-Suggested convention:
-- `01` = IAM / Security (all depend on this)
-- `02` = Reference / master data
-- `03-0N` = Domain services
-- `0N+1` = Support services (documents, notifications, audit)
+The numbers only order the folders: the gateway is `01`, and `02` (iam) is the service that issues the tokens the others verify.

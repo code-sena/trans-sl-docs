@@ -1,18 +1,45 @@
 # Events — IAM Service
 
 > Asynchronous events over RabbitMQ: topic exchange `traduce.events`, routing key `<service>.<event>`.
-> Event definitions, payloads and the envelope are in `02-domain/domain-events.md`; this file lists what iam publishes and
-> consumes. **No event is published by the code today** (there is no broker); everything below is the target.
+> Event definitions and payloads are typed in `packages/shared/src/events/contracts.ts`; the catalog is in `02-domain/domain-events.md`.
+> This file lists what iam publishes and consumes **today**, and the events of the target model that the code does not have yet.
 
 ---
 
 ## Events this service PUBLISHES
 
-Routing key = `iam.<EventName>`.
+Routing key = `iam.<EventName>`. The envelope is `{ eventId, type, occurredAt, payload }`.
 
-| Event | Routing key | When it is emitted | Payload (key fields) | Consumers |
-|-------|-------------|--------------------|----------------------|-----------|
-| `UserRegistered` | `iam.UserRegistered` | Registration with accepted terms | `{userId, email, name, role, termsAcceptedAt}` | profile (creates preferences), analytics |
+| Event | Routing key | When it is emitted | Payload | How it is sent | Consumers |
+|-------|-------------|--------------------|---------|----------------|-----------|
+| `UserRegistered` | `iam.UserRegistered` | An account is created (registration, or the first social login) | `{userId, email, name}` | Direct publish after the insert; a failure is logged, not retried | profile (creates the profile and default preferences), analytics (`USER_REGISTERED` usage event) |
+| `UserDeleted` | `iam.UserDeleted` | An account is erased (`DELETE /api/users/me`) | `{userId, occurredAt}` | Written to `outbox_events` in the same transaction as the erasure, then published by the relay | profile (erases its data), recognition (deletes translations, unlinks samples), analytics (unlinks usage events) |
+
+### Event example: `UserRegistered`
+
+```json
+{
+  "eventId": "550e8400-e29b-41d4-a716-446655440000",
+  "type": "iam.UserRegistered",
+  "occurredAt": "2026-08-31T15:42:10.000Z",
+  "payload": {
+    "userId": 42,
+    "email": "user@example.com",
+    "name": "María Rodríguez"
+  }
+}
+```
+
+Content rule: no payload carries passwords, hashes, plain-text tokens, video or biometric data.
+
+---
+
+## Target events (not in the code yet)
+
+The events below belong to the target model of `02-domain/domain-events.md`. The code does not publish them: it has no sign-in, password-change, lockout, role-change or consent events, and it names the deletion event `iam.UserDeleted`, not `iam.AccountDeleted`.
+
+| Event | Routing key | When it would be emitted | Payload (key fields) | Consumers |
+|-------|-------------|--------------------------|----------------------|-----------|
 | `UserSignedIn` | `iam.UserSignedIn` | Valid sign-in | `{userId, method, signedInAt}` | analytics |
 | `ExternalProviderLinked` | `iam.ExternalProviderLinked` | Google / Facebook account linked | `{userId, provider, externalId, linkedAt}` | audit (itself) |
 | `EmailVerified` | `iam.EmailVerified` | The 6-digit code is validated | `{userId, verifiedAt}` | analytics |
@@ -22,52 +49,24 @@ Routing key = `iam.<EventName>`.
 | `AccountLocked` | `iam.AccountLocked` | A lockout level is reached | `{userId, lockedAt, lockoutLevel, lockedUntil}` | profile (alert), analytics |
 | `AccountBlocked` | `iam.AccountBlocked` | The ladder is exhausted | `{userId, blockedAt, lockoutLevel}` | profile (alert), analytics |
 | `RoleAssigned`, `RoleRevoked` | `iam.RoleAssigned`, `iam.RoleRevoked` | An administrator changes a role | `{userId, roleId, roleName, assignedBy, assignedAt}` | audit (itself) |
-| `AccountDeleted` | `iam.AccountDeleted` | Account deletion completed | `{userId, deletedAt}` (no personal data) | analytics, profile |
+| `AccountDeleted` | `iam.AccountDeleted` | Account deletion completed (today: `iam.UserDeleted`) | `{userId, deletedAt}` (no personal data) | analytics, profile |
 | `ConsentGranted` | `iam.ConsentGranted` | The data subject authorizes sample use | `{consentId, userId, purpose, policyVersion, grantedAt}` | recognition |
-| `ConsentRevoked` | `iam.ConsentRevoked` | The data subject revokes the authorization | `{consentId, userId, revokedAt}` | recognition (stop keeping samples, discard capture sessions), profile (confirmation) |
-| `AccountDeletionRequested` | `iam.AccountDeletionRequested` | The data subject requests deletion | `{requestId, userId, requestedAt}` | recognition, profile, analytics (detach identity) |
-
-`AccountDeletionRequested` has the most consumers and each one deletes its own data and reports back. The `AccountDeleted`
-event closes the flow once iam has finished.
-
-### Event schema example: `UserRegistered`
-
-```json
-{
-  "eventId": "550e8400-e29b-41d4-a716-446655440000",
-  "eventType": "UserRegistered",
-  "aggregateId": "9f1c2b34-5d6e-4f70-8a91-b2c3d4e5f601",
-  "aggregateType": "User",
-  "occurredAt": "2026-08-31T15:42:10Z",
-  "version": 1,
-  "payload": {
-    "userId": "9f1c2b34-5d6e-4f70-8a91-b2c3d4e5f601",
-    "email": "user@example.com",
-    "name": "María Rodríguez",
-    "role": "USER",
-    "termsAcceptedAt": "2026-08-31T15:42:09Z"
-  },
-  "metadata": { "correlationId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", "userId": "9f1c2b34-5d6e-4f70-8a91-b2c3d4e5f601" }
-}
-```
-
-Content rule: no payload carries passwords, hashes, plain-text tokens, video or biometric data.
+| `ConsentRevoked` | `iam.ConsentRevoked` | The data subject revokes the authorization | `{consentId, userId, revokedAt}` | recognition, profile |
+| `AccountDeletionRequested` | `iam.AccountDeletionRequested` | The data subject requests deletion | `{requestId, userId, requestedAt}` | recognition, profile, analytics |
 
 ---
 
 ## Events this service CONSUMES
 
-iam keeps the audit trail. It subscribes to the change events of the other services and writes `audit_logs`.
+The code consumes no events. The audit trail that the target model assigns to iam is not implemented (no `audit_logs` table and no subscriptions).
 
-| Event | Published by | What iam does |
-|-------|--------------|---------------|
+The target design subscribes to the change events of the other services and writes `audit_logs`:
+
+| Event | Published by | What iam would do |
+|-------|--------------|-------------------|
 | `SignPublished`, `SignWithdrawn` | lexicon | Insert an `audit_logs` row (`entity_type = sign_lexicon`) |
 | `RecognitionModelTrained`, `RecognitionModelPublished` | recognition | Insert an `audit_logs` row (`ai_models`) |
 | `GestureSampleCaptured`, `CaptureSessionDiscarded`, `TrainingSampleAnonymized` | recognition | Insert a compliance `audit_logs` row |
-| `RoleAssigned`, `RoleRevoked`, `PasswordPolicyChanged` | iam (itself) | Insert an `audit_logs` row; written in the same transaction as the change, not through the broker |
-
-Queue: `iam.audit` bound to `lexicon.Sign*`, `recognition.RecognitionModel*`, `recognition.GestureSample*`,
-`recognition.CaptureSessionDiscarded`, `recognition.TrainingSampleAnonymized`.
 
 ---
 
@@ -75,16 +74,15 @@ Queue: `iam.audit` bound to `lexicon.Sign*`, `recognition.RecognitionModel*`, `r
 
 | Guarantee | Value | Implication |
 |-----------|-------|-------------|
-| At-least-once | Yes | Consumers must be idempotent: use `eventId` as the key |
+| At-least-once | Yes | Consumers must be idempotent by `eventId`. profile keeps `processed_events`; analytics refuses a second event with the same `eventId` |
 | At-most-once | No | |
 | Exactly-once | No | |
 
-Publishing uses a transactional outbox (an `outbox` table in the same database, written in the same transaction as the
-change) so a state change and its event cannot diverge. The outbox table is part of the target schema and is not in `06-data/`
-yet.
+`UserDeleted` uses a transactional outbox: the `outbox_events` table (migrations `009` and `012`) receives the event in the same transaction that erases the account. The relay (`src/shared/application/relay_outbox.ts`) publishes it with `mandatory: true`. If no queue accepts the message, the publish fails and the relay retries, so the event is not lost. `UserRegistered` does not use the outbox.
 
 ## Error handling
 
-- **Dead Letter Queue:** `traduce.events.dlq`, queue `iam.audit.dlq`
-- **Retries:** 3 to 5 with exponential backoff before the DLQ, 7-day retention
-- **Alerts:** a message in the DLQ is an alert condition (a lost audit record is a compliance defect)
+- iam publishes and consumes no queue, so it has no dead-letter queue of its own.
+- Consumers keep the messages they cannot process in `<queue>.dead` (for example `recognition-service.user-deleted.dead`). The `/health` of each consumer reports `dead_letters` when that queue has messages.
+- iam's own `/health` reports `outbox_backlog` when an event waits more than 10 minutes in `outbox_events`.
+- The target retry policy (3 to 5 retries with backoff, 7-day retention) is not implemented as written.

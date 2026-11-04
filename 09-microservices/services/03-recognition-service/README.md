@@ -1,19 +1,18 @@
 # Recognition Service (core)
 
-> The core of Traduce Señas: it stores the result of sign recognition and the user's translation history, manages the
-> recognition models, serves the sign templates used by the on-device recognizer, and holds the corpus of gesture samples
-> used to train the model.
+> The core of Traduce Señas: it stores the translation history of each user, serves the sign templates used by the
+> on-device recognizer, and holds the corpus of gesture samples used to train the model.
 
-**Extraction status:** pending. The code exists as the backend modules `translations` (`backend/src/domains/translations/`)
-and `ia` (`backend/src/domains/ia/`), both hexagonal. See `09-microservices/service-catalog.md`.
+**Extraction status:** extracted. The code lives in `services/recognition-service` (own process, own Dockerfile, port 3002,
+PostgreSQL database `recognition`, and MongoDB for `gesture_samples` when `MONGO_URL` is set). See `09-microservices/service-catalog.md`.
 
 ---
 
 ## Responsibility
 
-Owns `translations`, `translation_signs` and `ai_models` (PostgreSQL) and `gesture_samples` (MongoDB). Decides what counts
-as a recognized translation and which model version is active. Recognition itself runs on the device (TensorFlow.js in
-the mobile app); this service stores what it produces and distributes the model and the templates.
+Owns `translations`, `sign_templates` and `erased_users` (PostgreSQL) and `gesture_samples` (MongoDB). Recognition itself runs
+on the device (TensorFlow.js in the mobile app and the web app); this service stores what it produces and distributes the
+templates. The model registry (`ai_models`) is planned, not implemented.
 
 ---
 
@@ -22,87 +21,61 @@ the mobile app); this service stores what it produces and distributes the model 
 | Field | Value |
 |-------|-------|
 | Number in catalog | 03 |
-| Local port | 3002 |
-| Bounded contexts | Recognition & Translation (core) and AI / model training (the sample rules belong to Consent & Personal Data) |
-| DB engine | PostgreSQL `recognition` + **MongoDB** (`gesture_samples`) |
-| Data owned | `06-data/domains/05-translation`, `06-ai` |
-| Gateway paths | `/api/translations/**`, `/api/recognition/**`, `/api/models/**`, `/api/samples/**` |
-| Communicates with | RabbitMQ. No synchronous calls to other services |
+| Local port | 3002 (internal; not published by Docker Compose) |
+| Bounded contexts | Recognition & Translation (core). The consent rule for samples is checked here too |
+| DB engine | PostgreSQL `recognition` + MongoDB (`gesture_samples`, only when `MONGO_URL` is set) |
+| Data owned | See [data-model.md](./data-model.md) |
+| Gateway paths | `/api/translations/**`, `/api/recognition/sign-templates`, `/api/sign-templates` (deprecated alias), `/api/samples/**` |
+| Communicates with | RabbitMQ only (publishes `TranslationProduced`, consumes `iam.UserDeleted` and `lexicon.*`). No synchronous calls to other services |
 | Consumed by | The app (through the gateway) |
-| Events | Publishes translation, model and sample events; consumes consent, account and lexicon events. See [events.md](./events.md) |
+| Events | See [events.md](./events.md) |
 | Health | `GET /health` |
 
 ---
 
 ## Responsibilities (what this service DOES)
 
-- Save a translation produced on the device, list the user's history, soft-delete an entry (irreversible, private to its owner)
-- Keep the registry of recognition models (`ai_models`): version, provenance, accuracy, exactly one active model
-- Serve the sign templates used by the on-device recognizer (static: 63 values, motion: 16 frames of 126 values)
-- Register the gesture samples recorded to train the model (MongoDB `gesture_samples`), group them by capture session, validate them
-- Enforce the consent rule for samples: no sample without consent evidence; a revoked consent discards the capture sessions
-- Keep a local copy of the active sign codes from lexicon (refreshed by `lexicon.SignPublished` / `SignWithdrawn`)
-- Run or register model training (ADMIN only)
+- Save a translation sent by the client (`POST /api/translations`), list the user's history and delete an entry (soft delete, private to its owner)
+- Count translations for statistics: all users for administrators (`GET /api/translations/stats`, permission `stats.read`) and the user's own counters (`GET /api/translations/me/stats`)
+- Serve the sign templates used by the on-device recognizer, in three kinds: `static` (63 values), `motion` (16 frames of 126 values) and `word` (30 frames of 128 values). Reading is public; importing and deleting need the permission `models.manage`
+- Register gesture samples (`POST /api/samples`, ADMIN), grouped by capture session. Every sample needs the date of consent and the terms version, or it is rejected
+- On `iam.UserDeleted`, delete the user's translations, unlink the user from the samples and keep the user id in `erased_users`
+- Delete translations after `RECOGNITION_TRANSLATION_RETENTION_DAYS` (default 30) and keep their daily counts and distinct words for the statistics
 
 ## Out of scope (what it does NOT do)
 
-- **The sign catalog** (codes, texts, media): `lexicon-service`. Recognition only knows the `sign_lexicon.code` values
-- **Accounts, roles, consent grants:** `iam-service`
-- **Usage statistics and achievements:** `analytics-service` and `profile-service`, fed by events
-- **Showing notifications:** `profile-service`
+- **The sign catalog** (codes, texts, media): `lexicon-service`. Recognition only receives the `lexicon.*` events, and today it only logs them
+- **Accounts, roles and consent grants:** `iam-service`
+- **Usage statistics and achievements:** `analytics-service` and `profile-service`
+- **Notifications:** `profile-service`
+- **Model training and the model registry:** not implemented in the service. The training scripts live in `services/recognition-service/training/extraction/` (`train_model.py`, `train_and_export.py`, `colab_train.ipynb`)
 
 ---
 
-## What exists today
+## Routes (implemented)
 
-### Module `translations` (PostgreSQL, JWT required on every route)
+All routes of `/api/translations` need a valid JWT. The full contract with the errors is in `07-api/contracts/openapi/recognition-service.yaml`.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/translations` | Save `{inputText?, outputText, type, confidence?, source?}`. `type`: `texto_sena`, `sena_texto`, `voz_sena` |
-| GET | `/api/translations/history` | List the user's translations that are not deleted |
-| DELETE | `/api/translations/:id` | Soft delete (`is_deleted = TRUE`) |
+| Area | Method and path | Access |
+|------|-----------------|--------|
+| Translations | `POST /api/translations`, `GET /api/translations/history`, `DELETE /api/translations/:id`, `GET /api/translations/me/stats` | Any valid JWT |
+| Translations | `GET /api/translations/stats` | Permission `stats.read` |
+| Sign templates | `GET /api/recognition/sign-templates` (and the alias `/api/sign-templates`) | Public |
+| Sign templates | `POST /api/recognition/sign-templates`, `DELETE /api/recognition/sign-templates/:id` (and the alias) | Permission `models.manage` |
+| Samples | `POST /api/samples`, `GET /api/samples` | ADMIN role |
 
-### Module `ia` (sign templates, PostgreSQL JSONB)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/sign-templates` | Public | The translation screen downloads the templates when it opens, even without a session |
-| POST | `/api/sign-templates` | JWT | Import templates `{label, kind, features, source?}` |
-| DELETE | `/api/sign-templates/:id` | JWT | Delete a template |
-
-Scripts under `ia/training/` import the LSC54 dataset (`convert-lsc54-to-templates`, `upload-templates`, ...).
-The outbound ports `ai_service` and `gesture_repository` are declared but empty (comments say: pending, the gesture domain
-is planned on MongoDB). **MongoDB is not connected in the code yet.**
-
-### Target paths
-
-| Path prefix | Content |
-|-------------|---------|
-| `/api/translations/**` | Same as today |
-| `/api/recognition/**` | Sign templates (today `/api/sign-templates`) and recognition-related reads |
-| `/api/models/**` | Model registry, publish and training (ADMIN, permission `models.manage`) |
-| `/api/samples/**` | Capture sessions, samples, validation (LINGUIST / ADMIN, permissions `samples.capture`, `samples.validate`) |
-
-The endpoint-level contract for `/models` and `/samples` is not defined yet.
+The alias `/api/sign-templates` is deprecated; the current frontend still calls it.
 
 ---
 
 ## How to run it locally
 
-Today (inside the backend, port 3000):
-
 ```bash
-psql -h localhost -p 5433 -U postgres -d traduce_senas -f backend/migrations/001_translations.sql
-psql -h localhost -p 5433 -U postgres -d traduce_senas -f backend/migrations/002_sign_templates.sql
-cd backend && npm install && npm run dev
-curl http://localhost:3000/api/sign-templates
-```
-
-Target:
-
-```bash
+# With Docker Compose (starts postgres-recognition, mongo and rabbitmq first)
 docker compose up -d recognition-service
+
+# Locally, only this service (port 3002)
+npm run dev -w @traduce/recognition-service
 curl http://localhost:3002/health
 ```
 
@@ -110,12 +83,12 @@ curl http://localhost:3002/health
 
 | Variable | Purpose |
 |----------|---------|
-| `PORT` | HTTP port (`3002` target) |
-| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | PostgreSQL (`DB_NAME=recognition`) |
-| `MONGO_URL` | MongoDB connection for `gesture_samples` (target) |
-| `JWT_VERIFY_KEY` | Verification key of the JWT |
-| `RABBITMQ_URL` | Broker URL (target) |
-| `MODEL_STORAGE_DIR` | Where the published `.tflite` artifacts are stored (target) |
+| `PORT` | HTTP port (`3002`) |
+| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | PostgreSQL connection (`DB_NAME=recognition`; in Compose the host is `postgres-recognition`) |
+| `MONGO_URL` | MongoDB connection for `gesture_samples`. Empty: the samples are kept in memory and lost on restart |
+| `JWT_SECRET` | Verification secret of the JWT (HS256) |
+| `RECOGNITION_TRANSLATION_RETENTION_DAYS` | Days before a translation is deleted (default `30`) |
+| `RABBITMQ_URL` | Broker URL. Empty means the in-memory bus |
 
 ---
 
@@ -125,5 +98,5 @@ curl http://localhost:3002/health
 - [events.md](./events.md) — Events published and consumed
 - [decisions.md](./decisions.md) — Design decisions
 - [runbook.md](./runbook.md) — Operation
-- Data model source → `06-data/domains/05-translation.md`, `06-ai.md`
-- API contract → `07-api/contracts/openapi/` (no file for this service yet)
+- Target data model → `06-data/domains/05-translation.md`, `06-ai.md`
+- API contract → `07-api/contracts/openapi/recognition-service.yaml`

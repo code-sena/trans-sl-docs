@@ -20,10 +20,12 @@ request emits it, not the gateway.
 
 ## Request-level signals it does produce
 
-These are logs and headers, not domain events.
+These are HTTP answers and error logs, not domain events.
 
 | Signal | Where | Purpose |
 |--------|-------|---------|
-| `X-Correlation-Id` | Request header, generated if missing and forwarded to the upstream | Becomes `metadata.correlationId` of the events the upstream publishes |
-| Access log line | Standard output | method, path, status, latency, `sub`, correlation id |
-| `401`, `429` responses | HTTP | Invalid / missing JWT, rate limit exceeded |
+| `401 UNAUTHORIZED` | HTTP | A request carries a token that is invalid or expired |
+| `404 NOT_FOUND` | HTTP | The path is outside the routing table |
+| `429 RATE_LIMITED` | HTTP | Rate limit exceeded |
+| `502 BAD_GATEWAY` | HTTP | The upstream service does not answer |
+| `[gateway] <service>: <message>` | Standard error output | Proxy error when an upstream fails (the gateway writes no access log) |

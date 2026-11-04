@@ -7,7 +7,7 @@
 
 ## Implemented today
 
-Taken from the migrations of Backend `develop` `2e0816f` (`services/recognition-service/db/`, applied in order by `docker-compose.yml`). Tables marked † are in `develop` but not yet deployed (production runs v1.3.0). PostgreSQL database `recognition`, schema `public` (no `translation` or `ai` schemas), plus MongoDB.
+Taken from the migrations of Backend `main` `a962982` (`services/recognition-service/db/*.sql`, applied by `docker-compose.yml`). Tables marked † come from migration `005` and are in `main` from `a962982`. PostgreSQL database `recognition`, schema `public` (no `translation` or `ai` schemas), plus MongoDB for `gesture_samples`.
 
 | Store | Table / collection | Key columns | Notes |
 |-------|--------------------|-------------|-------|
@@ -111,7 +111,7 @@ Training corpus. Not a table; **no foreign keys** into PostgreSQL.
 
 Indexes: `{sign_id: 1}`, `{capture_session_id: 1}`, `{sign_id: 1, is_validated: 1}` (trainable samples).
 
-A `$jsonSchema` validator (`validationLevel: strict`, `validationAction: error`) makes the consent fields and the other
+A `$jsonSchema` validator (target: `validationLevel: strict`, `validationAction: error`; the code creates only the indexes today) makes the consent fields and the other
 required fields mandatory; it replaces the `NOT NULL`s. The full validator is in `06-data/domains/06-ai.md`.
 
 The collection holds biometric data of identified people: **encryption at rest is mandatory** for MongoDB and for the object
@@ -122,12 +122,12 @@ Open item ALIGN-02: anonymous pseudonym (INV-010) versus named performer. It is 
 
 ## What exists today (code)
 
-Database `traduce_senas`, schema `public`, integer keys. MongoDB is not used.
+Database `recognition`, schema `public`, integer keys. MongoDB holds `gesture_samples` only when `MONGO_URL` is set; without it the samples stay in memory.
 
 | Today | Target |
 |-------|--------|
-| `translations(translation_id SERIAL, user_id INT FK users, input_text, output_text, type, confidence NUMERIC(4,3), source, is_deleted, created_at)` | `translations` + `translation_signs` (UUID, `recognized_text`, `output_mode`, `deleted_at`, `model_id`) |
-| `sign_templates(template_id SERIAL, label, kind 'static'/'motion', features JSONB, source, created_by INT FK users, created_at)` | No table in `06-data/`. Kept as the templates store of the on-device recognizer until the model registry replaces it (open) |
+| `translations(translation_id SERIAL, user_id INT (logical, no FK), input_text, output_text, type, confidence NUMERIC(4,3), source, is_deleted, created_at)` | `translations` + `translation_signs` (UUID, `recognized_text`, `output_mode`, `deleted_at`, `model_id`) |
+| `sign_templates(template_id SERIAL, label, kind 'static'/'motion'/'word', features JSONB, source, created_by INT (logical, no FK), created_at)` | No table in `06-data/`. Kept as the templates store of the on-device recognizer until the model registry replaces it (open) |
 | none | `ai_models`, `gesture_samples` |
 
 The code stores free text per translation (`output_text`); it does not link signs (`translation_signs`).
@@ -138,7 +138,7 @@ The code stores free text per translation (`output_text`); it does not link sign
 
 | Field | Points at | Rule |
 |-------|-----------|------|
-| `translations.user_id`, `ai_models.trained_by`, `gesture_samples.recorded_by`, `validated_by` | iam `users.user_id` | Logical ID; erased by `iam.AccountDeletionRequested` |
+| `translations.user_id`, `ai_models.trained_by`, `gesture_samples.recorded_by`, `validated_by` | iam `users.user_id` | Logical ID; on `iam.UserDeleted` (today) the translations are deleted and `recorded_by` is cleared (the target name of the event is `iam.AccountDeletionRequested`) |
 | `translation_signs.sign_id`, `gesture_samples.sign_id` | lexicon `sign_lexicon` | Logical ID |
 
 `translations.user_id` is personal data: the history disappears with the account (RNF8), the opposite of `usage_events` in analytics.
@@ -147,6 +147,6 @@ The code stores free text per translation (`output_text`); it does not link sign
 
 ## Schema migration
 
-**Tool:** Liquibase for PostgreSQL; MongoDB validators and indexes are created by a startup migration script (`migrate-mongo` or equivalent, assumption).
-**Script location:** `recognition-service/db/changelog/`, `recognition-service/db/mongo/`.
-**Rollback policy:** reversible changesets have a rollback block; the data move from `public.translations` is one-way, back up first.
+**Today:** plain SQL files in `services/recognition-service/db/` (`001` to `005`), applied by Docker Compose when the volume is created, and by hand afterwards (the comments in `docker-compose.yml` give the commands). The MongoDB indexes are created by the service at startup (`createIndex`, idempotent).
+**Target:** Liquibase for PostgreSQL, with the MongoDB validator created by a migration script (not in the code yet).
+**Rollback policy (target):** reversible changesets have a rollback block; the data move from `public.translations` is one-way, back up first.
