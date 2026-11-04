@@ -1,5 +1,7 @@
 # 02 — Problem Domain
 
+> **Status note (2026-11-04).** This folder is the **reference domain model**: the target design, and it is broader than what is built today. What is implemented is documented in `09-microservices/` and `07-api/`. Not built today (checked against the backend code): push notifications and `UserDevice` (replaced by email, ADR-007); login sessions (`user_sessions`, `refresh_tokens`; auth is a JWT only); progressive lockout (`lockout_level`, `locked_until`); the `translation_sessions` table; the `ConsentGrant` entity (consent is stored as fields on `users` and on the samples); the `domain_events`, `audit_logs` and `error_logs` tables; `password_policies`.
+
 > **What is this?** The mental model of the **Traduce Señas** business. It is not technology — it is
 > understanding the problem the system solves before writing code. This section comes from
 > Domain-Driven Design (DDD).
@@ -105,7 +107,7 @@ which policies run automatically when they occur.
 | ERF5.5 Recent translations | Recognition & Translation | `TranslationSession` | `TranslationDeleted` |
 | RF6 Usage statistics | Usage Analytics | `UsageReport` *(read model)* | consumes all |
 | RF7 Sign language alphabet | **Learning & Lexicon** | `Sign` *(type `LETTER`)* | `SignViewed` |
-| RF8 Gamification ⏸ | **Gamification** *(provisional)* | `Achievement` | `AchievementUnlocked` |
+| RF8 Gamification | **Gamification** *(implemented in profile-service; not yet in the SRS, GAP-01)* | `Achievement` | `AchievementUnlocked` |
 | RNF4 Security | Identity & Access | `User` | `AccountLocked` / `AccountBlocked` |
 | RNF8 Data protection (Law 1581) | Consent & Personal Data | `ConsentGrant` | `ConsentGranted` / `ConsentRevoked` |
 | — Access control | Identity & Access | `Role`, `Permission` | `RoleAssigned` |
@@ -144,7 +146,7 @@ still described six contexts. This revision brings them back in sync.
 | **Notifications promoted** from a cross-cutting service to a Supporting bounded context | `domain-map.md` §2, §5 |
 | **Learning renamed to Learning & Lexicon** — the alphabet is the subset of the sign catalog where the type is `LETTER` | `domain-map.md` §2 · `entities-and-rules.md` |
 | **`Role` and `Permission` become entities** — the role was a value object holding `USER` or `ADMIN` | `entities-and-rules.md` |
-| **Gamification** appears as a provisional context, ⏸ pending RF8 | all three |
+| **Gamification** is implemented in profile-service; RF8 is still missing from the SRS (GAP-01) | all three |
 | **Audit, error log and password policy** documented as cross-cutting services that are deliberately *not* contexts | `domain-map.md` §2.9 |
 | Invariants 13 → 27, events 18 → 40 | `entities-and-rules.md`, `domain-events.md` |
 | **New §6: where the map and the database disagree** — nine open items | `domain-map.md` §6 |

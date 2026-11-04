@@ -1,5 +1,7 @@
 # Entities, Value Objects and Business Rules — Traduce Señas
 
+> **Status note (2026-11-04).** This file is the reference model. What is implemented is in `09-microservices/` and `07-api/`. Not built today (checked against the backend code): `UserDevice` and push (ADR-007); `LoginSession`, `user_sessions` and `refresh_tokens`; progressive lockout (`lockout_level`, `locked_until`; only the `BLOCKED` status exists); the `translation_sessions` table; the `ConsentGrant` entity (consent is stored as fields on `users` and on the samples); `password_policies`; `DataDeletionRequest`. Account deletion is a real `DELETE` of the `users` row, with no `deletedAt` and no anonymized row.
+
 > The building blocks of the domain following the DDD tactical model. This document translates the
 > domain knowledge (gathered in the Event Storming and recorded in `domain-map.md`) into models that
 > become code directly.
@@ -20,7 +22,7 @@
 > **What changed in v1.1.** Realigned with the v8 persistence model. New entities for the tables the
 > model added: `Role` and `Permission` (Identity), `Sign`, `SignLocalization`, `Category` and
 > `MultimediaResource` (Learning & Lexicon), `NotificationType`, `Notification` and `UserDevice`
-> (Notifications), `PasswordPolicy`, and `Achievement` / `UserAchievement` marked ⏸ pending RF8.
+> (Notifications), `PasswordPolicy`, and `Achievement` / `UserAchievement`.
 > `User` gains the progressive lockout attributes. Invariants go from 13 to 27.
 >
 > Four invariants are now marked ⚠️ **because the database contradicts them** — INV-005, INV-007,
@@ -106,7 +108,7 @@ are validated on every operation. In this project they are numbered INV-001 thro
 | `createdAt` | DateTime | Creation date | Yes | Immutable |
 | `updatedAt` | DateTime | Last modification | Yes | Set automatically |
 | `lastAccessAt` | DateTime | Last access | No | — **v1.1** |
-| `deletedAt` | DateTime | Deletion requested by the data subject | No | The row is kept anonymized (RNF8) — **v1.1** |
+| `deletedAt` | DateTime | Deletion requested by the data subject | No | **Not built.** Deletion is a `DELETE` of the row, with `iam.UserDeleted` emitted in the same transaction (iam-service `account_repository.ts`). No anonymized row is kept (RNF8) — **v1.1** |
 
 **Lifecycle — revised in v1.1:**
 
@@ -132,7 +134,7 @@ are validated on every operation. In this project they are numbered INV-001 thro
 | `ACTIVE` | May use the application | → temporarily locked, → `BLOCKED`, → `DELETED` |
 | *temporarily locked* | **Not a state — a date.** `status` stays `ACTIVE` and `lockedUntil` holds a future timestamp. It lifts by itself | → `ACTIVE` (automatic), → `BLOCKED` |
 | `BLOCKED` | Lockout escalation exhausted (RNF4). Requires administrator intervention | → `ACTIVE`, → `DELETED` |
-| `DELETED` | Deletion requested by the data subject (RNF8). Persisted as `deletedAt` | Terminal state |
+| `DELETED` | Deletion requested by the data subject (RNF8). **Not persisted:** the row is deleted, so there is no `deletedAt` to read | Terminal state |
 
 > **Why a temporary lockout is a date and not a state (v1.1).** v1.0 modeled `LOCKED` as a fourth
 > state. The v8 model uses `locked_until`, which is better: a state has to be exited by somebody, and
@@ -687,7 +689,7 @@ INV-025: A disabled switch suppresses every delivery              [NEW in v1.1]
 
 ---
 
-### Entity: `UserDevice` — **new in v1.1**
+### Entity: `UserDevice` — **new in v1.1** · **not built (ADR-007)**
 
 **Context:** Notifications
 
@@ -727,7 +729,7 @@ INV-026: Exactly one password policy is in force                  [NEW in v1.1]
 
 ---
 
-### Entity: `Achievement` / `UserAchievement` ⏸ — **new in v1.1, pending RF8**
+### Entity: `Achievement` / `UserAchievement` — **new in v1.1**
 
 **Context:** Gamification
 
@@ -737,14 +739,15 @@ INV-026: Exactly one password policy is in force                  [NEW in v1.1]
 | `UserAchievement` | `id`, `userId`, `achievementId`, `achievedAt` — unique per (user, achievement) |
 
 ```
-INV-027: An achievement unlocks once per user                     [NEW in v1.1] ⏸
+INV-027: An achievement unlocks once per user                     [NEW in v1.1]
   - Rule: A user unlocks a given achievement exactly once, however much they keep using the app
   - Violation: Repeated notifications for the same achievement; a meaningless reward
   - Implementation: Unique index (user_id, achievement_id)
 ```
 
-> ⏸ **Provisional.** These two entities exist only if RF8 is approved and added to the SRS. Until then
-> nothing here is built. See `04-requirements/traceability-matrix.md` § 6, GAP-01.
+> **Implemented in profile-service** (`achievements`, `user_achievements`). RF8 is still not in the SRS, so
+> the requirement is open. The team decides whether RF8 enters the SRS or the module is removed with its code.
+> See `04-requirements/traceability-matrix.md` § 6, GAP-01.
 
 **Daily challenges (implemented in profile-service; not numbered as INV).** Rules from
 [ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md) and
@@ -854,7 +857,7 @@ aggregate.
 |------|------|-----------------|-----------------|--------------------------|
 | `User` | Entity | Identity & Access | Yes | `users` |
 | `ExternalProviderLink` | Entity | Identity & Access | No — inside `User` | `user_auth_providers` |
-| `LoginSession` | Entity | Identity & Access | Yes — **v1.1** | `user_sessions`, `refresh_tokens` |
+| `LoginSession` | Entity | Identity & Access | Yes — **v1.1** | **Not built:** `user_sessions`, `refresh_tokens` |
 | `PasswordResetRequest` | Entity | Identity & Access | Yes | `user_tokens` — ⚠️ ALIGN-09: one table also covers email verification |
 | `Role` | Entity | Identity & Access | Yes — **v1.1** | `roles`, `user_roles` |
 | `Permission` | Entity | Identity & Access | Yes — **v1.1** | `permissions`, `role_permissions` |
@@ -863,7 +866,7 @@ aggregate.
 | `RecognitionModel` | Entity | Recognition & Translation | Yes | `ai_models` |
 | `ConsentGrant` | Entity | Consent & Personal Data | Yes | ⚠️ no table of its own — fields on `users` and `gesture_samples` |
 | `TrainingSample` | Entity | Consent & Personal Data | Yes | `gesture_samples` (MongoDB) — ⚠️ ALIGN-02 |
-| `DataDeletionRequest` | Entity | Consent & Personal Data | Yes | ⚠️ **none** — only `users.deleted_at` |
+| `DataDeletionRequest` | Entity | Consent & Personal Data | Yes | ⚠️ **none** — not built; deletion is a direct `DELETE` of `users` |
 | `UserProfile` | Entity | Profile & Preferences | Yes | `user_preferences` |
 | `Sign` | Entity | Learning & Lexicon | Yes — **v1.1, replaces `AlphabetLetter`** | `sign_lexicon` |
 | `SignLocalization` | Entity | Learning & Lexicon | No — inside `Sign` — **v1.1** | `sign_localizations` |
@@ -871,9 +874,9 @@ aggregate.
 | `MultimediaResource` | Entity | Learning & Lexicon | No — inside `Sign` — **v1.1** | `multimedia_resources` |
 | `NotificationType` | Entity | Notifications | Yes — **v1.1** | `notification_types` |
 | `Notification` | Entity | Notifications | Yes — **v1.1** | `notifications` |
-| `UserDevice` | Entity | Notifications | Yes — **v1.1** | `user_devices` |
-| `Achievement` ⏸ | Entity | Gamification | Yes — **v1.1** | `achievements` |
-| `UserAchievement` ⏸ | Entity | Gamification | No — inside `Achievement` — **v1.1** | `user_achievements` |
+| `UserDevice` | Entity | Notifications | Yes — **v1.1** | **Not built** (ADR-007): `user_devices` |
+| `Achievement` | Entity | Gamification | Yes — **v1.1** | `achievements` |
+| `UserAchievement` | Entity | Gamification | No — inside `Achievement` — **v1.1** | `user_achievements` |
 | `UsageEvent` | Entity | Usage Analytics | Yes — **v1.1** | `usage_events` |
 | `UsageReport` | **Read model** | Usage Analytics | N/A — not an aggregate | none, by design |
 | `PasswordPolicy` | Entity | Identity & Access — **v1.2** | Yes | `identity.password_policies` |
