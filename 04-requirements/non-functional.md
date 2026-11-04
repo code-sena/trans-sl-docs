@@ -250,7 +250,7 @@ header, so a user-reported failure can be traced to its exact log line. Today no
 - PostgreSQL 15+ and MongoDB 6+ as declared dependencies, not assumptions
 - No service depends on the host operating system
 - Environment variables are the only source of environment-specific configuration
-- Mobile app: Android 7.0 (API 24) minimum, the React Native 0.86 default, since the app does not set its own; iOS minimum not set by the app
+- Mobile app: Android 7.0 (API 24) and iOS 15.1 minimum, the React Native 0.86 defaults, since the app does not set its own
 
 ---
 
