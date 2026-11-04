@@ -4,68 +4,56 @@
 
 ## 1. Architectural style
 
-Traduce Señas uses an architecture oriented toward the separation of responsibilities and based on the principles of **Hexagonal Architecture (Ports and Adapters)**.
+Traduce Señas uses an architecture oriented toward the separation of responsibilities and based on the principles of **Hexagonal Architecture (Ports and Adapters)**. Each backend service follows this style (see [hexagonal-architecture.md](./hexagonal-architecture.md)).
 
-The system is designed to allow progressive evolution toward a microservices architecture. The separation of responsibilities aims to reduce coupling between the different components and facilitate their maintenance and evolution.
+The system has three kinds of parts:
 
-Currently, the system includes a mobile frontend developed with React Native and a backend developed with Node.js, Express, and TypeScript. The backend acts as an intermediary between the application and the persistence systems.
+* **Client:** one Expo / React Native codebase that runs as a web app and as an Android APK.
+* **API gateway** (`api-gateway`, Express 5): the only public entry point of the backend. When a request carries a JWT, the gateway checks it and rejects invalid tokens; it also applies rate limits and forwards each `/api/...` path prefix to the service that owns it. Each service decides which of its routes need a session.
+* **Domain services:** `iam`, `recognition`, `lexicon`, `analytics` and `profile`. Each one owns its database and talks to the others through domain events published on RabbitMQ.
 
-The architecture also includes the use of two storage technologies with different responsibilities:
+Storage follows database-per-service:
 
-* **PostgreSQL:** structured and transactional application information.
-* **MongoDB:** information related to artificial intelligence, computer vision, and sign language recognition.
+* **PostgreSQL 16:** one instance per service (five instances). Structured and transactional data.
+* **MongoDB 7:** gesture samples of `recognition-service`.
 
-Communication between these components is coordinated by the backend through logical identifiers. PostgreSQL and MongoDB do not maintain relationships through direct foreign keys.
+Services do not share tables and do not use foreign keys across databases. They refer to each other with logical identifiers (for example `user_id`). See [ADR-003](./decisions/records/ADR-003-database-separation.md) and [ADR-008](./decisions/records/ADR-008-database-per-service.md).
+
+The services, their routes and their events are described in the [service catalog](../09-microservices/service-catalog.md). This document does not repeat them.
 
 ---
 
 ## 2. Architecture diagram
 
-The general architecture of Traduce Señas can be represented as follows:
-
 ```text
 ┌──────────────────────────────┐
-│            User              │
-│                              │
-│  Deaf / hearing person       │
+│ Client                       │
+│ Expo / React Native          │
+│ web app and Android APK      │
 └──────────────┬───────────────┘
-               │
-               │ Interaction
+               │ HTTPS (production) / HTTP :8080 (local)
+               ▼
+┌──────────────────────────────┐        production only
+│ Caddy (TLS, Let's Encrypt)   │ ─ /* ─► web (nginx, Expo export)
+└──────────────┬───────────────┘
+               │ /api/*
                ▼
 ┌──────────────────────────────┐
-│        Mobile application    │
-│        React Native          │
-│                              │
-│ ┌──────────────────────────┐ │
-│ │ Camera                   │ │
-│ │ Sign language recognition│ │
-│ │ TensorFlow.js            │ │
-│ │ User interface           │ │
-│ └──────────────────────────┘ │
-└──────────────┬───────────────┘
-               │
-               │ HTTP / REST
-               ▼
-┌──────────────────────────────┐
-│         Backend API          │
-│ Node.js + Express + TypeScript│
-│                              │
-│ ┌──────────────────────────┐ │
-│ │ Use cases               │ │
-│ │ Ports                   │ │
-│ │ Adapters                │ │
-│ │ Authentication          │ │
-│ │ Application logic       │ │
-│ └──────────────────────────┘ │
-└───────┬──────────────┬───────┘
-        │              │
-        │              │
-        ▼              ▼
-┌───────────────┐  ┌────────────────┐
-│  PostgreSQL   │  │    MongoDB     │
-│               │  │                │
-│ Structured    │  │ AI and         │
-│ data          │  │ computer vision│
-│               │  │ data           │
-└───────────────┘  └────────────────┘
+│ API gateway (Express 5)      │
+│ JWT check, rate limits,      │
+│ /health, reverse proxy       │
+└──┬─────────┬──────────┬──────────┬──────────┬──┘
+   │         │          │          │          │   HTTP inside the Docker network
+   ▼         ▼          ▼          ▼          ▼
+┌──────┐ ┌──────────┐ ┌────────┐ ┌──────────┐ ┌────────┐
+│ iam  │ │recognition│ │lexicon │ │analytics │ │profile │
+└──┬───┘ └────┬─────┘ └───┬────┘ └────┬─────┘ └───┬────┘
+   │          │           │           │           │
+   ▼          ▼           ▼           ▼           ▼
+ PostgreSQL (one database per service)     MongoDB (recognition only)
+
+ iam, recognition, lexicon, analytics and profile ⇄ RabbitMQ
+ (exchange `traduce.events`, dead-letter queues `<queue>.dead`)
 ```
+
+Local development runs the same containers with `docker compose up --build`; only the gateway is published on the host. Production adds Caddy and the web container through `docker-compose.prod.yml`. See [deployment.md](./deployment.md).
