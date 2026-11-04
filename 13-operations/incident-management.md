@@ -34,12 +34,12 @@
 
 ```
 How do you know there is an incident?
-  → Alert from Prometheus / PagerDuty
+  → Alert from Prometheus / PagerDuty (planned, not deployed)
   → User report
-  → Proactive monitoring on the dashboard
+  → Proactive monitoring on the dashboard (planned, not deployed)
 
 Immediate action:
-  1. Acknowledge the alert in PagerDuty (to silence it and mark that someone responded)
+  1. Acknowledge the alert in PagerDuty (planned, not deployed; until then, say you are on it in Slack)
   2. Go to the Slack #incidents channel and write: "Investigating [brief description] — [your name]"
   3. Open the runbook for the affected service: `09-microservices/services/[service]/runbook.md`
 ```
@@ -81,24 +81,25 @@ For microservices, each service must be checked independently:
 ```
 Diagnostic tools (in order):
   1. Which service is failing? (Check all 5 services + gateway health)
-     curl http://localhost:8080/health           # Gateway
-     curl http://localhost:3001/health/ready     # iam-service
-     curl http://localhost:3002/health/ready     # recognition-service
-     curl http://localhost:3003/health/ready     # lexicon-service
-     curl http://localhost:3004/health/ready     # analytics-service
-     curl http://localhost:3005/health/ready     # profile-service
+     curl http://localhost:8080/health           # Gateway: status of all five services
+     # Services are not published on the host; ask each one from inside the Docker network:
+     docker compose exec api-gateway wget -qO- http://iam-service:3001/health
+     docker compose exec api-gateway wget -qO- http://recognition-service:3002/health
+     docker compose exec api-gateway wget -qO- http://lexicon-service:3003/health
+     docker compose exec api-gateway wget -qO- http://analytics-service:3004/health
+     docker compose exec api-gateway wget -qO- http://profile-service:3005/health
   
-  2. Grafana → When did the problem start? Which service has a high error rate?
+  2. Grafana (planned, not deployed) → When did the problem start? Which service has a high error rate?
   
-  3. Logs (Kibana/CloudWatch) per service → What does the affected service say?
-     Filter by: service name + correlation ID (x-correlation-id) to trace request flow
+  3. Logs per service (no central log tool yet) → docker compose logs --tail 200 <service>
+     Correlation IDs (x-correlation-id) are planned, not implemented.
   
-  4. Distributed tracing (Jaeger) → Where does the trace break across services?
+  4. Distributed tracing (Jaeger, planned, not deployed) → Where does the trace break across services?
   
   5. RabbitMQ → Are domain events being published and consumed?
-     Check broker logs: docker logs traduce-rabbitmq
+     Check broker logs: docker compose logs rabbitmq. Dead-letter queues are named <queue>.dead.
   
-  6. docker ps / kubernetes → Is the pod/container running?
+  6. docker compose ps → Is the container running? (Kubernetes is not used.)
 
 Key question: What changed in the last 2 hours?
   → Last deploy (which service?)
@@ -218,7 +219,7 @@ No formal paging system exists; use Slack mentions + SMS (manual for now).
 ## Example incident: Backend PostgreSQL timeout (P1)
 
 ```
-13:45 — Alert fires in Grafana:
+13:45 — Alert fires (illustrative example; Grafana is planned, not deployed):
   "PostgreSQL connection timeout"
   
 13:45 — @juan acknowledges in Slack #incidents:
@@ -238,7 +239,7 @@ No formal paging system exists; use Slack mentions + SMS (manual for now).
   - Announce: "@everyone scaling DB pool 30→50"
   - Wait for thumbs-up in thread
   - Execute: update .env, docker restart
-  - Test: curl https://prod.traduce-senas.com/health/ready
+  - Test: curl https://traducesenas.tech/api/health
   
 13:52 — Metrics return to normal
   - Report: "✅ RESOLVED — pool size increased to 50"
