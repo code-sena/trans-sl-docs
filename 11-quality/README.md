@@ -75,7 +75,7 @@ how to give constructive feedback, maximum time to review a PR.
 | `04-requirements/traceability-matrix.md` → what to test | Test cases covering each FR |
 | `07-api/contracts/` → API contracts | Contract tests |
 | `00-governance/definition-of-done.md` → what every PR must have | Code review checklist |
-| `10-devops/ci-cd.md` | Which tests go in which pipeline step |
+| `10-devops/environments.md` (CI/CD) and `.github/workflows/ci.yml` in each repository | Which tests go in which pipeline step |
 
 ---
 
