@@ -90,13 +90,13 @@ the Android APK is distributed through GitHub Pages.
 | Databases | PostgreSQL 16 (one per service) + MongoDB 7 | Data ownership per service, no foreign keys across databases ([ADR-003](../05-architecture/decisions/records/ADR-003-database-separation.md)) |
 | Messaging | RabbitMQ (exchange `traduce.events`) | Asynchronous domain events between services, with a dead-letter queue per queue |
 | Authentication | JWT (HS256), email + verification code, Google and Facebook login | Stateless sessions validated at the gateway ([ADR-002](../05-architecture/decisions/records/ADR-002-jwt-authentication.md)) |
-| Notifications | In-app notifications (`profile-service`) | No push service is used |
+| Notifications | In-app notifications and email (`profile-service`, Gmail SMTP) | No push service is used ([ADR-007](../05-architecture/decisions/records/ADR-007-email-notifications.md)) |
 | Deployment | Docker Compose + Caddy on a VPS | 15 containers; HTTPS with automatic Let's Encrypt renewal |
 
 ## Current status
 
 - **Phase:** In production at https://traducesenas.tech since 2026-10-16
-- **Current version:** Backend `v1.0.0`, Frontend `v1.0.1` (web and Android APK)
+- **Current version:** Backend `v1.3.0`, Frontend `v1.2.0` (web and Android APK) per each `package.json`; includes daily challenges and medals ([ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md), [ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md))
 - **Release process:** production is built from `main`; each repository has its own SemVer version, published as a git tag and a GitHub Release ([git conventions](../00-governance/git-conventions.md))
 - **Original planned schedule:** 14 two-week sprints, 2026-01-01 → 2026-07-31 (`Scrum.xlsx`). Kept as the baseline of record; not rewritten.
 - **Next milestone:** final project defence (SENA ADSO) on 2026-10-28.

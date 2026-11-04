@@ -71,6 +71,8 @@ with no refresh token ([ADR-002](../05-architecture/decisions/records/ADR-002-jw
 The retention tables keep a user id and the words translated after the translation itself is
 deleted; account erasure deletes them too.
 
+The daily challenge rules are in [ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md) and the challenge point medals in [ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md).
+
 ---
 
 ## 1. Storage decisions

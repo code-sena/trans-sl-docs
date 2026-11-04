@@ -136,6 +136,8 @@
 | FR-406 | The user must be able to see their translation history, newest first. The history is private to its owner (INV-011) | RF3, RF5 | HU-TRA-005 | M | `translations` |
 | FR-407 | The user must be able to delete history entries. Deletion is logical and irreversible for the user | RF5, ERF5.5 | HU-TRA-006 | S | `translations` |
 | FR-408 | A model that has produced translations must not be deletable (INV-022) | RF3 | HU-TRA-003 | M | `ai_models` |
+| FR-409 | The history must be grouped by session, showing one card per session | RF3, RF5 | HU-TRA-005 | S | `translations` |
+| FR-410 | Translations must be deleted automatically 30 days after they are created | RF5 | HU-TRA-005 | S | `translations` |
 
 ---
 
@@ -152,6 +154,7 @@
 | FR-507 | The user must be able to mark a notification as read | RF4 | HU-NOTIF-002 | M | `notifications` |
 | FR-508 | With the master switch off, the system must create no new notification through any channel; those already received stay visible (INV-025) | RF4 | HU-PROF-005 | M | `user_preferences` |
 | FR-509 | A notification on the `PUSH` channel must have a target device, and must not have one on other channels (INV-024) | RF4 | HU-NOTIF-003 | M | `user_devices`, `notifications` |
+| FR-510 | Administrators with notifications enabled must receive the weekly and monthly usage reports as an in-app notification and by email, with a button to the admin panel ([ADR-007](../05-architecture/decisions/records/ADR-007-email-notifications.md)) | RF4 | HU-NOTIF-002 | S | `notifications` |
 
 ---
 
@@ -179,6 +182,7 @@
 | FR-704 | An administrator must be able to see sessions and their average duration | RF6 | HU-USG-003 | M | `user_sessions` |
 | FR-705 | Usage events must survive account deletion (`user_id` becomes null) | RF6 | HU-USG-004 | M | `usage_events` |
 | FR-706 | Statistics must be accessible only with the required permission, and always aggregated (INV-012) | RF6 | HU-AUTHZ-002 | M | — |
+| FR-707 | Each web screen must have its own URL, so it can be opened, reloaded and shared directly | RF2 | — | S | — |
 
 ---
 
@@ -195,6 +199,10 @@
 | FR-803 | An achievement unlocks exactly once per user (INV-027) | RF8 | HU-GAM-002 | C | `user_achievements` |
 | FR-804 | Unlocking an achievement must notify the user through a visual channel | RF8 | HU-GAM-003 | C | `notifications` |
 | FR-805 | The user must be able to consult their achievements | RF8 | HU-GAM-004 | C | `user_achievements` |
+| FR-806 | The system must assign each user one daily challenge per day (Bogota time) and advance it with each saved translation. The assignment keeps a snapshot of the definition ([ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md)) | RF8 | HU-GAM-005 | C | `challenges`, `user_challenges` |
+| FR-807 | Completing a daily challenge must grant its reward exactly once and notify the user visually if notifications are enabled ([ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md)) | RF8 | HU-GAM-005 | C | `challenge_rewards`, `notifications` |
+| FR-808 | The system must award medals when the persisted challenge rewards reach 500, 1,000 and 3,000 points, and show the total of challenge points in the profile ([ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md)) | RF8 | HU-GAM-006 | C | `challenge_rewards`, `user_achievements` |
+| FR-809 | The app must show an on-screen notice when an achievement unlocks or a challenge is completed, without repeating it | RF8, RF4 | HU-GAM-003 | C | `notifications` |
 
 ---
 

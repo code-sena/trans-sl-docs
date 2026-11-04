@@ -3,8 +3,10 @@
 > Everything the user configures or receives that is not their identity: interface preferences (theme, language), the
 > notifications (devices, alerts, delivery) and, provisionally, the achievements.
 
-**Extraction status:** pending. There is no code for this service in the repository yet; this document is the target based on
-`02-domain/domain-map.md` and `06-data/domains/03-profile.md`, `07-notification.md`, `09-gamification.md`.
+**Status:** implemented in `backend/services/profile-service` (preferences, in-app and email notifications, achievements, daily
+challenges). Parts of this document below were written as a target before the code existed; the real endpoints are in
+`07-api/contracts/openapi/profile-service.yaml`. Push and devices were dropped ([ADR-007](../../../05-architecture/decisions/records/ADR-007-email-notifications.md)).
+Reference model: `02-domain/domain-map.md` and `06-data/domains/03-profile.md`, `07-notification.md`, `09-gamification.md`.
 The `users` module of the backend (`GET /api/users/me`) belongs to `iam-service`, not to this service.
 See `09-microservices/service-catalog.md`.
 
@@ -43,6 +45,13 @@ Owns `user_preferences`, `notification_types`, `user_devices`, `notifications` a
 - Check `notifications_enabled` **before creating** a notification (INV-025)
 - Administrators activate or withdraw a notification type for everyone (`notification_types.is_active`)
 - (Provisional, RF8) Keep the catalog of achievements and each user's progress; emit `AchievementUnlocked` exactly once
+
+### Daily challenges and challenge-point medals
+
+- Assigns one challenge per user and day (Bogota time), advances it with each saved translation (`recognition.TranslationProduced`) and grants the reward once. [ADR-009](../../../05-architecture/decisions/records/ADR-009-daily-challenges.md)
+- Unlocks medals for 500, 1,000 and 3,000 accumulated challenge points, computed from the persisted rewards. [ADR-010](../../../05-architecture/decisions/records/ADR-010-challenge-points-medals.md)
+- Routes: `GET /api/profile/challenges/today`, `GET /api/profile/challenges/rewards/summary`, `POST /api/achievements/activity` (functional activity for achievements). All through the existing gateway prefixes.
+- Weekly and monthly administrator reports are sent by email ([ADR-007](../../../05-architecture/decisions/records/ADR-007-email-notifications.md), migration `008_admin_reports.sql`).
 
 ## Out of scope (what it does NOT do)
 

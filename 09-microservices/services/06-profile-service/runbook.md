@@ -81,6 +81,24 @@ SELECT device_id, is_active FROM notification.user_devices WHERE user_id = '<use
 UPDATE gamification.user_achievements SET notified_at = now() WHERE achieved_at IS NOT NULL AND notified_at IS NULL;
 ```
 
+### Migrating an existing database to 008–010 (manual)
+
+The init scripts in `docker-compose.yml` only run on new volumes. On an existing database: back up first (4.1), stop the
+Profile consumers, and apply in order, with the commands listed at the top of `backend/docker-compose.yml`:
+
+```bash
+docker compose exec -T postgres-profile psql -X -v ON_ERROR_STOP=1 -U postgres -d profile < services/profile-service/db/008_admin_reports.sql
+docker compose exec -T postgres-profile psql -X -v ON_ERROR_STOP=1 -U postgres -d profile < services/profile-service/db/009_daily_challenges.sql
+docker compose exec -T postgres-profile psql -X -v ON_ERROR_STOP=1 -U postgres -d profile < services/profile-service/db/010_challenge_reward_achievements.sql
+```
+
+Then deploy Profile before the frontend. Do not recreate volumes. Read-only check of a user's challenges:
+
+```sql
+SELECT uc.challenge_date, uc.code, uc.current_count, uc.target_count, uc.completed_at, cr.points, cr.granted_at
+FROM user_challenges uc LEFT JOIN challenge_rewards cr USING (user_challenge_id) WHERE uc.user_id = '<user-id>';
+```
+
 ### `AccountDeletionRequested` in the DLQ
 
 Legal priority. Read the message, fix the cause and reprocess; verify no rows remain for that `user_id` in `user_preferences`, `user_devices`, `notifications` and `user_achievements`.

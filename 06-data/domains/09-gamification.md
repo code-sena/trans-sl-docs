@@ -92,6 +92,27 @@ recompute job re-announces every achievement the user already has.
 
 ---
 
+## Implemented in profile-service: daily challenges and challenge-point medals
+
+Unlike the reference model above, profile-service already runs a daily challenge feature (migrations
+`009_daily_challenges.sql` and `010_challenge_reward_achievements.sql`). Decisions:
+[ADR-009](../../05-architecture/decisions/records/ADR-009-daily-challenges.md) and
+[ADR-010](../../05-architecture/decisions/records/ADR-010-challenge-points-medals.md). `user_id` is the logical id
+of iam-service (`VARCHAR(64)`), with no foreign key between services.
+
+| Table | Purpose | Key points |
+|-------|---------|-----------|
+| `challenges` | Catalog of definitions | `code` unique; `target_count > 0`; `points >= 0`; `localizations` JSONB (es/en/fr/pt); `is_active`. Seeds `TRANSLATE_1/3/5/8` (goal 1/3/5/8, 5/10/15/25 points) |
+| `user_challenges` | Snapshot of the challenge assigned to a user on a day | `UNIQUE(user_id, challenge_date)`; copies code, name, description, goal, points and texts; `current_count` between 0 and the goal; `completed_at` is set exactly when the goal is reached; FK to `challenges` is `RESTRICT` |
+| `challenge_rewards` | Points really granted | PK = `user_challenge_id` (FK, `CASCADE`), which makes the reward idempotent; `user_id`; `points`; `granted_at`; index on `user_id` |
+
+Migration 009 also adds the notification type `CHALLENGE_COMPLETED` (`reference_type = CHALLENGE`, `reference_id` = the
+`user_challenge_id`). Migration 010 adds the metric `DAILY_CHALLENGE_POINTS` and three medals in `achievements`
+(`dailyChallengePoints500`, `dailyChallengePoints1000`, `dailyChallengePoints3000`, zero extra points). Their progress is
+`SUM(challenge_rewards.points)` of the user, and it is the only measure.
+
+---
+
 ## Modeling decisions
 
 1. **`user_id` is `CASCADE`, `achievement_id` is `RESTRICT`.** Progress is personal data and goes with

@@ -68,7 +68,7 @@ Without `EMAIL_USER` and `EMAIL_PASS` the worker does not start and the `EMAIL` 
 - On a phone the button opens the web app in the browser, not the APK.
 
 **Impact on the system:**
-- Affected services: profile-service (worker, `Mailer` port, Nodemailer adapter, migration `007_admin_reports.sql`) and `docker-compose.yml` (`EMAIL_USER`, `EMAIL_PASS` and `APP_URL` for profile-service).
+- Affected services: profile-service (worker, `Mailer` port, Nodemailer adapter, migration `008_admin_reports.sql`) and `docker-compose.yml` (`EMAIL_USER`, `EMAIL_PASS` and `APP_URL` for profile-service).
 - Achievement notifications stay `IN_APP` only; sending them by email is a separate decision.
 - Documents that must be updated: `06-data/domains/07-notification.md` (channel and devices). FR-503 and FR-509 (device registration and push device) no longer apply while this ADR is in force.
 

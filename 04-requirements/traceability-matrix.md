@@ -168,6 +168,8 @@ SRS) + **4 cross-cutting** with no explicit RF.
 | FR-404 | Ordered signs of the translation | HU-TRA-003 | — (no `translation_signs` table) | recognition-service | 🔴 |
 | FR-405 | Failed recognition feedback | HU-TRA-004 | not verified | recognition-service | ❔ |
 | FR-406 | History newest first | HU-TRA-005 | `http_contract.test.ts`; app `translations.service.test.ts`, `HistoryScreen.test.tsx` | recognition-service | ✅ |
+| FR-409 | History grouped by session | HU-TRA-005 | app `HistoryScreen.test.tsx`, e2e `history.spec.ts` | frontend | ✅ |
+| FR-410 | 30-day translation retention | HU-TRA-005 | `translation_retention.test.ts` | recognition-service | ✅ |
 | FR-407 | Logical deletion of an entry | HU-TRA-006 | `http_contract.test.ts`, `controller_errors.test.ts` | recognition-service | ✅ |
 | FR-408 | Model with history is undeletable | HU-TRA-003 | — (no model registry) | recognition-service | 🔴 |
 
@@ -184,6 +186,7 @@ SRS) + **4 cross-cutting** with no explicit RF.
 | FR-507 | Mark as read | HU-NOTIF-002 | `preferences_permissions.test.ts` | profile-service | ✅ |
 | FR-508 | Master switch suppresses delivery | HU-PROF-005 | `record_translation.test.ts`, `validation.test.ts` | profile-service | ✅ |
 | FR-509 | Push requires a device | HU-NOTIF-003 | — (no push) | profile-service | 🔴 |
+| FR-510 | Administrator reports by email ([ADR-007](../05-architecture/decisions/records/ADR-007-email-notifications.md)) | HU-NOTIF-002 | `admin_report_domain.test.ts`, `run_admin_reports.test.ts`, `admin_reports_scheduler.test.ts`, `deliver_email_notifications.test.ts` | profile-service | ✅ |
 
 ### AI — `recognition-service`
 
@@ -207,6 +210,7 @@ SRS) + **4 cross-cutting** with no explicit RF.
 | FR-704 | Sessions and average duration | HU-USG-003 | — (no session duration in analytics) | analytics-service (session facts come from iam-service) | 🔴 |
 | FR-705 | Events survive deletion | HU-USG-004 | `atomic_erasure.test.ts`, `user_deleted.test.ts` (analytics) | analytics-service | ✅ |
 | FR-706 | Statistics require permission | HU-AUTHZ-002 | `stats_routes.test.ts` | analytics-service | ✅ |
+| FR-707 | Own URL per web screen | — | app `linking.test.ts` | frontend | ✅ |
 
 ### Gamification ⚠️ — `profile-service`
 
@@ -217,6 +221,10 @@ SRS) + **4 cross-cutting** with no explicit RF.
 | FR-803 | Unlock exactly once | HU-GAM-002 | `gamification_concurrency.test.ts`, `record_translation.test.ts` | profile-service | ✅ |
 | FR-804 | Unlock notification | HU-GAM-003 | `record_translation.test.ts` | profile-service | ✅ |
 | FR-805 | Consult achievements | HU-GAM-004 | `achievement_catalog.test.ts`; app `achievements.test.tsx` | profile-service | ✅ |
+| FR-806 | Daily challenge assigned and advanced ([ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md)) | HU-GAM-005 | `daily_challenges*.test.ts` | profile-service | ✅ |
+| FR-807 | Reward once and completion notice | HU-GAM-005 | `daily_challenges_postgres.test.ts` | profile-service | ✅ |
+| FR-808 | Medals for challenge points ([ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md)) | HU-GAM-006 | `challenge_reward_achievements*.test.ts`, `challenge_reward_summary.test.ts` | profile-service | ✅ |
+| FR-809 | On-screen unlock and challenge notices | HU-GAM-003 | app `AchievementUnlockAlerts.test.tsx` | frontend | ✅ |
 
 > **Blocker:** RF8 does not exist in the SRS. See § Gaps, GAP-01.
 

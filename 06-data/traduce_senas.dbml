@@ -725,6 +725,7 @@ Enum achievement_metric {
   SIGNS_LEARNED            // señas distintas traducidas
   ALPHABET_COMPLETED       // letras del alfabeto practicadas
   SESSIONS_COMPLETED       // sesiones de uso
+  DAILY_CHALLENGE_POINTS   // suma de challenge_rewards.points (migración 010, ADR-010)
 }
 
 Table achievements {
@@ -762,6 +763,52 @@ Table user_achievements {
 
 Ref: user_achievements.user_id > users.user_id [delete: cascade]
 Ref: user_achievements.achievement_id > achievements.achievement_id [delete: restrict]
+
+// Retos diarios (profile-service, migraciones 009 y 010; ADR-009 y ADR-010).
+// user_id es el id lógico de iam-service, sin FK entre servicios.
+Table challenges {
+  challenge_id uuid [pk, default: `gen_random_uuid()`]
+  code varchar(50) [not null, unique, note: 'Ej. TRANSLATE_3']
+  name varchar(100) [not null]
+  description text [not null]
+  target_count integer [not null, note: 'CHECK > 0']
+  points integer [not null, note: 'Recompensa prevista. CHECK >= 0']
+  localizations jsonb [not null, default: `'{}'`, note: 'Textos es/en/fr/pt']
+  is_active boolean [not null, default: true]
+}
+
+Table user_challenges {
+  user_challenge_id uuid [pk, default: `gen_random_uuid()`]
+  user_id varchar(64) [not null]
+  challenge_date date [not null, note: 'Día en zona America/Bogota']
+  challenge_id uuid [not null]
+  code varchar(50) [not null, note: 'Instantánea del catálogo al asignar']
+  name varchar(100) [not null]
+  description text [not null]
+  target_count integer [not null]
+  points integer [not null]
+  localizations jsonb [not null, default: `'{}'`]
+  current_count integer [not null, default: 0, note: 'Entre 0 y target_count']
+  completed_at timestamptz [note: 'No nulo exactamente cuando current_count = target_count']
+
+  indexes {
+    (user_id, challenge_date) [unique]
+  }
+}
+
+Table challenge_rewards {
+  user_challenge_id uuid [pk, note: 'Una recompensa por asignación: idempotente']
+  user_id varchar(64) [not null]
+  points integer [not null, note: 'Puntos realmente concedidos. CHECK >= 0']
+  granted_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    user_id [name: 'idx_challenge_rewards_user']
+  }
+}
+
+Ref: user_challenges.challenge_id > challenges.challenge_id [delete: restrict]
+Ref: challenge_rewards.user_challenge_id - user_challenges.user_challenge_id [delete: cascade]
 
 
 

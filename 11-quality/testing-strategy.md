@@ -19,11 +19,12 @@
 | **Test files** | 72 | 8 |
 | **Tests** | 683 (681 pass, 2 skipped without a test database) | 79 |
 | **Line coverage** | 88.5 % | 4.5 % |
-| **CI** | None | None |
+| **CI** | GitHub Actions (ADR-006) | GitHub Actions: typecheck, Jest, web build, Docker, E2E |
 
 **Summary:** the backend business logic is well covered by unit tests. The frontend has just started
-(pure logic only, no screens). No repository runs tests automatically, and there are no contract, E2E or
-performance tests yet.
+(the figures in the table are a snapshot from before the CI work and the new Jest and Playwright tests).
+CI runs the tests on every pull request ([ADR-006](../05-architecture/decisions/records/ADR-006-ci-and-static-analysis.md)) and the Frontend has
+Playwright E2E tests (see "End-to-end" below). There are still no contract or performance tests.
 
 ---
 
@@ -87,9 +88,15 @@ There are no integration tests yet for RabbitMQ, MongoDB or Liquibase migrations
 
 The OpenAPI files in `07-api/contracts/openapi/` are not validated against the running services.
 
-### End-to-end (E2E) tests — not started
+### End-to-end (E2E) tests — started (Frontend)
 
-Priority flows, when E2E tests are added:
+Playwright runs in the `e2e` job of the Frontend CI (`.github/workflows/ci.yml`): it starts the backend with Docker Compose,
+serves the production web build and runs `npm run e2e` in Chromium. Specs in `frontend/e2e/`: `auth.spec.ts` (registration with
+consent, verification and login; wrong password), `history.spec.ts` (a saved translation appears in the history and can be
+deleted) and `alphabet.spec.ts` (a letter opens its sign). The report is uploaded as an artifact when the job fails.
+Besides these, Jest now also covers the services, the auth forms, the vision classifiers and the template stores.
+
+Flows still without E2E coverage (priority list):
 
 | # | Flow | Services involved |
 |---|------|-------------------|
@@ -179,10 +186,10 @@ The backend meets the global target; the frontend does not.
 
 | Gap | Impact | Proposed next step |
 |---|---|---|
-| No CI in any repository | Tests only run when someone runs them by hand; a PR can break them unnoticed | GitHub Actions workflow running `npm test` (and `npm run typecheck` in Frontend) on every PR |
+| CI exists ([ADR-006](../05-architecture/decisions/records/ADR-006-ci-and-static-analysis.md)); no coverage threshold yet | A PR can still lower coverage unnoticed | Add a threshold (see below) |
 | Frontend coverage 4.5 % | UI and login regressions are only caught by hand | Cover the login and register hooks, `AuthContext` and the services that call the API |
 | Postgres integration suites skipped by default | Concurrency and deletion guarantees are not checked routinely | Disposable Postgres service in CI with `PROFILE_TEST_DATABASE_URL` |
-| No contract, E2E or performance tests | API drift and full-flow breakage go unnoticed | Start with E2E flow 1 above |
+| No contract or performance tests; E2E covers only part of the flows | API drift and breakage of the remaining flows go unnoticed | Extend E2E with the flows listed above |
 | No coverage threshold | Coverage can drop without anyone noticing | Add a threshold once CI exists |
 
 **Known defect found while writing frontend tests:** `classifyLetterLSC` (`feature/Translation/services/vision/classifier.ts`)
