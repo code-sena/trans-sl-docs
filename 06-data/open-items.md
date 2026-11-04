@@ -19,7 +19,7 @@ consequence.
 | **DATA-03** | `usage_daily_stats` and `session_daily_stats` have no FR in the traceability matrix § 3, and the domain map states Analytics "owns no aggregated data" | By the matrix's own rule — *a table with no FR does not enter the model* — these are where `achievements` was when GAP-01 was raised | Add an FR for the pre-aggregated dashboard, add both tables to § 3, and amend the domain-map sentence: **the report is a read model, the rollup is a cache with a recompute job** | **High** | [Usage](domains/08-usage.md) |
 | **DATA-04** | `notifications.device_id` is `ON DELETE SET NULL`, which would violate INV-024's `CHECK ((channel='PUSH') = (device_id IS NOT NULL))` | Deleting a device breaks the constraint on its past PUSH notifications. The schema permits the deletion that breaks it | State the rule explicitly — **devices are revoked, never deleted** — and consider `ON DELETE RESTRICT` so it is enforced rather than agreed | Medium | [Notification](domains/07-notification.md) |
 | **DATA-05** | `user_devices.push_token` is globally `UNIQUE`, but FCM/APNs reassign tokens between reinstalls and devices | The second user to receive a recycled token cannot register — a real, reproducible failure | Register with an upsert on `push_token` that re-points the row at the current user and revokes the previous binding | Medium | [Notification](domains/07-notification.md) |
-| **DATA-06** | A soft-deleted `users` row keeps `full_name`, `email` and `username` in clear, and permanently occupies both `UNIQUE` constraints | RNF8 says the row is "kept anonymized". Nothing anonymizes it. Under Law 1581 that is the gap between a compliant deletion and a nominal one | Implement the anonymization routine in [`data-lifecycle.md`](data-lifecycle.md) § 2 as part of the deletion flow, **including the MongoDB side**, and test it | **High** | [Identity](domains/01-identity.md) |
+| **DATA-06** | Account deletion. The reference model kept a soft-deleted `users` row with its data, and asked for anonymization | **Decided, and the code does it:** the account is a hard `DELETE` in iam, with an `iam.UserDeleted` outbox event; recognition, analytics and profile erase or unlink their copies and record the id in `erased_users`. Remaining point: `gesture_samples` keep `performed_by` (see [`data-lifecycle.md`](data-lifecycle.md) § 2) | Keep the flow as implemented; decide whether `performed_by` must also be cleared (ALIGN-02) | **Closed** for iam; **open** for the sample identity | [Identity](domains/01-identity.md) |
 | **DATA-07** | `updated_at` has `DEFAULT CURRENT_TIMESTAMP` and no trigger on any table | The column never changes after insert: it is a creation timestamp with a misleading name | Add the `set_updated_at()` trigger from [`constraints.md`](constraints.md) to the six tables that have the column | **High** — cheap | All with `updated_at` |
 | **DATA-08** | `idx_translations_deleted` indexes a mostly-NULL column, while the real query is `user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC` | The index that exists does not serve the query that runs | Replace with a partial index on `(user_id, created_at DESC) WHERE deleted_at IS NULL` | Low | [Translation](domains/05-translation.md) |
 | **DATA-09** | `idx_daily_stats_date_section` is a left prefix of the primary key of `usage_daily_stats` | Redundant index: write cost, no read benefit | Drop it — already omitted from the DDL in this folder | Low | [Usage](domains/08-usage.md) |
@@ -90,7 +90,7 @@ promise nobody can keep**, and this is the shortest list worth acting on:
 
 **Do now, no decision attached:** DATA-11 (write the constraints migration), DATA-07 (the trigger).
 
-**Legal obligation:** DATA-06 (anonymization on deletion, both stores).
+**Legal obligation:** DATA-06 (deletion must erase the account's data in every store; the code now deletes the iam row and the other services erase their copies, see DATA-06 above).
 
 **One small decision each:** DATA-02, DATA-03, DATA-04, DATA-12.
 
@@ -119,4 +119,4 @@ to fix once there are queries written against it.
 - Domain-side inconsistencies → `02-domain/domain-map.md` § 6
 - Requirement-side gaps → `04-requirements/traceability-matrix.md` § 6
 - The constraints that close DATA-11 → [`constraints.md`](constraints.md)
-- The deletion routine that closes DATA-06 → [`data-lifecycle.md`](data-lifecycle.md)
+- The deletion flow as implemented (DATA-06) → [`data-lifecycle.md`](data-lifecycle.md)

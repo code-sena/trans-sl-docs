@@ -5,7 +5,7 @@
 > persist.
 
 **Status:** 🟡 Living document — v0.3, 2026-09-10 · **Maintainer:** Juan Mauricio Suaza Solórzano
-**Model of record:** `traduce_senas.dbml` — model **v9**: 29 tables, 10 domains, 21 enum types
+**Model of record:** `traduce_senas.dbml` — model **v9** plus the challenge tables: 32 tables (31 PostgreSQL + 1 MongoDB collection), 10 domains, 21 enum types. The implemented tables per service are in [`models.md`](models.md) § 0
 
 ---
 
@@ -59,7 +59,7 @@ the reference you open while writing a query; the root files are the ones you re
     ├── 06-ai.md                     ai_models (PostgreSQL) + gesture_samples (MongoDB)
     ├── 07-notification.md           types, devices, notifications, delivery states
     ├── 08-usage.md                  usage events and the two daily rollups
-    ├── 09-gamification.md        ⏸ achievements — not built until RF8 exists
+    ├── 09-gamification.md        achievements and daily challenges — implemented in profile-service; RF8 not yet in the SRS
     ├── 10-audit.md                  audit trail and error log
     └── 11-configuration.md       ⛔ dissolved in v9 — kept as the record of a reversed decision
 ```
@@ -92,7 +92,7 @@ Immediate work, none of it requiring a decision:
 |------|------|---------|
 | **DATA-11** | Write `migrations/V010__constraints_and_triggers.sql` — its full content is [`constraints.md`](constraints.md) | Until it exists the database accepts `confidence = 9.5`, two active AI models and two password policies in force. **A constraint that lives only in a comment is a comment** |
 | **DATA-07** | Add the `set_updated_at()` trigger to the six tables with an `updated_at` | The column currently never changes after insert — it is a creation timestamp with a misleading name |
-| **DATA-06** | Implement the anonymization routine for deleted accounts, including the MongoDB side | A soft-deleted `users` row still holds name, email and username in clear, and gesture samples are reached by no cascade at all. Under Law 1581 that is the gap between a compliant deletion and a nominal one |
+| **DATA-06** | Account deletion: the code does a hard delete in iam and an `iam.UserDeleted` event erases the copies in the other services. Gesture samples keep `performed_by` | The reference model asked for an anonymized row; the decision is the code's. Whether `performed_by` must be cleared is still open ([`open-items.md`](open-items.md)) |
 | **DATA-02** | Give `sign_lexicon.created_by` / `updated_by` a foreign key, or document them as external identifiers | Their note says "NULL if that account was deleted", which is `ON DELETE SET NULL` behaviour that nothing implements |
 
 One more needs a small decision: **DATA-03** (the two rollup tables have no requirement behind them and

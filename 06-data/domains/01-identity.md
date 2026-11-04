@@ -2,7 +2,7 @@
 
 > **Domain 1 of 10** · Bounded Context: **Identity & Access** (Generic) · PostgreSQL schema: `identity`
 > **Tables:** `users`, `user_auth_providers`, `user_sessions`, `refresh_tokens`, `user_tokens`, `password_policies`
-> **Requirements:** RF1 · ERF1.1, ERF1.2, ERF1.3 · ERF5.3 · RNF4 · FR-905 … FR-907
+> **Requirements:** RF1 · ERF1.1, ERF1.2, ERF1.3 · ERF5.3 · NFR-005 · FR-905 … FR-907
 
 **Owned by:** iam-service (PostgreSQL db `iam`)
 **Version:** v0.2 · **Last updated:** 2026-09-10 · **Source:** `traduce_senas.dbml` (v9)
@@ -53,14 +53,14 @@ CREATE TABLE identity.users (
   last_failed_login_at  TIMESTAMPTZ,
   blocked_at            TIMESTAMPTZ,
 
-  -- Provable consent (INV-002, RNF8)
+  -- Provable consent (INV-002, NFR-005)
   terms_accepted_at     TIMESTAMPTZ  NOT NULL,
-  terms_version         VARCHAR(20)  NOT NULL,
+  terms_version         VARCHAR(20),                              -- NULL allowed (migration 013): accounts created before the version was stored, or by social login without explicit consent
 
   created_at            TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at            TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_access_at        TIMESTAMPTZ,
-  deleted_at            TIMESTAMPTZ                               -- RNF8: the row is kept, anonymized
+  deleted_at            TIMESTAMPTZ                               -- reference model only (NFR-005): the code deletes the row instead
 );
 
 CREATE INDEX idx_users_status ON identity.users (status);
@@ -76,9 +76,9 @@ CREATE INDEX idx_users_locked ON identity.users (locked_until);
 | `failed_login_attempts` | Consecutive failures towards the *next* lockout. Reset to 0 on a successful sign-in and on each lockout | `0` … `5` |
 | `lockout_level` | Lockouts accumulated in the current streak. Determines the next wait: 1, 5, 10 minutes. Resets to 0 after 24 h with no failures (`last_failed_login_at`) | `0` … `3` |
 | `locked_until` | End of the temporary lockout. **This is why there is no `LOCKED` status:** a state has to be exited by somebody, and nobody runs a job every minute to unlock accounts. A future timestamp expires on its own | `2026-09-10T14:31:00Z` |
-| `blocked_at` | When the ladder was exhausted and the account became `BLOCKED`. Only an administrator restores it (RNF4) | `NULL` |
-| `terms_version` | Version of the document the user accepted. **Consent that cannot say *what* was accepted is not provable consent** (Law 1581) | `1.0` |
-| `deleted_at` | Deletion requested by the data subject. The row survives so that `usage_events` and `audit_logs` keep their `ON DELETE SET NULL` meaning | `NULL` |
+| `blocked_at` | When the ladder was exhausted and the account became `BLOCKED`. Only an administrator restores it (NFR-005) | `NULL` |
+| `terms_version` | Version of the document the user accepted. **Consent that cannot say *what* was accepted is not provable consent** (Law 1581). `NULL` is allowed by the code (migration 013); the registration request requires it | `1.0` |
+| `deleted_at` | Reference model only. The implemented deletion removes the row (see decision 4 below), so this column is not written by the code | `NULL` |
 
 **Modeling decisions:**
 
@@ -89,10 +89,10 @@ CREATE INDEX idx_users_locked ON identity.users (locked_until);
 3. **The lockout ladder lives in four columns, not in a separate table.** They are attributes of the
    account, read and written on every failed sign-in. A `login_attempts` table would be a write per
    failure and a join per sign-in, for data nobody queries historically.
-4. ⚠️ **A soft-deleted user still occupies `email` and `username`.** Both are `UNIQUE` over the whole
-   table, so a deleted account's email can never be registered again, and the row still holds
-   `full_name` and `email` in clear. RNF8 says the row is "kept anonymized" — nothing in the schema does
-   the anonymizing. See DATA-06 and [`../data-lifecycle.md`](../data-lifecycle.md).
+4. **Deletion removes the row (implemented).** The code deletes the `users` row in the same transaction
+   that writes the `iam.UserDeleted` outbox event, so the email is free again and no personal data stays in
+   iam. The soft delete (`deleted_at`) and the anonymization described above are the reference model only.
+   See DATA-06 and [`../data-lifecycle.md`](../data-lifecycle.md) § 2.
 
 ---
 
@@ -306,7 +306,7 @@ schema is a place to avoid deciding where something belongs.**
 | Invariant | Where it is enforced |
 |-----------|----------------------|
 | INV-001 — unique email | `users.email UNIQUE` |
-| INV-002 — no registration without accepted terms | `terms_accepted_at NOT NULL` + `terms_version NOT NULL` |
+| INV-002 — no registration without accepted terms | Reference model: `terms_accepted_at NOT NULL` + `terms_version NOT NULL`. Code: enforced by the registration request (`acceptedTerms`, `termsVersion`); `terms_version` allows NULL (migration 013) |
 | INV-003 — the password is never stored in clear | `password_hash` holds a hash; enforced in code by the `PasswordHash` value object |
 | INV-004 — an external provider maps to a single account | `uq_provider_identity` |
 | INV-014 — the lockout escalates and expires on its own | Four columns on `users` + `ck_users_blocked_coherent` |
@@ -319,7 +319,7 @@ schema is a place to avoid deciding where something belongs.**
 
 | ID | Summary |
 |----|---------|
-| **DATA-06** | A soft-deleted `users` row keeps name, email and username in clear, and permanently occupies both `UNIQUE` constraints. The anonymization routine is in [`../data-lifecycle.md`](../data-lifecycle.md) and is unimplemented |
+| **DATA-06** | Account deletion is a hard `DELETE` of the `users` row with an `iam.UserDeleted` outbox event (implemented). The reference model's soft delete and anonymization are not used. See [`../data-lifecycle.md`](../data-lifecycle.md) § 2 |
 | **DATA-07** | `updated_at` has a `DEFAULT` and no trigger — it never changes after insert |
 | **ALIGN-05** | The domain names four account states (`PENDING_VERIFICATION`/`ACTIVE`/`LOCKED`/`DELETED`); this model uses three plus two timestamps. Unify the names |
 | **ALIGN-06** | The `User` code example in `02-domain/` still implements "five failures → LOCKED"; the model implements the progressive ladder. The model's rule is the better one — update the domain |
@@ -336,5 +336,5 @@ schema is a place to avoid deciding where something belongs.**
 - Roles and permissions, and the `security.policy.manage` permission → [`02-authorization.md`](02-authorization.md)
 - Preferences of the same user → [`03-profile.md`](03-profile.md)
 - The dissolved `Configuration` domain → no file of its own; the reasoning is in this document and in [`../models.md`](../models.md)
-- Auth contract → `07-api/contracts/openapi/auth-service.yaml`
+- Auth contract → `07-api/contracts/openapi/iam-service.yaml` (the iam service owns authentication; there is no `auth-service`)
 - Hashing, secrets and why `max_length` is questionable → `00-governance/security-policy.md`

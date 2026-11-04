@@ -1,6 +1,10 @@
 // ============================================================
 // TRADUCE SEÑAS
-// Base de datos monolítica organizada por dominios
+// Modelo de referencia de los microservicios (ADR-008): una base PostgreSQL
+// por servicio y MongoDB solo para gesture_samples. Organizado por dominios.
+// Alcance: este archivo es el modelo de referencia (v9 + tablas de retos). No
+// todo lo que aquí aparece está implementado: lo que existe hoy, por servicio,
+// y lo que es legado está en models.md § 0.
 // PostgreSQL — formato DBML (dbdiagram.io)
 // v9 — password_policies se traslada al dominio IDENTITY. El dominio
 //      Configuration desaparece: no era transversal (audit_logs y
@@ -211,7 +215,7 @@ Table users {
   blocked_at timestamptz [note: 'Cuándo se agotó la escalera y pasó a BLOCKED']
 
   terms_accepted_at timestamptz [not null, note: 'ERF1.1 — cuándo hundió el botón. Obligatorio para crear la cuenta']
-  terms_version varchar(20) [not null, note: 'ERF1.1 — versión del documento aceptado, ej. 1.0']
+  terms_version varchar(20) [note: 'ERF1.1 — versión del documento aceptado, ej. 1.0. NULL = cuenta creada antes de guardar la versión, o por login social sin consentimiento explícito (migración 013)']
   created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
   updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
   last_access_at timestamptz
@@ -581,7 +585,7 @@ Table notifications {
   user_id uuid [not null]
   notification_type_id uuid [not null]
   device_id uuid [note: 'Solo aplica cuando channel = PUSH']
-  channel notification_channel [not null, default: 'PUSH']
+  channel notification_channel [not null, default: 'IN_APP', note: 'IN_APP por defecto (profile 001). PUSH no se usa: ADR-007']
   title varchar(150) [not null]
   body text [not null]
   reference_type reference_entity [note: 'Tipo de entidad que originó el aviso, ej. ACHIEVEMENT']
@@ -720,11 +724,22 @@ Ref: usage_events.session_id > user_sessions.session_id [delete: set null]
 // un requisito sin tabla.
 // ============================================================
 
+// Lista igual a achievements_metric_check de profile migración 010 (14 valores).
+// Los 4 primeros existen desde la 001; el resto llegan con las migraciones 004 a 010.
 Enum achievement_metric {
   TRANSLATIONS_COMPLETED   // traducciones completadas
   SIGNS_LEARNED            // señas distintas traducidas
   ALPHABET_COMPLETED       // letras del alfabeto practicadas
   SESSIONS_COMPLETED       // sesiones de uso
+  CATALOG_REQUIREMENT
+  ACTIVE_SECONDS
+  VOICE_COMPLETED
+  FAVORITE_WORD
+  DISTINCT_WORDS
+  LETTERS_VIEWED
+  BOTH_MODES
+  TRANSLATION_DAYS
+  WORD_CATEGORIES
   DAILY_CHALLENGE_POINTS   // suma de challenge_rewards.points (migración 010, ADR-010)
 }
 
@@ -924,6 +939,9 @@ TableGroup Usage [color: #27ae60] {
 TableGroup Gamification [color: #f1c40f] {
   achievements
   user_achievements
+  challenges
+  user_challenges
+  challenge_rewards
 }
 
 TableGroup Audit [color: #95a5a6] {

@@ -3,8 +3,8 @@
 > The map of the whole model: which engine stores what, which domain owns which tables, and where to
 > find the detail. **The per-table DDL lives in [`domains/`](domains/), one file per domain.**
 
-**Version:** v0.3 · **Last updated:** 2026-09-10 · **Maintainer:** Juan Mauricio Suaza Solórzano
-**Source of record:** `traduce_senas.dbml` — model **v9**: 29 tables, 10 domains, 21 enum types
+**Version:** v0.5 · **Last updated:** 2026-11-04 · **Maintainer:** Juan Mauricio Suaza Solórzano
+**Source of record:** `traduce_senas.dbml` — reference model **v9** plus the daily challenge tables: **32 tables** (31 PostgreSQL + 1 MongoDB collection), 10 domains, 21 enum types. What the code implements is in § 0.
 **Depends on:** `02-domain/entities-and-rules.md` (entities → tables) · `04-requirements/traceability-matrix.md` (FR → tables)
 
 ---
@@ -30,33 +30,40 @@ resolved: reversing a design decision belongs to the team, not to a documentatio
 
 ## 0. Implemented today vs this reference model
 
-> **Read this before the rest.** Sections 1–6 describe the **reference model** (DBML v9). The code
-> implements a smaller model. This table is the implemented one, taken from the migrations in
-> `backendTS/services/*/db/` and checked against the production databases on 2026-10-23.
-> Updated on 2026-10-26 with Backend `develop` `2e0816f`; tables marked with † are in `develop` but
-> not yet deployed (production runs v1.3.0).
+> **Read this before the rest.** Sections 1–6 describe the **reference model** (DBML v9 plus the
+> challenge tables). The code implements a smaller model. This section is the implemented one, taken
+> from the SQL files in `services/*/db/` of the backend (v1.4.0). The files mounted in
+> `docker-compose.yml` create the tables on a new volume; on an existing volume they are applied by hand.
 
 | Service | Database | Tables that exist | Primary keys |
 |---------|----------|-------------------|--------------|
-| iam | `iam` | `users`, `roles`, `permissions`, `user_roles`, `role_permissions`, `user_tokens`, `outbox_events` | `SERIAL` |
-| recognition | `recognition` + MongoDB | `translations`, `sign_templates`, `erased_users`, `translation_daily_counts` †, `translation_user_words` † · collection `gesture_samples` | `SERIAL` |
-| lexicon | `lexicon` | `categories`, `sign_lexicon`, `sign_localizations`, `multimedia_resource` | `SERIAL` |
-| analytics | `analytics` | `usage_event`, `erased_users` | `BIGSERIAL` |
-| profile | `profile` | `user_profiles`, `user_preferences`, `notification_types`, `notifications`, `achievements`, `user_achievements`, `achievement_activity`, `achievement_translation_receipts`, `processed_events`, `erased_users`, `admin_recipients` †, `admin_report_runs` †, `challenges` †, `user_challenges` †, `challenge_rewards` † | `UUID` |
+| iam | `iam` | `users`, `roles`, `permissions`, `user_roles`, `role_permissions`, `user_tokens`, `outbox_events` (7) | `SERIAL` |
+| recognition | `recognition` + MongoDB | `translations`, `sign_templates`, `erased_users`, `translation_daily_counts`, `translation_user_words` (5) · collection `gesture_samples` | `SERIAL` |
+| lexicon | `lexicon` | `categories`, `sign_lexicon`, `sign_localizations`, `multimedia_resource` (4) | `SERIAL` |
+| analytics | `analytics` | `usage_event`, `erased_users` (2) | `BIGSERIAL` |
+| profile | `profile` | `user_profiles`, `user_preferences`, `notification_types`, `notifications`, `achievements`, `user_achievements`, `achievement_activity`, `achievement_translation_receipts`, `processed_events`, `erased_users`, `admin_recipients`, `admin_report_runs`, `challenges`, `user_challenges`, `challenge_rewards` (15) | `UUID` |
 
-**Legacy tables still present in `iam`:** `role`, `user_role` and `password_reset_token`, created by
-`000_users.sql` and replaced by `roles`, `user_roles` and `user_tokens`. No code reads them (only the
-account erasure deletes from `user_role` if it exists). In production they hold 2, 0 and 0 rows. They
-should be dropped when the migrations are unified (H-02).
+**Totals of the implemented model:** 33 PostgreSQL tables that the code uses, plus 1 MongoDB collection
+(`gesture_samples`). The table counts per service are the ones in the table above; `erased_users` appears
+in three services and is counted once in each.
+
+**Legacy tables in `iam`:** `role`, `user_role` and `password_reset_token`, created by
+`000_users.sql` and replaced by `roles`, `user_roles` and `user_tokens` (migration `005` says
+`password_reset_token` "queda sin uso y NO se borra"). No code writes them. The account erasure still
+deletes from `user_role` if it exists, and it also deletes from `password_reset_token` if it exists. With
+them the PostgreSQL total is **36** tables (33 live + 3 legacy). They should be dropped when the
+migrations are unified (H-02).
 
 **In the reference model but not implemented:** `user_auth_providers`, `user_sessions`,
 `refresh_tokens`, `password_policies`, `translation_signs`, `ai_models`, `user_devices`,
-`usage_daily_stats`, `session_daily_stats`, `audit_logs`, `error_logs`. Sessions are a single JWT
-with no refresh token ([ADR-002](../05-architecture/decisions/records/ADR-002-jwt-authentication.md)).
+`usage_daily_stats`, `session_daily_stats`, `audit_logs`, `error_logs`. Sessions are a single JWT that
+expires after one day (`JWT_EXPIRES_IN`, default `1d`, `packages/shared/src/config/load_config.ts`), with
+no refresh token. [ADR-002](../05-architecture/decisions/records/ADR-002-jwt-authentication.md) chooses JWT
+and does not define expiry, refresh or rotation.
 
 **Implemented but not in the reference model:** `outbox_events`, `sign_templates`, `erased_users`,
 `user_profiles`, `processed_events`, the achievement activity tables and the tables added after
-2026-10-23:
+2026-10-23 (the three challenge tables are in the DBML since v0.5, `admin_*` and the retention tables are not):
 
 | Table | Service | Migration | Purpose |
 |-------|---------|-----------|---------|
@@ -79,7 +86,7 @@ The daily challenge rules are in [ADR-009](../05-architecture/decisions/records/
 
 | Store | Engine | What lives there | Justification |
 |-------|--------|------------------|---------------|
-| **Main database** | PostgreSQL 15+ | 28 tables across 10 domains | Almost every rule in `02-domain/` is a relational constraint: unique email (INV-001), one active model (INV-022), one localization per sign and language (INV-020), permissions only through roles (INV-016). Postgres enforces them in the engine. It also gives `jsonb` for the audit before/after values, native `ENUM` types, `inet`, `timestamptz`, partial unique indexes, and `gen_random_uuid()` without an extension from 13 onwards |
+| **Main database** | PostgreSQL 15+ | 31 tables across 10 domains (reference model) | Almost every rule in `02-domain/` is a relational constraint: unique email (INV-001), one active model (INV-022), one localization per sign and language (INV-020), permissions only through roles (INV-016). Postgres enforces them in the engine. It also gives `jsonb` for the audit before/after values, native `ENUM` types, `inet`, `timestamptz`, partial unique indexes, and `gen_random_uuid()` without an extension from 13 onwards |
 | **Sample store** | MongoDB 7 | `gesture_samples` — one collection, **no foreign keys** | A training sample's metadata changes every time the recognition pipeline changes: today landmarks and a storage path, tomorrow frame rate, hand count, capture device, extractor version. In the relational schema each of those is a migration. This is the one part of the system whose schema is genuinely unstable, and it is the one part that is not relational |
 | **Object storage** | S3-compatible bucket / filesystem | Videos, images, animations, `.tflite` model artifacts | Binary content never goes in the database. Tables keep a URI (`multimedia_resources.uri`, `ai_models.storage_reference`, `gesture_samples.storage_reference`) |
 
@@ -98,7 +105,7 @@ dumped or destroyed as a unit — which matters for a dataset governed by Law 15
 
 ## 2. Schema map
 
-Ten logical domains: 28 relational tables plus one MongoDB collection. The domains match the
+Ten logical domains: 31 relational tables plus one MongoDB collection. The domains match the
 `TableGroup` blocks in the DBML and the bounded contexts in `02-domain/domain-map.md`.
 
 | # | Domain | Schema | Tables | Bounded Context | Type |
@@ -111,7 +118,7 @@ Ten logical domains: 28 relational tables plus one MongoDB collection. The domai
 | 6 | [**AI**](domains/06-ai.md) | `ai` + MongoDB | `ai_models` · `gesture_samples` | Recognition & Translation · Consent & Personal Data | ⭐ Core / Critical supporting |
 | 7 | [**Notification**](domains/07-notification.md) | `notification` | `notification_types`, `user_devices`, `notifications` | Notifications | Supporting |
 | 8 | [**Usage**](domains/08-usage.md) | `usage` | `usage_events`, `usage_daily_stats`, `session_daily_stats` | Usage Analytics | Supporting |
-| 9 | [**Gamification**](domains/09-gamification.md) ⏸ | `gamification` | `achievements`, `user_achievements` | Gamification | ⏸ Pending RF8 |
+| 9 | [**Gamification**](domains/09-gamification.md) | `gamification` | `achievements`, `user_achievements`, `challenges`, `user_challenges`, `challenge_rewards` | Gamification | Implemented in profile-service (§ 0). Its requirements are FR-8xx, not yet in the SRS (GAP-01) |
 | 10 | [**Audit**](domains/10-audit.md) | `audit` | `audit_logs`, `error_logs` | — cross-cutting | Technical service |
 
 > **`password_policies` is in Identity, not in a `Configuration` domain of its own (changed in v9).**
@@ -127,18 +134,17 @@ Ten logical domains: 28 relational tables plus one MongoDB collection. The domai
 > consent rules, not recognition rules. Both groupings are right for what they are for — one is a
 > diagram, the other is a boundary.
 
-### Physical layout: one schema per domain
+### Physical layout: what the code does and what the reference model says
 
-Two options existed. **Option 2 is adopted**, and all the DDL in [`domains/`](domains/) is written for it:
+**Implemented:** every table lives in the `public` schema of its service's database. The migrations write
+`public.users`, `public.outbox_events`, … (see `services/iam-service/db/`). There are no per-domain schemas
+in the code, and no `GRANT` per schema.
 
-1. One `public` schema with table prefixes by convention — simplest, what most ORMs assume.
-2. **One PostgreSQL schema per domain** (`identity.users`, `lexicon.sign_lexicon`, …) — makes the module
-   boundary visible in the database, and lets a `GRANT` per schema catch a cross-module query at runtime
-   instead of at review.
-
-`02-domain/domain-map.md` already writes persistence as `identity` schema, `lexicon` schema and so on,
-so this keeps the two documents in agreement. If the team prefers option 1, one line changes per table
-and everything else stands.
+**Reference model:** the DDL in [`domains/`](domains/) uses one PostgreSQL schema per domain
+(`identity.users`, `lexicon.sign_lexicon`, …). That is option 2 of the original analysis: it makes the
+module boundary visible in the database. It is not what is deployed. `02-domain/domain-map.md` also writes
+persistence with domain schemas. Choosing between the two layouts is a decision for the team; until then the
+implemented layout is `public`, one database per service ([ADR-008](../05-architecture/decisions/records/ADR-008-database-per-service.md)).
 
 ---
 
@@ -173,7 +179,7 @@ graph TB
   GS[(gesture_samples<br/>MongoDB · no FK)]
   NT[Notification<br/>types, devices, notifications]
   US[Usage<br/>events, daily stats]
-  GM["Gamification ⏸<br/>achievements"]
+  GM["Gamification<br/>achievements, challenges"]
   AU[Audit<br/>audit_logs, error_logs]
 
   AZ  --> ID
@@ -297,7 +303,7 @@ Eleven findings from the data side (**DATA-01 … DATA-11**), plus the data-laye
 |------|------|---------|
 | **DATA-11** | Write `migrations/002_constraints.sql` — its full content is [`constraints.md`](constraints.md) | Until it exists the database accepts `confidence = 9.5`, two active AI models and two password policies in force. **A constraint that lives only in a comment is a comment** |
 | **DATA-07** | Add the `set_updated_at()` trigger to the six tables with an `updated_at` | The column currently never changes after insert — it is a creation timestamp with a misleading name |
-| **DATA-06** | Implement the anonymization routine for deleted accounts, **including the MongoDB side** | A soft-deleted `users` row still holds name, email and username in clear, and gesture samples are not reached by any cascade. Under Law 1581 that is the gap between a compliant deletion and a nominal one |
+| **DATA-06** | Account deletion as the code does it: hard `DELETE` of the `users` row, plus the `iam.UserDeleted` event that makes the other services erase their copies (MongoDB samples only lose `recorded_by`) | The reference model asked for an anonymized row. The code does not do that; [`data-lifecycle.md`](data-lifecycle.md) § 2 describes the implemented flow |
 | **DATA-02** | Give `sign_lexicon.created_by` / `updated_by` a foreign key, or document them as external identifiers | Their note describes `ON DELETE SET NULL` behaviour that nothing implements |
 
 **Blocking, and not ours to settle:** ALIGN-01 (the Core aggregate root has no table) and ALIGN-02 (are
@@ -311,8 +317,9 @@ samples anonymous or identified?). Both are design reversals that belong to the 
 |---------|------|--------|--------|
 | v0.1 | 2026-09-10 | Generic microservices scaffold replaced with the real model. `traduce_senas_v8.dbml` converted to PostgreSQL DDL, plus the MongoDB collection with its validator. Added conventions, the 21-enum catalog, the constraints migration in full, the normalization assessment, the migration strategy, the Law 1581 lifecycle, two ER diagrams and eleven findings | Juan Mauricio Suaza Solórzano |
 | v0.2 | 2026-09-10 | **Split by domain.** The single document became this overview plus eleven files in `domains/` and six cross-cutting documents. No content lost; the cross-domain diagram in § 4 and the per-domain open-item tables are new | Juan Mauricio Suaza Solórzano |
-| v0.4 | 2026-10-23 | New § 0: the implemented model per service, legacy tables in iam, and what exists only in the reference model (audit finding H-05) | Luis Alejandro Duarte Aldana |
 | v0.3 | 2026-09-10 | **Model v9 — `password_policies` moved from `Configuration` to `Identity`**, and the `Configuration` domain dissolved: eleven domains become ten. The DBML was updated accordingly, and three long-standing items closed with it — DATA-01 (the model file is now `traduce_senas.dbml`, with the version in the header so no pointer goes stale again), GAP-03 (`password_reset_tokens` → `user_tokens`) and GAP-04 (RF2 does persist, as `SECTION_VIEW`). Permission `config.manage` renamed `security.policy.manage`. New: DATA-12 | Juan Mauricio Suaza Solórzano |
+| v0.4 | 2026-10-23 | New § 0: the implemented model per service, legacy tables in iam, and what exists only in the reference model (audit finding H-05) | Luis Alejandro Duarte Aldana |
+| v0.5 | 2026-11-04 | § 0 rewritten from the SQL files: no development-branch or production claims, JWT session wording corrected (no ADR-002 attribution), legacy count, the 3 challenge tables added to the reference model (32 tables), physical layout stated as implemented (`public`), DATA-06 aligned with the code | Documentation |
 
 ---
 

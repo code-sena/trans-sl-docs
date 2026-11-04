@@ -2,7 +2,7 @@
 
 > **Domain 5 of 10** · Bounded Context: **Recognition & Translation** (⭐ Core) · PostgreSQL schema: `translation`
 > **Tables:** `translations`, `translation_signs`
-> **Requirements:** RF3 · ERF3.1, ERF3.2 · ERF5.5 · RNF1
+> **Requirements:** RF3 · ERF3.1, ERF3.2 · ERF5.5 · NFR-002
 
 **Owned by:** recognition-service (PostgreSQL db `recognition`)
 **Version:** v0.2 · **Last updated:** 2026-09-10 · **Source:** `traduce_senas.dbml` (v9)
@@ -86,7 +86,7 @@ which is what the RF6 statistic *most translated signs* needs.
 
 1. **`translations.user_id` is `CASCADE` while `usage_events.user_id` is `SET NULL`.** Deliberate and
    asymmetric: the translation history is **the user's personal data** and must disappear with the
-   account (RNF8); a usage event is an anonymous statistical fact that must not (RF6). Same deletion,
+   account (NFR-005); a usage event is an anonymous statistical fact that must not (RF6). Same deletion,
    two correct opposite answers, because the two rows mean different things.
 2. **`translation_signs.sign_id` is `RESTRICT`.** A sign that appears in someone's history can never be
    deleted. Retiring a sign is `status = 'INACTIVE'` in [`04-lexicon.md`](04-lexicon.md), which hides it
@@ -128,4 +128,4 @@ which is what the RF6 statistic *most translated signs* needs.
 - The signs referenced, and the `code` = `Gloss` contract → [`04-lexicon.md`](04-lexicon.md)
 - Events emitted on each translation → [`08-usage.md`](08-usage.md) and [`../../02-domain/domain-events.md`](../../02-domain/domain-events.md)
 - `TranslationSession`, `Translation` entities and the aggregate rules → [`../../02-domain/entities-and-rules.md`](../../02-domain/entities-and-rules.md)
-- Recognition latency (RNF1) → `04-requirements/non-functional.md`
+- Recognition latency (NFR-002) → `04-requirements/non-functional.md`

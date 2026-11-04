@@ -97,7 +97,7 @@ ALTER TABLE usage.session_daily_stats
   ADD CONSTRAINT ck_session_stats CHECK (session_count >= 0 AND unique_users >= 0
                                      AND total_duration_seconds >= 0 AND avg_duration_seconds >= 0);
 
--- ── Gamification ⏸ (only if RF8 is approved) ────────────────
+-- ── Gamification (implemented in profile-service; RF8 still missing from the SRS, GAP-01) ──
 ALTER TABLE gamification.achievements
   ADD CONSTRAINT ck_achievement_target CHECK (target_count > 0),
   ADD CONSTRAINT ck_achievement_points CHECK (points >= 0);

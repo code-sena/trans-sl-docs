@@ -2,7 +2,7 @@
 
 > **Domain 10 of 10** · **Not a bounded context** — cross-cutting technical service · PostgreSQL schema: `audit`
 > **Tables:** `audit_logs`, `error_logs`
-> **Requirements:** no RF in the SRS (GAP-08) · FR-901 … FR-904 · RNF6 observability
+> **Requirements:** no RF in the SRS (GAP-08) · FR-901 … FR-904 · NFR-006 observability
 
 **Owned by:** iam-service (PostgreSQL db `iam`)
 **Version:** v0.2 · **Last updated:** 2026-09-10 · **Source:** `traduce_senas.dbml` (v9)
@@ -110,7 +110,7 @@ is the earliest signal that a newly activated model is worse than the one it rep
 
 `ON DELETE SET NULL` on `user_id` in both tables. **A trace that disappears when the account does is not
 a trace.** The entry keeps `ip_address`, `entity_id` and the values; it loses only the link to a person
-who exercised their right to be forgotten. That is the correct balance between RNF8 and auditability —
+who exercised their right to be forgotten. That is the correct balance between NFR-005 and auditability —
 and it is the same decision as `usage_events`, for a different reason.
 
 ---
@@ -137,7 +137,7 @@ conversation as partitioning `usage_events` — have it once, for all three (DAT
    never updated and never deleted** — a mutable audit log is not an audit log.
 2. **`application VARCHAR(100)` in both.** Identifies which component wrote the row (`mobile-app`,
    `admin-web`, `worker`). Cheap, and the first thing anyone wants when reading an unfamiliar entry.
-3. **No `correlation_id` column, and there probably should be one.** RNF6 asks for structured logs with
+3. **No `correlation_id` column, and there probably should be one.** NFR-006 asks for structured logs with
    a correlation id; neither table has one, so an error cannot be tied to the audit entries of the same
    request. Worth raising when `13-operations/observability.md` is filled in — not added here
    unilaterally.

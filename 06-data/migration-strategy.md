@@ -3,8 +3,16 @@
 > How the schema changes without breaking a running system, in what order the migrations run, and what
 > to do about the two changes that cannot be made in a single release.
 
-**Version:** v0.2 · **Last updated:** 2026-09-10
-**Tool:** node-pg-migrate — plain SQL up/down, no ORM required, matches the Node/Express stack
+**Version:** v0.3 · **Last updated:** 2026-11-04
+**Tool in use today:** none, as a single tool. The implemented process (backend v1.4.0) is:
+
+- Each service keeps its schema as numbered SQL files in `services/<service>/db/` (`000_…` to `013_…` in iam, `001_…` to `005_…` in recognition, and so on).
+- **New volume:** `docker-compose.yml` mounts the listed files in `/docker-entrypoint-initdb.d/`, so PostgreSQL runs them once when the volume is created. Only the files in that list run; others in `db/` (for example `007` and `008` in iam, which exist only as Liquibase changelogs) are not applied this way.
+- **Existing volume:** the files are applied by hand with `psql` (the commands are listed in the header of `docker-compose.yml`), after a backup in `/opt/backups/` ([ADR-008](../05-architecture/decisions/records/ADR-008-database-per-service.md)).
+- **Liquibase** has `db/master.xml` and `db/changelogs/` in iam, recognition, lexicon and analytics. Nothing in the deployment runs it, and the changelogs do not reproduce the current schema. Profile has no changelog.
+- `node-pg-migrate` is not used anywhere in the backend. Unifying the tool is task M8 (H-02).
+
+The plan below is the target layout of the reference model; it is not what is run today.
 
 ---
 
