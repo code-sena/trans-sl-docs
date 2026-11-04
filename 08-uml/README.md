@@ -81,6 +81,10 @@ For more complex diagrams requiring free placement. Export as SVG to `diagrams/e
 - `er-iam-service.puml` — ER diagram for the IAM service
 - `state-order.puml` — States diagram for an order
 
+### Current state (2026-10-27)
+
+The class diagrams for the backend live in `diagrams/source/class-*.puml` (CL-01 to CL-12). The newest is `class-profile-service.puml` (profile-service: daily challenges, challenge-point medals, admin reports by email). Some SVG exports are pending regeneration and `use-cases.pdf` is pending an update; both are tracked in [`diagram-index.md`](diagram-index.md). The review of what each diagram covers is in [`class-diagram-review.md`](class-diagram-review.md).
+
 ### `diagram-index.md`
 Registry of all diagrams with their purpose and location.
 

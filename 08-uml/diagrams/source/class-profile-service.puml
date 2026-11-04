@@ -1,0 +1,366 @@
+' Fuente: backend@develop (2026-10-27), services/profile-service. Escrito leyendo src/ y cmd/main.ts
+@startuml class-profile-service
+title Microservicio profile-service: perfil, logros, retos diarios, avisos y reportes al admin (backend@develop, services/profile-service)
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+left to right direction
+
+' ---------- dominio: retos diarios ----------
+interface ChallengeDefinition <<entity>> {
+  + challengeId : string
+  + code : string
+  + name : string
+  + description : string
+  + targetCount : number
+  + points : number
+  + localizations : es | en | fr | pt -> { name; description }
+}
+interface DailyChallenge <<entity>> {
+  + currentCount : number
+  + completed : boolean
+  + completedAt : string | null
+  + date : string
+}
+interface ChallengeAssignment <<entity>> {
+  + assignmentId : string
+}
+DailyChallenge --|> ChallengeDefinition
+ChallengeAssignment --|> DailyChallenge
+note bottom of ChallengeDefinition : src/domain/challenge.ts\nTablas challenges, user_challenges (UNIQUE user_id + challenge_date)\ny challenge_rewards (db/009_daily_challenges.sql).\nCatálogo: TRANSLATE_1/3/5/8 = 5/10/15/25 puntos.
+
+class challengeRules <<domain service>> {
+  + bogotaDate(instant: Date) : string
+  + selectChallenge(definitions, date: string) : ChallengeDefinition | null
+  + initialChallenge(definition, date: string) : DailyChallenge
+  + challengeText(challenge, language: UiLanguage) : { name; description }
+}
+note bottom of challengeRules : src/domain/challenge.ts\nEl reto del día rota por código según los días desde 1970.\nLa fecha es la de America/Bogota. Sin traducción al idioma\nse usa español.
+challengeRules ..> ChallengeDefinition
+challengeRules ..> DailyChallenge
+
+' ---------- dominio: logros y notificaciones ----------
+enum AchievementMetric <<entity>> {
+  TRANSLATIONS_COMPLETED
+  ACTIVE_SECONDS
+  VOICE_COMPLETED
+  FAVORITE_WORD
+  DISTINCT_WORDS
+  LETTERS_VIEWED
+  BOTH_MODES
+  TRANSLATION_DAYS
+  WORD_CATEGORIES
+  DAILY_CHALLENGE_POINTS
+  (otras: CATALOG_REQUIREMENT, SIGNS_LEARNED, ALPHABET_COMPLETED, SESSIONS_COMPLETED)
+}
+interface Achievement <<entity>> {
+  + id : string
+  + code : string
+  + metric : AchievementMetric
+  + targetCount : number
+  + points : number
+  + isSecret : boolean
+  + isActive : boolean
+  + level : bronze | silver | gold | null
+}
+interface AchievementProgress <<entity>> {
+  + currentCount : number
+  + achievedAt : string | null
+}
+Achievement --> AchievementMetric
+AchievementProgress --> Achievement
+note bottom of Achievement : src/domain/achievement.ts\nLas medallas por puntos de reto usan la métrica DAILY_CHALLENGE_POINTS\n(db/010_challenge_reward_achievements.sql). isObtainable() decide cuáles se pueden ganar.
+
+enum NotificationChannel <<entity>> {
+  PUSH
+  EMAIL
+  IN_APP
+}
+enum NotificationStatus <<entity>> {
+  PENDING
+  SENT
+  FAILED
+  READ
+  CANCELLED
+}
+enum ReferenceType <<entity>> {
+  ACHIEVEMENT
+  ADMIN_REPORT
+  CHALLENGE
+}
+interface NewNotification <<entity>> {
+  + userId : string
+  + typeCode : string
+  + channel? : IN_APP | EMAIL
+  + title : string
+  + body : string
+  + referenceType? : ReferenceType
+  + referenceId? : string
+}
+note bottom of NewNotification : src/domain/notification.ts\nTipos: ACHIEVEMENT_UNLOCKED, CHALLENGE_COMPLETED, ADMIN_WEEKLY_REPORT,\nADMIN_MONTHLY_REPORT, ADMIN_MODEL_REMINDER. EMAIL nace PENDING (ADR-007).\nPUSH queda descartado.
+NewNotification --> NotificationChannel
+NewNotification --> ReferenceType
+
+' ---------- dominio: reportes al admin ----------
+enum ReportKind <<entity>> {
+  WEEKLY
+  MONTHLY
+  MODEL_REMINDER
+}
+interface Period <<entity>> {
+  + kind : ReportKind
+  + periodKey : string
+  + current : DateRange
+  + previous : DateRange
+}
+Period --> ReportKind
+class adminReportSchedule <<domain service>> {
+  + periodOf(kind: ReportKind, now: Date) : Period
+  + dueReports(now: Date) : ReportKind[]
+}
+note bottom of adminReportSchedule : src/domain/admin_report_schedule.ts\nHora de Bogotá, 08:00. Semanal: lunes a martes. Mensual: día 1 al 3.\nRecordatorio de modelo: miércoles a jueves. Pasada la ventana el reporte se descarta.
+adminReportSchedule ..> Period
+
+class adminReport <<domain service>> {
+  + buildWeeklyDigest(input: DigestInput, language) : ReportText
+  + buildMonthlyDigest(input: DigestInput, language) : ReportText
+  + buildModelReminder(summary: SignTemplateSummary, language) : ReportText
+  + compareTrend(current, previous) : TrendResult
+  + statsMatchPeriod(period, stats) : boolean
+}
+note bottom of adminReport : src/domain/admin_report.ts y admin_report_messages.ts\nTexto en es/en/fr/pt. Tendencia GOOD/BAD/STABLE/NO_DATA con umbral de 10 %.
+adminReport ..> Period
+
+' ---------- puertos de salida ----------
+interface UnitOfWork <<port out>> {
+  + run<T>(work: (repositories: TransactionalRepositories) => Promise<T>) : Promise<T>
+}
+interface TransactionalRepositories <<port out>> {
+  + challenges : ChallengeRepository
+  + profiles : ProfileRepository
+  + achievements : AchievementRepository
+  + notifications : NotificationRepository
+  + processedEvents : ProcessedEventRepository
+  + gamificationLocks : GamificationLocks
+  + reportRuns : ReportRunRepository
+  + activity? : ActivityRepository
+}
+UnitOfWork ..> TransactionalRepositories
+note bottom of UnitOfWork : src/ports/repositories.ts\nTodo corre en una transacción con bloqueo por usuario (lockUser).
+
+interface ChallengeRepository <<port out>> {
+  + rewardTotal(userId) : Promise<number>
+  + findReward(userId, assignmentId) : Promise<{ points; grantedAt } | null>
+  + listActive() : Promise<ChallengeDefinition[]>
+  + findAssignment(userId, date) : Promise<ChallengeAssignment | null>
+  + save(userId, challenge: DailyChallenge) : Promise<ChallengeAssignment>
+  + grantReward(userId, assignment) : Promise<boolean>
+}
+note bottom of ChallengeRepository : rewardTotal suma solo puntos concedidos, no valores actuales del catálogo.\ngrantReward devuelve true solo si concede puntos nuevos (único por asignación).
+interface AchievementRepository <<port out>> {
+  + findProgressByMetric(userId, metric) : Promise<AchievementProgress[]>
+  + findAllProgress(userId, catalogVersion?) : Promise<AchievementProgress[]>
+  + saveProgress(userId, progress) : Promise<void>
+  + markNotified(userId, achievementId) : Promise<void>
+}
+interface NotificationRepository <<port out>> {
+  + create(notification: NewNotification) : Promise<boolean>
+  + list(userId, query) : Promise<NotificationPage>
+  + markRead(userId, notificationId) : Promise<Notification | null>
+}
+interface ProfileRepository <<port out>> {
+  + createIfAbsent(profile) : Promise<void>
+  + isErased(userId) : Promise<boolean>
+  + eraseUser(userId) : Promise<void>
+  + findProfile(userId) : Promise<Profile | null>
+  + findPreferences(userId) : Promise<Preferences | null>
+  + updatePreferences(userId, patch) : Promise<Preferences | null>
+}
+interface EmailOutbox <<port out>> {
+  + processDue(limit: number, deliver: (email: PendingEmail) => Promise<EmailOutcome>) : Promise<number>
+}
+note bottom of EmailOutbox : EmailOutcome = SENT | FAILED | CANCELLED.\nBloquea avisos EMAIL PENDING vencidos sin esperar a los de otra instancia.
+interface AdminRecipientRepository <<port out>> {
+  + touch(userId, isAdmin) : Promise<void>
+  + listActive() : Promise<AdminRecipient[]>
+  + listEnabled(userIds) : Promise<AdminRecipient[]>
+}
+interface ReportRunRepository <<port out>> {
+  + claim(kind, periodKey) : Promise<string | null>
+}
+interface ReportRunQuery <<port out>> {
+  + isClaimed(kind, periodKey) : Promise<boolean>
+}
+interface Mailer <<port out>> {
+  + sendNotification(email: { to; title; body; language }) : Promise<void>
+}
+note bottom of Mailer : src/ports/mailer.ts
+interface StatsGateway <<port out>> {
+  + translationStats() : Promise<TranslationStats>
+  + sectionVisits(range: DateRange) : Promise<SectionVisits[]>
+  + signTemplateSummary() : Promise<SignTemplateSummary>
+}
+interface AdminDirectory <<port out>> {
+  + listAdminIds() : Promise<string[]>
+}
+note bottom of AdminDirectory : iam es la fuente de verdad de los ADMIN; si no responde,\nse usan los admins que profile ya vio (AdminRecipientRepository.listActive).
+
+' ---------- casos de uso: retos y medallas ----------
+class advanceDailyChallenge <<use case>> {
+  deps: TransactionalRepositories
+  + (repositories, userId, event: TranslationProduced, preferences) : Promise<AchievementProgress[]>
+}
+note bottom of advanceDailyChallenge : application/daily_challenge.ts\nSuma 1 al reto del día. Al completarlo concede la recompensa (aunque los avisos\nestén apagados) y crea el aviso CHALLENGE_COMPLETED si están encendidos.
+class makeGetTodayChallenge <<use case>> {
+  deps: unitOfWork, now?
+  + (userId) : Promise<{ success; data: reto | null; message? }>
+}
+note bottom of makeGetTodayChallenge : application/daily_challenge.ts\nGET /api/profile/challenges/today. No crea perfil ni asignación.
+class updateChallengeRewardAchievements <<use case>> {
+  + (repos, userId, preferences) : Promise<AchievementProgress[]>
+}
+note bottom of updateChallengeRewardAchievements : application/challenge_reward_achievements.ts\nTras una recompensa nueva compara el total con las medallas DAILY_CHALLENGE_POINTS.
+class makeGetChallengeRewardSummary <<use case>> {
+  deps: challenges (rewardTotal)
+  + (userId) : Promise<{ success; data: { totalPoints } }>
+}
+note bottom of makeGetChallengeRewardSummary : application/get_challenge_reward_summary.ts\nGET /api/profile/challenges/rewards/summary
+class makeRecordTranslation <<use case>> {
+  deps: unitOfWork, eventPublisher
+  + (eventId, userId, event?: TranslationProduced) : Promise<AchievementProgress[]>
+}
+note bottom of makeRecordTranslation : application/record_translation.ts\nProcesa cada evento una sola vez (process_event_once). Avanza el reto,\nlos logros por traducciones y la actividad; publica profile.AchievementUnlocked.
+class makeRecordActivity <<use case>> {
+  deps: unitOfWork, eventPublisher
+  + (userId, input) : Promise<{ playbackId? }>
+}
+note bottom of makeRecordActivity : application/record_activity.ts\nPOST /api/achievements/activity: letter, tick, pause, voice-start, voice-end, voice-cancel.
+
+advanceDailyChallenge ..> challengeRules
+advanceDailyChallenge ..> ChallengeRepository
+advanceDailyChallenge ..> NotificationRepository
+advanceDailyChallenge ..> updateChallengeRewardAchievements
+updateChallengeRewardAchievements ..> ChallengeRepository
+updateChallengeRewardAchievements ..> AchievementRepository
+updateChallengeRewardAchievements ..> NotificationRepository
+makeGetTodayChallenge ..> UnitOfWork
+makeGetTodayChallenge ..> challengeRules
+makeGetChallengeRewardSummary ..> ChallengeRepository
+makeRecordTranslation ..> UnitOfWork
+makeRecordTranslation ..> advanceDailyChallenge
+makeRecordTranslation ..> AchievementRepository
+makeRecordActivity ..> UnitOfWork
+
+' ---------- casos de uso: reportes y correo ----------
+class makeRunAdminReports <<use case>> {
+  deps: stats, recipients, directory?, reportRuns, unitOfWork, logger, channels?
+  + () : Promise<ReportOutcome[]>
+}
+note bottom of makeRunAdminReports : application/run_admin_reports.ts\nLee estadísticas fuera de la transacción; dentro reserva el periodo y crea un aviso\npor canal (IN_APP y EMAIL) para cada admin con notificaciones activas.\nRepetir la ejecución no duplica avisos.
+class makeDeliverEmailNotifications <<use case>> {
+  deps: outbox, mailer, logger
+  + () : Promise<number>
+}
+note bottom of makeDeliverEmailNotifications : application/deliver_email_notifications.ts\nLotes de 20. Sin correo o con notificaciones apagadas: CANCELLED.\nSi el SMTP falla: FAILED.
+class makeTrackAdminRecipient <<use case>> {
+  deps: recipients
+  + (userId, roles) : Promise<void>
+}
+makeRunAdminReports ..> adminReportSchedule
+makeRunAdminReports ..> adminReport
+makeRunAdminReports ..> StatsGateway
+makeRunAdminReports ..> AdminDirectory
+makeRunAdminReports ..> AdminRecipientRepository
+makeRunAdminReports ..> ReportRunQuery
+makeRunAdminReports ..> UnitOfWork
+makeDeliverEmailNotifications ..> EmailOutbox
+makeDeliverEmailNotifications ..> Mailer
+makeTrackAdminRecipient ..> AdminRecipientRepository
+
+' ---------- adaptadores de salida ----------
+class makePostgresChallengeRepository <<adapter out>>
+class makePostgresUnitOfWork <<adapter out>>
+class makePostgresEmailOutbox <<adapter out>>
+class makePostgresAdminRecipientRepository <<adapter out>>
+class makePostgresReportRunQuery <<adapter out>>
+class makeNodemailerMailer <<adapter out>> {
+  config: service, user, pass, appUrl
+  + sendNotification(email) : Promise<void>
+  + verify() : Promise<void>
+}
+note bottom of makeNodemailerMailer : adapters/outbound/mailer/\nGmail por TLS. El correo lleva logo y un botón al panel (appUrl).\nSin EMAIL_USER y EMAIL_PASS no se crea y los avisos quedan PENDING.
+class makeStatsHttpGateway <<adapter out>> {
+  recognitionUrl, analyticsUrl, serviceTokens
+}
+class makeIamAdminDirectory <<adapter out>> {
+  iamUrl, serviceTokens
+}
+note bottom of makeStatsHttpGateway : adapters/outbound/http/\nLlama a recognition-service y analytics-service con un token de servicio de 5 minutos.
+makePostgresChallengeRepository ..|> ChallengeRepository
+makePostgresUnitOfWork ..|> UnitOfWork
+makePostgresEmailOutbox ..|> EmailOutbox
+makePostgresAdminRecipientRepository ..|> AdminRecipientRepository
+makePostgresReportRunQuery ..|> ReportRunQuery
+makeNodemailerMailer ..|> Mailer
+makeStatsHttpGateway ..|> StatsGateway
+makeIamAdminDirectory ..|> AdminDirectory
+
+' ---------- adaptadores de entrada ----------
+class startAdminReportsScheduler <<adapter in>> {
+  deps: run, tickMs
+  + stop() : Promise<void>
+}
+note bottom of startAdminReportsScheduler : adapters/inbound/scheduler/admin_reports_scheduler.ts\nEs el worker: ejecuta al arrancar y en cada vuelta; un error se registra y no tumba el proceso.\nReportes cada 15 min (PROFILE_ADMIN_REPORTS_TICK_MS), correos cada 60 s.\nSe apaga con PROFILE_ADMIN_REPORTS_ENABLED=false.
+startAdminReportsScheduler ..> makeRunAdminReports : run
+startAdminReportsScheduler ..> makeDeliverEmailNotifications : run
+
+class subscribeToEvents <<adapter in>> {
+  iam.UserRegistered
+  recognition.TranslationProduced
+  iam.UserDeleted
+}
+note bottom of subscribeToEvents : adapters/inbound/events/subscriptions.ts\nColas profile-service.user-registered, .translation-produced y .user-deleted.\nEs el lado "observador" del Observer (RabbitMQ).
+
+class makeProfileRoutes <<adapter in>> {
+  deps: useCases, authMiddleware, trackAdmin?
+  + () : { profile; achievements; notifications }
+}
+note right of makeProfileRoutes
+  Todas con JWT:
+  /api/profile: GET /challenges/today, GET /challenges/rewards/summary,
+    GET|PATCH /me, GET|PATCH /preferences
+  /api/achievements: GET /, POST /activity
+  /api/notifications: GET /, PATCH /:id/read
+  Cambiar notificationsEnabled exige el permiso notifications.manage.
+end note
+makeProfileRoutes ..> makeGetTodayChallenge
+makeProfileRoutes ..> makeGetChallengeRewardSummary
+makeProfileRoutes ..> makeRecordActivity
+makeProfileRoutes ..> makeTrackAdminRecipient
+
+' ---------- módulo y punto de entrada ----------
+class makeProfileModule <<module>> {
+  deps: pool, eventPublisher, authMiddleware, statsGateway?, adminDirectory?, mailer?
+  + routers
+  + eventHandlers : registerUserProfile, eraseUserProfile, recordTranslation
+  + jobs : runAdminReports?, deliverEmails?
+  + recovery : recoverUserProfile
+}
+note bottom of makeProfileModule : src/profile.module.ts\nSin statsGateway no hay reportes; sin mailer no hay correos.
+makeProfileModule ..> makeProfileRoutes
+makeProfileModule ..> makeRunAdminReports
+makeProfileModule ..> makeDeliverEmailNotifications
+makeProfileModule ..> makeRecordTranslation
+makeProfileModule ..> makePostgresUnitOfWork
+makeProfileModule ..> makePostgresChallengeRepository
+makeProfileModule ..> makePostgresEmailOutbox
+
+class "cmd/main.ts" as ProfileMain <<entrypoint>> {
+  puerto 3005
+}
+ProfileMain ..> makeProfileModule
+ProfileMain ..> subscribeToEvents
+ProfileMain ..> startAdminReportsScheduler
+ProfileMain ..> makeNodemailerMailer
+ProfileMain ..> makeStatsHttpGateway
+ProfileMain ..> makeIamAdminDirectory
+@enduml

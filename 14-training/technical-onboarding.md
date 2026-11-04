@@ -1,7 +1,10 @@
 # Technical Onboarding
 
-> **Version:** 1.0 · **Date:** 2026-10-12
+> **Version:** 1.1 · **Date:** 2026-10-27
 > **Based on:** Docs `cc30cd7` · Backend `origin/develop` `b29a2fa` · Frontend `origin/develop` `06e7f39`
+> **Update 2026-10-27:** profile migrations 001-010, Playwright E2E and CI of the Frontend, profile-service
+> mail variables, and the known issues that the current `develop` code has overtaken (marked "outdated").
+> The rest was not re-read.
 > **Notation:** `path@branch` means "file `path` on that branch", read with `git show origin/develop:<path>`.
 > **Status:** draft written by an agent; human review pending.
 
@@ -46,7 +49,9 @@ Required values in `.env` (no default, Compose fails without them): `JWT_SECRET`
 `POSTGRES_PASSWORD`, `MONGO_ROOT_PASSWORD`, `RABBITMQ_PASSWORD`. Avoid `@ : / ? #` in the passwords because they
 are placed inside connection URLs. Use your own values; never reuse a real password from another system.
 Optional: `MONGO_ROOT_USER`, `RABBITMQ_USER`, `CORS_ORIGINS`, `EMAIL_USER`, `EMAIL_PASS`.
-Without `EMAIL_USER` / `EMAIL_PASS` the verification and password-recovery e-mails are not sent.
+Without `EMAIL_USER` / `EMAIL_PASS` the verification and password-recovery e-mails are not sent, and the
+profile-service admin reports stay pending (see [admin-manual.md](admin-manual.md#45-weekly-and-monthly-reports-by-e-mail);
+the compose also reads `APP_URL`, `ADMIN_REPORTS_ENABLED` and `ADMIN_REPORTS_TICK_MS`).
 
 Check that it is up. Only the gateway is published to the network:
 
@@ -158,7 +163,19 @@ npm test          # builds @traduce/shared, then scripts/run-tests.js runs every
 `packages/shared` has tests. Coverage is not collected by default; on 2026-10-16 it was 88.5 % of lines.
 Three PostgreSQL suites are skipped unless `PROFILE_TEST_DATABASE_URL` points to a disposable database.
 
-Frontend: `npm test` (Jest + `jest-expo`, tests in `src/**/__tests__/`) and `npm run typecheck`.
+Frontend (version 1.2.0): `npm test` (Jest + `jest-expo`, tests in `src/**/__tests__/`: services, auth forms, vision
+classifiers, template stores, profile and challenges) and `npm run typecheck`.
+
+**End-to-end tests (Playwright).** `npm run e2e` in the Frontend runs `playwright test` (`playwright.config.ts`,
+specs in `e2e/`: `auth.spec.ts`, `alphabet.spec.ts`, `history.spec.ts`). They test the exported web (`dist/`) against
+the backend running with Docker Compose, so first run `npx expo export --platform web --output-dir dist` and start the
+backend. Variables: `E2E_BASE_URL` (default `http://localhost:4173`), `E2E_API_URL` (the gateway, `/api`) and
+`E2E_BACKEND_DIR` (the folder of the compose). They use one worker because the gateway limits login attempts, a phone-width
+viewport and a fake camera. Install the browser once with `npx playwright install --with-deps chromium`.
+
+**CI (Frontend).** `.github/workflows/ci.yml` runs on every PR and push to `develop` and `main`: typecheck, Jest with
+coverage, web export, SonarCloud (if the token exists), Docker image smoke test, and the E2E job, which starts the
+public Backend `main` with Compose and no SMTP.
 
 Commands to measure coverage, the figures per service and the known gaps are in
 [`11-quality/testing-strategy.md`](../11-quality/testing-strategy.md).
@@ -180,8 +197,8 @@ Rules: [00-governance/git-conventions.md](../00-governance/git-conventions.md). 
   `feat(iam): add resend verification route`. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`.
 - A PR uses the [pull request template](../.github/pull_request_template.md). Update the documents your change affects
   (see [documentation-rules.md](../00-governance/documentation-rules.md)).
-- Ask a teammate for review in the PR. There is no CI today, so run `npm run build` and `npm test` yourself
-  before opening the PR.
+- Ask a teammate for review in the PR. Run `npm run build` and `npm test` (Backend) or `npm run typecheck` and
+  `npm test` (Frontend) yourself before opening the PR; the Frontend CI repeats them.
 
 ---
 
@@ -218,8 +235,32 @@ Where migrations really are in Backend `develop`: each service owns its database
 `services/<service>/db/`:
 
 - numbered SQL files (`000_users.sql`, `003_iam_roles_permissions.sql`, `001_translations.sql`, `003_lexicon.sql`, ...);
-- a Liquibase set: `master.xml`, `changelogs/*.xml` and `liquibase.properties.example`. **`profile-service/db/` only has
-  `001_profile.sql` and no Liquibase set.**
+- a Liquibase set: `master.xml`, `changelogs/*.xml` and `liquibase.properties.example`. **`profile-service/db/` has
+  only numbered SQL files and no Liquibase set.**
+
+**Profile migrations in force (001 to 010).** Source: `services/profile-service/db/` and the header of `docker-compose.yml@origin/develop`.
+
+| File | What it adds |
+|------|--------------|
+| `001_profile.sql` | Profile, preferences, notifications, achievements |
+| `002_erased_users.sql` | Record of erased users |
+| `003_ui_languages.sql` | Interface languages ES, EN, FR, PT |
+| `004_achievement_catalog.sql`, `005_obtainable_achievements.sql`, `006_translation_milestones.sql`, `007_functional_achievements.sql` | Achievement catalogue and measurable achievements |
+| `008_admin_reports.sql` | Weekly, monthly and reminder reports for admins (ADR-007 wrongly names it `007_admin_reports.sql`) |
+| `009_daily_challenges.sql` | Daily challenges: `challenges`, `user_challenges`, `challenge_rewards` (ADR-009) |
+| `010_challenge_reward_achievements.sql` | Medals for challenge points (ADR-010) |
+
+Compose mounts all ten for a **new** volume. For an **existing** database apply by hand, in order, what is missing, with
+`-X -v ON_ERROR_STOP=1` so it stops at the first error (the compose header lists the exact commands; it names 002 to 006
+and 008 to 010 and does not list 007, so check that one in your database before skipping it):
+
+```bash
+docker compose exec -T postgres-profile psql -X -v ON_ERROR_STOP=1 -U postgres -d profile < services/profile-service/db/009_daily_challenges.sql
+docker compose exec -T postgres-profile psql -X -v ON_ERROR_STOP=1 -U postgres -d profile < services/profile-service/db/010_challenge_reward_achievements.sql
+```
+
+Others have their own manual steps too (iam 009, 010, 011, 013; recognition 003 to 005; analytics 002), see the header of the compose.
+Restart `profile-service` afterwards. `009` is idempotent: if it was applied with an older version, run it again.
 
 `docker-compose.yml@origin/develop` mounts **only the `.sql` files, each one by name**, into `/docker-entrypoint-initdb.d`
 (for example `./services/iam-service/db/006_users_status_email_verification.sql:/docker-entrypoint-initdb.d/006_...sql:ro`).
@@ -273,14 +314,14 @@ There is no route for it. See [admin-manual.md](admin-manual.md#3-creating-the-f
 |---|-------|--------|
 | 1 | **Port mismatch: frontend `:3000` vs gateway `:8080`** (see also item 8) | `src/app/config/api.config.ts@origin/develop` (Frontend) sets `API_BASE_URL` in development to `http://localhost:3000/api` (web) or `http://<host>:3000/api` (native), but the gateway listens on `:8080` (`README.md@origin/develop` of Backend: "the frontend must point to the gateway"). Not fixed in code yet; do not edit it as part of onboarding, report it to the Tech Lead. |
 | 2 | **`10-devops/local-setup.md` does not match Backend `develop`** | The Backend `README.md` is the reference for starting the system. Check the document against it before trusting a port, variable or command from `local-setup.md`. |
-| 3 | **No CI and no staging** | None of the three repos has CI workflows, and there is no staging environment. Quality gates in the Definition of Done that need CI or staging cannot be met today; run the checks locally. |
-| 4 | **No ADR for the microservices decision** | Only ADR-001 to ADR-003 exist in [05-architecture/decisions/](../05-architecture/decisions/README.md). The microservices style was accepted on 2026-10-05 without an ADR. |
+| 3 | **CI only in the Frontend, no staging** (updated 2026-10-27) | The Frontend has CI (typecheck, Jest, build, Docker, Playwright E2E; see Tests and build). The Backend workflows were not found in the local copy; check before assuming. There is still no staging environment. ADR-006 describes CI and static analysis. |
+| 4 | **ADR for the microservices decision** (outdated, 2026-10-27) | [ADR-004](../05-architecture/decisions/records/ADR-004-microservices-architecture.md) now exists; this item was written when only ADR-001 to ADR-003 existed. See [05-architecture/decisions/](../05-architecture/decisions/README.md). |
 | 5 | **`dev` vs `develop`** | See [Git flow](#git-flow). |
 | 6 | **Migrations duplicated** | SQL files and Liquibase in parallel, and `06-data/migration-strategy.md` describes a third tool. See the FAQ. |
-| 7 | **Social login** | The Google button has no action and `/auth/facebook` (called by the frontend) does not exist in the Backend `develop` routes. |
+| 7 | **Social login** (outdated, 2026-10-27; re-verify) | Written when the Google button had no action and `/auth/facebook` did not exist. Today iam-service has `google_login.ts`, `facebook_login.ts` and token verifiers, and the Frontend has `useGoogleLogin` and `useFacebookLogin`. It was not tested end to end for this update. |
 | 8 | **Frontend image does not reach the backend** | `nginx.conf@origin/develop` of Frontend sends `/api/` to `http://backend:3000` and `/api/lexicon/` to `http://lexicon:3003`; neither host exists in the Backend compose (the gateway is `api-gateway:8080`). Together with item 1, the frontend cannot reach the backend out of the box, in development or in the Docker build. |
 | 9 | **API contracts out of date** | The OpenAPI files in `07-api` do not reflect `develop`: `iam-service.yaml` lacks `/api/iam/*`, `/api/users/stats`, `/api/auth/verify-email` and `/resend-verification`; `recognition-service.yaml` lacks `/api/translations/stats` and `/me/stats`; `analytics-service.yaml` documents `/api/analytics/sections` while the code serves `/reports/sections`. The code is the source of truth: update the contract when you touch an endpoint. |
-| 10 | **Delete account likely fails in Docker** | `account_repository.ts@origin/develop` (iam-service) deletes from `translations` and updates `usage_events` in the `iam` database, where those tables do not exist (code review, not tested). Needs a Backend fix; it matters for the deletion right of Law 1581. |
+| 10 | **Delete account likely fails in Docker** (outdated, 2026-10-27; re-verify) | Written about an earlier `account_repository.ts`. The current one deletes tokens and roles in iam, writes an `iam.UserDeleted` event to the `outbox_events` table, and the other services erase their own data when they consume it (profile, recognition and analytics have `*.user-deleted` queues). Check with a real test before telling users either way. |
 
 ---
 

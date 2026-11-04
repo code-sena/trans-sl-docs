@@ -1,6 +1,6 @@
 # Administrator Manual
 
-> **Version:** 1.0 · **Date:** 2026-10-12 · **Audience:** people who manage roles, training and statistics
+> **Version:** 1.1 · **Date:** 2026-10-27 (section 4.5 and notifications switch updated) · **Audience:** people who manage roles, training and statistics
 > **Based on:** Docs `cc30cd7` · Backend `origin/develop` `b29a2fa` · Frontend `origin/develop` `06e7f39`
 > **Adapted from:** the English administrator manual v1.4 (2026-10-07), re-checked against the code. Where the
 > older manual and the code disagree, this document follows the code.
@@ -91,8 +91,9 @@ Important:
 - The `samples.*` and `lexicon.write` permissions of LINGUIST change nothing on screen: the frontend only uses
   `users.manage`, `stats.read`, `models.manage` and `notifications.manage`.
 - If the app cannot load the permissions it shows a warning and stays **without** permissions, for safety.
-- In **Profile**, the notifications switch is shown only to accounts with `notifications.manage`. **It does not work
-  yet:** it is not saved and it does not notify the server.
+- In **Profile**, the notifications switch is shown only to accounts with `notifications.manage` (ADMIN). It is saved
+  in profile-service (`PATCH /api/profile/preferences`) and it decides whether you receive the reports by e-mail
+  (section 4.5). It is on by default.
 
 ## 3. Creating the first administrator
 
@@ -274,6 +275,56 @@ confirmed) or `BLOCKED`.
 - **Delete account:** Profile has a **Delete account** option (password required), but it **likely fails in the
   Docker deployment** (see the Known issue in section 6). Do not rely on it.
 
+### 4.5 Weekly and monthly reports by e-mail
+
+profile-service sends the administrators a summary of how the app is being used. The decision is recorded in
+[ADR-007](../05-architecture/decisions/records/ADR-007-email-notifications.md); this section only says how to use it.
+
+**Who receives them.** Every ADMIN account that has the **Notifications** switch on in Profile (on by default) and
+has a profile. The list of administrators is asked to iam; if iam does not answer, the report goes only to the
+administrators that profile-service has already seen using the app. If you turn the switch off, you stop receiving
+the e-mail and the in-app notice. The e-mail is sent in the language you chose in Profile (Spanish, English, French or
+Portuguese). There is nothing else to enable per person.
+
+**What is sent and when** (Colombian time, from 08:00; if the service was down it can still send during the window
+shown, after that the report is dropped so old reports are not sent late):
+
+| Report | Covers | Window |
+|--------|--------|--------|
+| Weekly summary | The last closed week | Monday, until Tuesday 23:59 |
+| Monthly summary | The last closed month | Day 1, until day 3 at 23:59 |
+| Model reminder | Words and templates currently registered | Wednesday, until Thursday 23:59 |
+
+**What the e-mail contains.** A short text without personal data, built from the totals of the period:
+
+- Weekly: days with activity out of the days of the week (and the best day), the number of translations of the
+  week with the change against the previous week, and the most and least visited sections.
+- Monthly: translations of the month with the change against the previous month, the closed weeks, and the sections.
+  A record month gets its own title.
+- Model reminder: how many words and templates are registered.
+- The title gives the tone (good, bad or neutral trend; a change of 10 % or more counts). The e-mail has the
+  TraduceSeñas logo, a button (in Spanish "Ir a mirar") that opens the Admin panel of the web, and a footer saying you
+  receive it because notifications are on. If analytics does not answer, the summary is sent without the sections line.
+
+> Screenshot pending: example weekly e-mail.
+
+**How it is turned on in the installation** (Backend `docker-compose.yml`, service `profile-service`):
+
+| Variable | Use |
+|----------|-----|
+| `EMAIL_USER`, `EMAIL_PASS` | Mail account (Gmail), the same one iam uses. Without them the e-mails stay **pending** and the service warns at start. |
+| `APP_URL` | Address opened by the e-mail button. Default `https://traducesenas.tech`. Must start with `http://` or `https://`. |
+| `ADMIN_REPORTS_ENABLED` | `false` turns off the reports. On by default. |
+| `ADMIN_REPORTS_TICK_MS` | How often the service checks if a report is due. Default 15 minutes (minimum 1 minute). |
+
+The mail worker looks for pending e-mails every minute and sends them in batches of 20. An e-mail is cancelled if the
+person has no e-mail address or has switched notifications off, and marked failed if the mail server refuses it.
+A period is sent only once even if the service restarts or runs twice.
+
+The same reports appear as in-app notices of the profile-service. The database change that creates these tables is
+`008_admin_reports.sql` (see [technical-onboarding.md](technical-onboarding.md)); in an existing database it must be
+applied by hand.
+
 ## 5. Periodic tasks
 
 | When | Task |
@@ -350,8 +401,8 @@ Real status in this version:
 - It does not replace a certified interpreter.
 - Camera recognition works only in the web version.
 - The Google and Facebook sign-in buttons do not work.
-- The notifications switch in Profile does not work, and the app does not show notifications yet
-  (profile-service has the notification and achievement routes, but the frontend does not call them).
+- It does not send push notifications to the phone (ADR-007 discarded them): administrators receive the reports
+  by e-mail (section 4.5). Users see on-screen notices of achievements and daily challenges, which are not e-mailed.
 
 ## Known issues of this manual
 

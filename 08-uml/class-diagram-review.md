@@ -16,6 +16,7 @@
 | `class-backend-iam.puml`, `-auth`, `-users`, `-translations`, `-analytics`, `-ia`, `-shared` | Detalle por dominio del backend principal: atributos exactos, firmas, casos de uso, adaptadores, rutas |
 | `class-lexicon-service.puml` | Detalle del microservicio `services/lexicon-service` (catálogo de señas, eventos, seguridad propia) |
 | `class-backend-planned.puml` | Tablas del DBML sin código, todo `<<planned>>`, sin métodos |
+| `class-profile-service.puml` (CL-12, agregado el 2026-10-27) | Microservicio `services/profile-service`: retos diarios, medallas por puntos, avisos y reportes al admin por correo. Ver sección 6 |
 
 Lo que **no** cubren: los commits que aún no están en `origin/develop` (por ejemplo, el arreglo de `main.ts` y el login con Google verificado en el servidor, que existen como commits locales sin subir) y los scripts de `src/domains/ia/training/`.
 
@@ -103,7 +104,22 @@ Cada "existe" lleva ruta (relativa a `backendTS`).
 7. Los DTO `*RequestDto` de auth y `CreateTranslationRequestDto` siguen definidos pero sin uso.
 8. `lexicon-service` niega todas las operaciones de ADMIN por defecto (`ROLE_SOURCE=none`); para habilitarlas hay que configurar `ROLE_SOURCE=jwt` y el mismo `JWT_SECRET` (mínimo 32 caracteres) que el backend principal.
 
-## 6. Cómo regenerar y validar
+## 6. Actualización del 2026-10-27
+
+Desde `497feef` el backend dejó de ser un proceso único: el código vive en `backend/services/*` (`iam-service`, `recognition-service`, `analytics-service`, `lexicon-service`, `profile-service`, `api-gateway`). Qué se hizo y qué falta:
+
+| Tema | Estado |
+|---|---|
+| `class-profile-service.puml` (CL-12), nuevo | Hecho. Retos diarios (`ChallengeDefinition`, `DailyChallenge`, `advanceDailyChallenge`, `makeGetTodayChallenge`), medallas por puntos de reto (`updateChallengeRewardAchievements`, métrica `DAILY_CHALLENGE_POINTS`), avisos y reportes al admin con el puerto `Mailer`, `EmailOutbox`, `StatsGateway`, `AdminDirectory` y el worker `startAdminReportsScheduler`. Ver ADR-007, ADR-009 y ADR-010 |
+| `class-backend-planned.puml` | Actualizado. `notifications` y `user_preferences` ya tienen código en profile y salen de "planned"; quedan 4 tablas (`user_auth_providers`, `user_sessions`, `user_devices`, `audit_logs`). `user_devices` queda en duda porque PUSH se descartó |
+| `class-backend-overview.puml` | Se agrega el paquete `profile-service` |
+| `class-backend-patterns.puml` | Solo notas: ya hay notificaciones (IN_APP y EMAIL) y un suscriptor real de eventos (profile). `NotificacionFactory`, `IObserver` y Command siguen como `<<propuesta>>` |
+| CL-03 a CL-10 (auth, users, translations, ia, iam, analytics, shared) | **Sin revisar contra los servicios.** Siguen con las rutas `src/domains/*` de `497feef`. Los cambios posteriores no están dibujados: login con Google y Facebook (`google_login`, `facebook_login`), outbox de eventos de `iam-service` (`relay_outbox`), códigos de borrado de cuenta (`send_deletion_code`), directorio de admins (`list_admin_ids`) y la limpieza de traducciones a los 30 días (`purge_expired_translations`, recognition) |
+| Problemas de la sección 5 | Los puntos 1 y 4 (`main.ts` sin adaptadores, `makeGoogleLogin` sin ruta) describen `497feef` y deben tomarse como históricos hasta rehacer esos diagramas |
+
+Los SVG de los diagramas modificados están pendientes de regenerar (ver `diagram-index.md`).
+
+## 7. Cómo regenerar y validar
 
 Con PlantUML instalado:
 

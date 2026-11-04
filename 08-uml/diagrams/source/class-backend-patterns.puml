@@ -98,7 +98,7 @@ package "«Factory Method»" #FFF3E0 {
     + enviar() : void
     + cancelar() : void
   }
-  note bottom of NotificacionPushFactory : Sin código ni tabla. Solo existe el permiso notifications.manage (iam)\ny las tablas notifications y user_devices en el DBML (class-backend-planned.puml).
+  note bottom of NotificacionPushFactory : Sin fábrica ni push. Las notificaciones sí existen en profile-service\n(tabla notifications, canales IN_APP y EMAIL, ADR-007; ver class-profile-service.puml).\nPUSH quedó descartado; user_devices sigue solo en el DBML.
 
   TraduccionSenaTextoFactory --|> TraduccionFactory
   NotificacionPushFactory --|> NotificacionFactory
@@ -126,7 +126,7 @@ package "«Observer»" #EAF6EE {
     + publish(type: string, payload: unknown) : Promise<void>
     + close() : Promise<void>
   }
-  note bottom of RabbitMqEventPublisher : services/lexicon-service/src/shared/events/\nPublica lexicon.SignPublished y lexicon.SignWithdrawn en el exchange\n'traduce.events' (topic). Es el lado "sujeto" del Observer, vía broker.\nNingún servicio se suscribe todavía (no hay consumidores en el código).
+  note bottom of RabbitMqEventPublisher : services/lexicon-service/src/shared/events/\nPublica lexicon.SignPublished y lexicon.SignWithdrawn en el exchange\n'traduce.events' (topic). Es el lado "sujeto" del Observer, vía broker.\nAl 2026-10-27 profile-service ya se suscribe a iam y recognition (subscribeToEvents en\nclass-profile-service.puml); este diagrama no dibuja ese lado.
   ClosableEventPublisher --|> EventPublisher
   RabbitMqEventPublisher ..|> ClosableEventPublisher
   InMemoryEventPublisher ..|> ClosableEventPublisher
@@ -145,7 +145,7 @@ package "«Observer»" #EAF6EE {
   }
   note bottom of makeRecordUsageEvent : src/domains/analytics/application/record_usage_event.ts\nSustituye a EventoUsoObserver: el cliente llama POST /events y se guarda\nen public.usage_events. No es un observador (llamada directa),\ny en 497feef el router de analytics no está montado.
   NotificacionObserver ..|> IObserver
-  EventPublisher ..> IObserver : sin suscriptores aún
+  EventPublisher ..> IObserver : suscriptor real solo en profile-service
 }
 
 ' ══════════════════════════════════════════
