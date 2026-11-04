@@ -106,9 +106,9 @@ the Android APK is distributed through GitHub Pages.
 | Role | Name | Contact |
 |------|------|---------|
 | Product Owner · Instructor of record | Jesús Ariel González Bonilla | Through the training programme |
-| Tech Lead · Scrum Master · Analyst-Developer | Juan Mauricio Suaza Solórzano | suazasolorzano@gmail.com |
-| Analyst-Developer | Luis Alejandro Duarte Aldana | aleosea777@gmail.com |
-| Analyst-Developer | Juan Camilo Fierro Esquivel | fierroesquiveljuancamilo@gmail.com |
+| Tech Lead · Scrum Master · Analyst-Developer | Juan Mauricio Suaza Solórzano | Through the training programme |
+| Analyst-Developer | Luis Alejandro Duarte Aldana | Through the training programme |
+| Analyst-Developer | Juan Camilo Fierro Esquivel | Through the training programme |
 
 > The Product Owner is the instructor receiving this delivery: he reviews and accepts the
 > increment and the documentation at each sprint review. He does not write the requirements.
