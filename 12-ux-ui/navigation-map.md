@@ -1,8 +1,8 @@
 # Navigation Map
 
-> **Status:** 🟡 Living document — v0.3, 2026-09-15
+> **Status:** 🟡 Living document — v0.4, 2026-11-04
 > **Sources:** SRS v2.0 (2026) · `frontendTS/src/app/routes/` · `04-requirements/user-stories.md`
-> **Mockups:** 18 of the 21 screens below have their HTML in `mockup/layout/<folder>/index.html`
+> **Mockups:** 18 of the 22 screens below have their HTML in `mockup/layout/<folder>/index.html`
 
 Defines every screen of Traduce Señas, how the screens connect, who can reach each one and which
 requirement justifies it. When a screen is added, removed or renamed, this file changes in the same PR.
@@ -18,11 +18,15 @@ requirement justifies it. When a screen is added, removed or renamed, this file 
 
 After a successful login the app shows the tab bar. **The tabs depend on the role** (§ 4).
 
+> **Translation on mobile.** The Translation screen has two modes. **Words** (`WordEngineView.tsx`) also runs on Android
+> and iOS: the camera page is an embedded web page in a WebView (`?embed=word-engine`). **Alphabet** is web only: on a phone
+> it shows the "not available on mobile" notice (`TranslationScreen.tsx`, key `recognitionUnavailableMobile`).
+
 ---
 
 ## 2. Screen inventory
 
-**21 screens:** 19 already exist in the frontend, 2 are required by the SRS and do not exist yet as their own screen (🆕); the achievements catalog and daily challenge card live inside the profile.
+**22 screens:** 20 already exist in the frontend, 2 are required by the SRS and do not exist yet as their own screen (🆕); the achievements catalog and daily challenge card live inside the profile.
 
 | # | Mockup folder | Screen (UI name) | Frontend component | Requirement | Access | Platform | Frontend |
 |---|---------------|------------------|--------------------|-------------|--------|----------|----------|
@@ -47,6 +51,7 @@ After a successful login the app shows the tab bar. **The tabs depend on the rol
 | 19 | `view-usage-statistics` | Estadísticas | `StatsScreen` | RF6 · ERF6.1 | Admin | Web · Mobile | ✅ |
 | 20 | `view-admin-dashboard` | Administración | `AdminDashboardScreen` | — | Admin | Web · Mobile | ✅ |
 | 21 | `train-recognition-model` | Entrenar la IA | `AdminTrainingScreen` | — (supports RF3, RNF8) | Admin | Web · Mobile | ✅ |
+| 22 | — (no mockup) | Muestras del modelo | `ModelSamplesScreen` | — (admin support screen, UX-13) | Admin | Web · Mobile | ✅ |
 
 **Web addresses.** On web each screen has its own URL (`frontend/src/app/routes/linking.ts`), so the address bar changes and
 the back button returns to the previous screen. On Android/iOS this is off. An address that does not exist for the current
@@ -69,7 +74,7 @@ session state (for example `/traducir` without signing in) opens the initial scr
 > **RF2 · ERF2.1 (navigation bar) applies to every screen**, not only to the landing: the SRS requires the
 > bar to be visible on all pages and to work on PC, tablet and phone.
 
-**Which screens have a mockup.** 18 of the 21 have their own folder in `mockup/layout/`. The three that
+**Which screens have a mockup.** 18 of the 22 have their own folder in `mockup/layout/`. The four that
 do not:
 
 | # | Screen | Where it is instead |
@@ -77,6 +82,7 @@ do not:
 | 7 | `verify-code` | Step 2 of `recover-password`, which is a single page with three steps |
 | 9 | `set-new-password` | Step 3 of the same page |
 | 17 | `view-notifications` | Not drawn yet — RF4 · ERF4.1 still needs a mockup |
+| 22 | Muestras del modelo | Not drawn; it is an admin sub-screen of Admin (`/admin/muestras`) |
 
 ---
 
@@ -109,7 +115,8 @@ Tabs · role USER
 │
 Tabs · role ADMIN
 ├── [Estadística] view-usage-statistics
-├── [Admin]       view-admin-dashboard ── train-recognition-model
+├── [Admin]       view-admin-dashboard ──┬── train-recognition-model
+│                                        └── Muestras del modelo (no mockup)
 └── [Perfil]      manage-profile
 ```
 
@@ -125,7 +132,7 @@ Tabs · role ADMIN
 | `translate-signs`, `view-alphabet`, `view-translation-history` | ❌ | ✅ | ❌ decided, UX-03 |
 | `manage-profile`, `change-password` | ❌ | ✅ | ✅ |
 | `view-notifications`, `view-achievements` | ❌ | ✅ | ❌ |
-| `view-usage-statistics`, `view-admin-dashboard`, `train-recognition-model` | ❌ | ❌ | ✅ |
+| `view-usage-statistics`, `view-admin-dashboard`, `train-recognition-model`, Muestras del modelo | ❌ | ❌ | ✅ |
 
 ✅ allowed · ❌ not reachable · ➖ not shown while a session is open
 
@@ -219,10 +226,10 @@ Recorded so they are decided, not rediscovered. Owner: whoever takes the matchin
 | ID | Gap | Proposed action |
 |----|-----|-----------------|
 | UX-01 | **Alphabet has 26 letters (A–Z, no Ñ)** — team decision, 2026-09-15. SRS ERF7.1 still says 27 with Ñ. The training list in `AdminTrainingScreen` / `AdminDashboardScreen` adds an extra `'5'` | Correct ERF7.1 in the SRS; remove `'5'` from the letter list |
-| UX-02 | The admin is detected by a hard-coded email (`shared/utils/adminAccess.ts`), not by roles | Replace with the role model of RF1 / HU-AUTHZ-001 when the backend exists |
-| UX-03 | ✅ **Decided 2026-09-15:** signing in with the administrator email shows **only Estadísticas and Administración** — no Traducción, Alfabeto or Historial — and a regular user never sees those two. Matches `MainTabNavigator` and ERF6.1 | Applied in both mockup sets. When roles replace the hard-coded email (UX-02), the bar is built from the role |
-| UX-04 | "Cambiar contraseña" in the profile reuses the recovery flow (`ForgotPassword` with `fromProfile`). ERF5.3 asks for current + new + confirmation | Build `change-password` as in the mockup |
-| UX-05 | No notifications screen; the switch in the profile is local state and is not saved | Build `view-notifications`; persist the switch (HU-PROF-005) |
+| UX-02 | ✅ **Resolved (code, 2026-11-04):** the admin is no longer detected by e-mail. `AccessContext.tsx` loads the permissions from `GET /api/iam/me/access`, and `useAdminMode` (`users.manage`, `stats.read`, `models.manage`) decides the tabs in `MainTabNavigator`. `adminAccess.ts` no longer exists | None in the frontend |
+| UX-03 | ✅ **Decided 2026-09-15:** signing in with the administrator email shows **only Estadísticas and Administración** — no Traducción, Alfabeto or Historial — and a regular user never sees those two. Matches `MainTabNavigator` and ERF6.1 | Applied in both mockup sets. Since UX-02 was resolved, the bar is built from the permissions |
+| UX-04 | ✅ **Resolved (code, 2026-11-04):** "Cambiar contraseña" in the profile opens `ChangePasswordScreen` (route `ChangePassword`, `/seguridad`), not the recovery flow (`ProfileScreen.tsx`). Nothing passes the `fromProfile` flag any more | Check the fields against ERF5.3 (current, new and confirmation) and the mockup |
+| UX-05 | No notifications screen in the navigation (`MainTabNavigator`, `ProfileStackNavigator`). The profile switch is saved: `PATCH /api/profile/preferences` (`ProfileScreen.tsx`) | Build `view-notifications` |
 | UX-06 | ✅ **Resolved:** `view-achievements` drawn in `mockup/layout/view-achievements` (RF8 · ERF8.1, ERF8.2): unlocked vs locked with progress, empty and error states, one-time unlock dialog; unlocking works with notifications off | Build it in the app. Closing GAP-01 in `04-requirements/` still needs the RF8 decision |
 | UX-07 | Statistics use fixed sample data and have no date or activity filter (ERF6.1) | Add both filters; connect to real data with the backend |
 | UX-08 | The frontend ships four languages (es, en, fr, pt); the SRS and HU-PROF-004 mention Spanish and English | Decide whether fr and pt stay |
@@ -254,3 +261,4 @@ Recorded so they are decided, not rediscovered. Owner: whoever takes the matchin
 | v0.1 | 2026-09-15 | Template replaced with the real screen inventory (21 screens), navigation tree, access matrix, flows and 18 recorded gaps. Alphabet fixed at 26 letters |
 | v0.2 | 2026-09-15 | UX-19 added after reviewing the Claude Design export |
 | v0.3 | 2026-09-15 | The export became the mockup set: the table now says which four screens have no mockup, UX-19 rewritten, UX-20 added (statistics copy still addresses a user), UX-15 and UX-16 corrected |
+| v0.4 | 2026-11-04 | Checked against the frontend code (copy v1.3.1) and `linking.ts`. Added screen 22 (Muestras del modelo, no mockup) to the inventory and tree; mobile note on Translation; UX-02 and UX-04 resolved; UX-05 wording updated; UX-03 wording updated |
