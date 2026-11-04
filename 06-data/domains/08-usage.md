@@ -125,7 +125,7 @@ Until one is chosen, **every report built on `unique_users` must state its grain
 1. **`SET NULL` on both foreign keys, not `CASCADE`.** This is the deliberate opposite of
    `translations.user_id`: the translation history is the user's personal data and must go with the
    account; a usage event is an anonymous statistical fact that must not, or the reports collapse
-   retroactively every time somebody exercises their right to deletion (RNF8 and RF6 both satisfied).
+   retroactively every time somebody exercises their right to deletion (NFR-005 and RF6 both satisfied).
 2. **No `updated_at`, no `deleted_at`.** Append-only. An `updated_at` on a log is a column always equal
    to `created_at`.
 3. ⚠️ **`idx_daily_stats_date_section` is redundant and has been dropped.** The DBML declares an index

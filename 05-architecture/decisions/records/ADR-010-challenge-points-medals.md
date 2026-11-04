@@ -30,7 +30,7 @@ How it works:
 2. **Single measure.** Progress is `sum(challenge_rewards.points)` of the user. It excludes the catalog points, partial progress and points of achievements.
 3. **Backfill.** The migration initializes `user_achievements` only for users who already have rewards; goals already reached are recognized with the execution date of the migration, with no retroactive notices and no invented historical dates. Repeating the migration keeps existing rows.
 4. **New rewards.** Each new reward recalculates the total inside the same transaction and per-user lock, updates the three medals and unlocks and notifies each one once. Retries do not add again.
-5. **Catalog versions.** The medals are published in catalog v2 only when the client sends `challengeRewards=1`. Older v2 requests keep their 21 rules and v1 keeps its five.
+5. **Catalog versions.** The medals are published in catalog v2 only when the client sends `challengeRewards=1` (any other value is rejected with `VALIDATION_ERROR`). Requests without the flag keep the rules they had before, and v1 is unchanged (`services/profile-service/src/adapters/inbound/http/profile_controller.ts`).
 6. **Summary route.** `GET /api/profile/challenges/rewards/summary` (JWT, `403` for `users.manage`) returns `{ success: true, data: { totalPoints } }` using `COALESCE(SUM(points), 0)` over `challenge_rewards`. It creates nothing; a query error fails instead of returning zero.
 7. **Frontend.** A queue of confirmed notices (challenges and achievements), the total of challenge points, four indicators in the profile that adapt to the screen, and the medals in the achievements catalog. The client never grants points: it crosses `CHALLENGE_COMPLETED`, the assignment reference, completion and reward before showing a notice.
 
@@ -70,7 +70,7 @@ How it works:
 
 | Risk | Probability | Impact | Mitigation |
 |------|------------|--------|-----------|
-| Migration 010 applied before 009 | Low | High | Apply 001–010 in order; documented in the runbook |
+| Migration 010 applied before 009 | Low | High | Apply 001–010 in order (`docker-compose.yml` lists the order); migration 010 locks three tables, so stop the profile consumers while it runs |
 | Total outside the safe integer range | Very low | Low | The summary fails instead of returning a wrong number |
 
 ---

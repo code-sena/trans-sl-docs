@@ -1,7 +1,7 @@
 # Data Model — IAM Service
 
 > `iam-service` is the **authoritative owner** of the data described here. No other service reads these tables.
-> Other services keep only `user_id` (a UUID) as a logical reference and learn about changes through events.
+> Other services keep only `user_id` (an integer, `SERIAL` in this database) as a logical reference and learn about changes through events.
 
 **Source of truth for the target model:** `06-data/domains/01-identity.md`, `02-authorization.md`, `10-audit.md` (full DDL, data dictionary and invariants live there; this file is the service view and does not repeat the DDL).
 
@@ -9,7 +9,7 @@
 
 ## Implemented today
 
-Taken from the migrations of Backend `develop` `2e0816f` (`services/iam-service/db/`, applied in order by `docker-compose.yml`). Tables marked † are in `develop` but not yet deployed (production runs v1.3.0). One PostgreSQL database `iam`, schema `public` (no `identity`, `authz` or `audit` schemas). Keys are `SERIAL` integers, so other services keep `user_id` as an integer, not a UUID.
+Taken from the migrations of Backend `main` `a962982` (`services/iam-service/db/*.sql`, applied in order by `docker-compose.yml`). One PostgreSQL database `iam`, schema `public` (no `identity`, `authz` or `audit` schemas). Keys are `SERIAL` integers, so other services keep `user_id` as an integer, not a UUID.
 
 | Table | Key columns | Notes |
 |-------|-------------|-------|
@@ -53,9 +53,9 @@ role assignment with referential integrity inside the same database).
 | `user_roles` | Role held by a user | Composite PK `(user_id, role_id)`; `role_id` `ON DELETE RESTRICT` (INV-017) |
 | `role_permissions` | Permissions of a role | Composite PK; there is no `user_permissions` table on purpose (INV-016) |
 
-Seed data (`S001__seed_roles_permissions.sql`): `USER` is assigned to every account at registration; `LINGUIST` adds
-`samples.capture`, `samples.validate`, `lexicon.write`; `ADMIN` has everything plus `users.manage`, `stats.read`,
-`models.manage`, `notifications.manage`, `security.policy.manage`.
+Seed data (`003_iam_roles_permissions.sql`, comments "S001"): `USER` is assigned to every account at registration and holds
+`translation.create`, `translation.read.own`, `translation.delete.own`, `lexicon.read`, `profile.manage.own`; `LINGUIST` adds
+`samples.capture`, `samples.validate`, `lexicon.write`; `ADMIN` holds all 13 permissions.
 
 ### Schema `audit`
 
@@ -90,8 +90,7 @@ declare to `identity.users` (translations, notifications, usage, etc.) are **dro
 
 ## What exists today (code)
 
-Source: `backend/migrations/000_users.sql`, the Liquibase changelogs, and `003_lexicon.sql` (which creates `role`/`user_role`).
-All in database `traduce_senas`, schema `public`, integer keys.
+Source: `services/iam-service/db/000_users.sql` (creates `users`, `role`, `user_role` and `password_reset_token`) and the later `.sql` files of the same folder, in database `iam`, schema `public`, integer keys.
 
 | Today (`public`) | Target |
 |------------------|--------|
@@ -104,7 +103,7 @@ All in database `traduce_senas`, schema `public`, integer keys.
 
 ## Modeling decisions
 
-- **The lockout ladder lives in four columns of `users`,** not in a separate table (read and written on each failed sign-in).
+- **The lockout ladder (target) would live in four columns of `users`,** not in a separate table. The code has no lockout yet.
 - **Tokens are stored hashed,** refresh tokens and codes alike.
 - **A soft-deleted user keeps `email` and `username`** until the anonymization routine exists (DATA-06).
 - **`updated_at` has no trigger** yet (DATA-07).
@@ -114,9 +113,8 @@ All in database `traduce_senas`, schema `public`, integer keys.
 
 ## Schema migration
 
-**Tool:** Liquibase (as the spec requires one migration set per service). Today plain SQL in `backend/migrations/` run with `psql`.
-**Script location:** `iam-service/db/changelog/` (target).
-**Naming convention:** `NNN-description.xml` / `.sql`, numbered in order. Seeds `S001` (roles and permissions).
+**Today:** plain SQL files in `services/iam-service/db/` (`NNN_description.sql`, numbered in order). Docker Compose mounts the files it needs into `initdb.d`, so they run only when the volume is created; later files are applied by hand with `psql` (the comments in `docker-compose.yml` give the commands). The same changes also exist as Liquibase changelogs (`db/master.xml`, `db/changelogs/`), which the compose file does not use.
+**Target:** Liquibase as the only migration tool, under `iam-service/db/changelog/`. Seed `S001` (roles and permissions) is the `003` file today.
 
 **Rollback policy:**
 - Each changeset has a rollback block when it is reversible. Data migrations from the integer-key schema to UUID are one-way: take a backup first.

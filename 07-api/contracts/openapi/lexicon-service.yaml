@@ -6,7 +6,7 @@ info:
     Learning & Lexicon (`04-lexicon-service`, internal port 3003, PostgreSQL db `lexicon` + static media
     `.glb`/`.png`). Data owned: tables `categories`, `sign_lexicon`, `sign_localizations` and `multimedia_resource`.
 
-    **Based on:** Backend `2993301` (`origin/develop`, 2026-10-16; no route changes since `b29a2fa`), `services/lexicon-service`. The 17 endpoints below plus the media route
+    **Based on:** Backend `a962982` (`main`), `services/lexicon-service`. The 17 endpoints below plus the media route
     match `src/adapters/inbound/http/routes.ts`, with the DTOs of `dto/sign_request.ts` and the domain entities.
 
     Public paths served through the gateway: `/api/lexicon/**`, including `/api/lexicon/media/**`.

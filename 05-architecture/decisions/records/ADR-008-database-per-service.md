@@ -4,8 +4,8 @@
 
 - **ID:** ADR-008
 - **Date:** 2026-10-25
-- **Status:** Proposed
-- **Authors:** Luis Alejandro Duarte Aldana (proposal); to be accepted by the development team and the Product Owner
+- **Status:** Accepted (changed from Proposed on 2026-11-04: the code already implements the rule, see `docker-compose.yml` and `services/*/db/`)
+- **Authors:** Luis Alejandro Duarte Aldana (proposal)
 
 ---
 
@@ -49,7 +49,7 @@ The code already follows the rule. Each service has its own PostgreSQL container
 
 - Each service brings its schema as numbered SQL files in `services/<service>/db/`, applied by the PostgreSQL image when the volume is created. In production new files are applied by hand with `psql`, after a backup in `/opt/backups/`. Unifying the tool is task M8 (H-02); the Liquibase changelogs do not reproduce the current schema yet.
 - **Target, not met today:** each service connects with its own database user and password, with rights only on its own database. Today all five use the `postgres` superuser with the same `POSTGRES_PASSWORD` (`x-service-env` in `docker-compose.yml`).
-- Backups are taken per database. They are manual today (RNF12 is open).
+- Backups are taken per database. They are manual today (NFR-010 is open).
 - **Detecting stuck events.** The outbox relay and the consumers write an `ALERTA` line to the log, but nobody receives it. Each service's internal `/health` reports what can leave data behind: iam the pending outbox events and the age of the oldest one; the consumers the messages in their `<queue>.dead` queues and the events their handler has been retrying for a long time. The second check matters because the cleanup of `iam.UserDeleted` retries forever: a cleanup that always fails never reaches `.dead`, and RabbitMQ does not count a message the consumer holds without acknowledging. The gateway marks `/api/health` as `degraded` when an event waits more than 10 minutes in the outbox, a dead-letter queue is not empty or a handler has been retrying for more than 10 minutes, so an external monitor can alert once when the state changes, not on every failure.
 - Container logs are capped in `docker-compose.yml` (json-file, 10 MB × 3 files per container), so a failure that logs in a loop cannot fill the disk.
 
@@ -105,7 +105,7 @@ The code already follows the rule. Each service has its own PostgreSQL container
 | A new service stores user data and nobody subscribes it to `iam.UserDeleted` | Medium | High | Rule for new services: if it stores a `user_id`, it consumes `iam.UserDeleted`, keeps `erased_users` and is added to `USER_DELETED_QUEUES` (`packages/shared/src/events/account_deletion_topology.ts`) |
 | `iam.UserRegistered` is lost while the broker is down, and profile or analytics never learn about the account | Low | Medium | Move it to the outbox like `iam.UserDeleted` |
 | Schemas drift between environments because migrations are applied by hand | Medium | Medium | One migration tool with a CI check against an empty database (M8, H-02) |
-| Manual backups are forgotten | Medium | High | Scheduled daily dumps per database (RNF12) |
+| Manual backups are forgotten | Medium | High | Scheduled daily dumps per database (NFR-010) |
 | An account erasure stays stuck (broker down, consumer failing, message in a dead-letter queue) and nobody notices, so the data is not erased as promised | Medium | High | `/api/health` turns `degraded` with the reason (`outbox_backlog`, `dead_letters`, `consumer_retrying`); an external monitor (for example UptimeRobot, or a `cron` on the VPS that emails through the existing Gmail account) alerts on the change of state |
 
 ---

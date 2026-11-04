@@ -6,7 +6,11 @@ This document describes the design patterns used or defined for the Traduce Señ
 
 The patterns allow the system's responsibilities to be organized, reduce coupling, and facilitate software maintenance and evolution.
 
-The patterns defined for the project are:
+The patterns considered for the project are listed below.
+
+**Status (checked against the code, 2026-11-04):** none of the four patterns is implemented with the class names used in the examples (`ConfiguracionApp`, `TraduccionFactory`, `TRANSLATION_SAVED`, `ProfileInvoker`). Those names are illustrations. The code uses ports and adapters ([hexagonal-architecture.md](./hexagonal-architecture.md)), factory functions for composition (for example `makeGatewayApp`, `makeJwtTokenProvider` and `makePgPool`) and an event bus with publish/subscribe (`EventBus` in `packages/shared`, RabbitMQ in the running system).
+
+The patterns:
 
 * Singleton
 
@@ -76,7 +80,7 @@ The **Factory Method** pattern allows object creation to be encapsulated and del
 
 In Traduce Señas, it is used to manage different types of translations and the creation of certain types of notifications.
 
-The types of translation considered are:
+The types of translation considered are (only Sign → Text is in the MVP scope; the other two are out of scope, see `03-product/roadmap.md`):
 
 * Sign → Text.
 
@@ -152,11 +156,7 @@ UsageEventObserver    NotificationObserver
 
 ### Example in the project
 
-When a translation is saved, the system can emit an event:
-
-`TRANSLATION_SAVED`
-
-The interested components receive the event and execute their respective actions.
+When a translation is produced, `recognition-service` publishes the event `recognition.TranslationProduced` (contract in `packages/shared/src/events/contracts.ts`). `analytics-service` subscribes to it. The diagram above uses the illustrative name `TRANSLATION_SAVED`.
 
 ### When NOT to use it
 
@@ -184,7 +184,7 @@ This allows different actions to be executed, stored, and controlled in an organ
 
 ### When to use it
 
-In Traduce Señas, it is mainly used for actions related to profile configuration.
+The code does not use Command objects. The profile actions (language, theme, password) are plain use cases, for example `update_preferences` in `profile-service`.
 
 The identified actions include:
 

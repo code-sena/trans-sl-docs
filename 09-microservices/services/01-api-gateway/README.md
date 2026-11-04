@@ -1,10 +1,9 @@
 # API Gateway
 
-> Single entry point of Traduce Señas. Receives every request of the mobile / web app under `/api`, validates the JWT
+> Single entry point of Traduce Señas. Receives every request of the mobile / web app under `/api`, checks the JWT when one is sent
 > and routes the request to the domain service that owns the path. It owns the routing rules and nothing else.
 
-**Extraction status:** pending. There is no gateway code yet; today the backend process mounts the routers directly and
-`authMiddleware` verifies the JWT in-process. This document is the target. See `09-microservices/service-catalog.md`.
+**Extraction status:** extracted. The gateway is its own process (`services/api-gateway`, own Dockerfile, port 8080). The routing rules are in code (`src/route_table.ts`). See `09-microservices/service-catalog.md`.
 
 ---
 
@@ -22,55 +21,57 @@ Edge component: routing, JWT signature validation, rate limiting and CORS. It ha
 | Local port | 8080 |
 | Bounded contexts | None (edge) |
 | DB engine | None (stateless) |
-| Communicates with | iam (3001), recognition (3002), lexicon (3003), analytics (3004), profile (3005) over HTTP |
+| Communicates with | iam (3001), recognition (3002), lexicon (3003), analytics (3004), profile (3005) over HTTP (reverse proxy) |
 | Consumed by | The mobile / web app and admin tools |
 | Events | Does not publish or consume domain events |
-| Health | `GET /health` |
+| Health | `GET /health` (internal, used by Docker) and `GET /api/health` (public, through Caddy) |
 
 ---
 
 ## Responsibilities (what this service DOES)
 
-- Route `/api/**` requests to the owner service (table below)
-- Validate the JWT signature and expiry before forwarding. An invalid or missing token on a protected route is answered `401` at the edge
-- Forward the original `Authorization: Bearer` header untouched. Services read `sub` and `roles` from the token themselves
-- Rate limit per IP on public routes (`/api/auth/**`) and per `sub` on authenticated routes
+- Route `/api/**` requests to the owner service (table below). Paths are forwarded unchanged, without prefix stripping
+- Verify the JWT signature and expiry when the request carries `Authorization: Bearer`. An invalid token answers `401 UNAUTHORIZED` at the edge. Requests without a token are forwarded, and `/api/auth` never checks the token. Each service decides which routes need a session
+- Forward the original `Authorization` header untouched. The gateway adds no identity headers: services read `sub`, `roles` and `permissions` from the token themselves
+- Rate limit per client IP: 300 requests per minute for every route, and 10 per minute, shared, for the sensitive `/api/auth` paths
 - Apply CORS for the app origins
-- Add and propagate `X-Correlation-Id` for tracing a request across services
-- Aggregate the health of the upstreams on `GET /health`
+- Aggregate the health of the upstreams on `GET /health` and `GET /api/health`
 
 ## Out of scope (what it does NOT do)
 
 - **Business logic and data:** each domain service owns them
 - **Issuing tokens:** `iam-service` does it
-- **Authorization by role or resource:** each service checks `roles` (for example ADMIN for lexicon writes and model training)
+- **Authorization by role or resource:** each service checks `roles` and `permissions` (for example ADMIN for lexicon writes)
 - **Domain events:** the gateway does not touch RabbitMQ
 
 ---
 
 ## Routing table
 
-| Public path (all under `/api`) | Upstream | Public (no JWT) routes |
-|--------------------------------|----------|------------------------|
-| `/api/auth/**`, `/api/users/**`, `/api/roles/**`, `/api/consents/**` | iam-service `:3001` | `/api/auth/register`, `/login`, `/forgot-password`, `/verify-code`, `/reset-password` |
-| `/api/translations/**`, `/api/recognition/**`, `/api/models/**`, `/api/samples/**` | recognition-service `:3002` | `GET /api/recognition/sign-templates` (today `GET /api/sign-templates` is public so the translation screen can download the templates before sign-in) |
-| `/api/lexicon/**` (including `/api/lexicon/media/**`) | lexicon-service `:3003` | All `GET`; writes need ADMIN |
-| `/api/analytics/**` | analytics-service `:3004` | None (ADMIN reads) |
-| `/api/profile/**`, `/api/notifications/**`, `/api/achievements/**` | profile-service `:3005` | None |
+Source: `services/api-gateway/src/route_table.ts` (`ROUTE_PREFIXES`).
 
-The gateway only decides whether a JWT is required (public route list). Whether the caller has the right role is the
-decision of the upstream.
+| Public path prefix (all under `/api`) | Upstream | Token |
+|---------------------------------------|----------|-------|
+| `/api/auth`, `/api/users`, `/api/iam` | iam-service `:3001` | Not verified on `/api/auth`; verified on the others when sent |
+| `/api/translations`, `/api/recognition`, `/api/sign-templates` (deprecated alias), `/api/samples` | recognition-service `:3002` | Verified when sent; the service requires it where needed |
+| `/api/lexicon` (including `/api/lexicon/media`) | lexicon-service `:3003` | Verified when sent; writes need ADMIN in the service |
+| `/api/analytics` | analytics-service `:3004` | Verified when sent; reports need ADMIN or `stats.read` in the service |
+| `/api/profile`, `/api/notifications`, `/api/achievements` | profile-service `:3005` | Verified when sent; the service requires it |
 
-The current backend routes that map to these paths: `/api/auth` and `/api/users` (iam), `/api/translations` (recognition),
-`/api/sign-templates` (recognition, to be exposed under `/api/recognition`), `/api/lexicon` (lexicon).
+The gateway only decides whether a token is verified. Roles and permissions are checked by the upstream.
+
+Matching is by path segment: `/api/lexicon` matches `/api/lexicon` and `/api/lexicon/...`, but not `/api/lexicons`. A path outside these prefixes answers `404 NOT_FOUND`.
 
 ---
 
 ## How to run it locally
 
 ```bash
-# Target (no gateway image exists yet). From the project root, once docker-compose.yml defines it:
+# From the project root. Docker Compose builds the gateway and starts the services it depends on
 docker compose up -d api-gateway
+
+# Or, without containers, the gateway and the five services with reload
+npm run dev:all
 
 # Verify
 curl http://localhost:8080/health
@@ -79,16 +80,18 @@ curl http://localhost:8080/health
 curl http://localhost:8080/api/lexicon/alphabet
 ```
 
-### Environment variables (target)
+### Environment variables
 
 | Variable | Purpose |
 |----------|---------|
 | `PORT` | HTTP port (default `8080`) |
-| `IAM_URL`, `RECOGNITION_URL`, `LEXICON_URL`, `ANALYTICS_URL`, `PROFILE_URL` | Upstream base URLs (default `http://localhost:3001` ... `3005`) |
-| `JWT_VERIFY_KEY` | Secret (HS256) or public key (RS256) used to validate the signature. The same value `iam-service` signs with |
-| `CORS_ORIGINS` | Comma separated allowed origins |
-| `RATE_LIMIT_PUBLIC_PER_MIN` | Limit per IP on public routes (default `30`, assumption) |
-| `RATE_LIMIT_AUTH_PER_MIN` | Limit per `sub` on protected routes (default `120`, assumption) |
+| `IAM_SERVICE_URL`, `RECOGNITION_SERVICE_URL`, `LEXICON_SERVICE_URL`, `ANALYTICS_SERVICE_URL`, `PROFILE_SERVICE_URL` | Upstream base URLs (default `http://localhost:3001` ... `3005`) |
+| `JWT_SECRET` | Required. HS256 secret, the same value `iam-service` signs with |
+| `CORS_ORIGINS` | Comma separated allowed origins. Empty: development allows the Expo web origins; with `NODE_ENV=production` none |
+| `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS` | Requests per window on every route (default `300` per `60000` ms) |
+| `AUTH_RATE_LIMIT_MAX`, `AUTH_RATE_LIMIT_WINDOW_MS` | Requests per window shared by the sensitive `/api/auth` paths (default `10` per minute) |
+| `TRUST_PROXY` | Number of trusted proxies in front of the gateway (`1` behind Caddy). With `0` (default) `X-Forwarded-For` is ignored |
+| `HEALTH_TIMEOUT_MS` | Timeout of each upstream check in `/health` (default `2000`) |
 
 ---
 
@@ -99,4 +102,4 @@ curl http://localhost:8080/api/lexicon/alphabet
 - [decisions.md](./decisions.md) — Gateway design decisions
 - [runbook.md](./runbook.md) — Operation
 - Catalog → `../../service-catalog.md`
-- API contract → `07-api/contracts/openapi/api-gateway.yaml` (scaffold, to be realigned to the routing table above)
+- API contract → `07-api/contracts/openapi/api-gateway.yaml`

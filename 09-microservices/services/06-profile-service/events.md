@@ -1,77 +1,59 @@
 # Events — Profile Service
 
-> Asynchronous events over RabbitMQ: exchange `traduce.events` (topic), routing key `profile.<EventName>`.
-> Definitions and payloads: `02-domain/domain-events.md`. Nothing is published or consumed today (no code, no broker).
+> Asynchronous events over RabbitMQ: exchange `traduce.events` (topic), routing key `profile.<EventName>` for the events it publishes.
+> Typed payloads are in `packages/shared/src/events/contracts.ts` and `services/profile-service/src/domain/events.ts`; the catalog is in `02-domain/domain-events.md`.
+> This file lists what the code does **today**, and the events of the target model that the code does not have yet.
 
 ---
 
 ## Events this service PUBLISHES
 
-| Event | Routing key | When | Payload (key fields) | Consumers |
-|-------|-------------|------|----------------------|-----------|
-| `PreferencesChanged` | `profile.PreferencesChanged` | Theme or interface language changes | `{userId, theme, language, changedAt}` | the app (applies it), analytics |
-| `DeviceRegistered` | `profile.DeviceRegistered` | The user grants notification permission on a device | `{deviceId, userId, platform, registeredAt}` (never the push token) | profile (itself) |
-| `DeviceRevoked` | `profile.DeviceRevoked` | The provider rejects the token or the user signs out | `{deviceId, userId, revokedAt, reason}` | profile (cancels pending pushes) |
-| `NotificationScheduled` | `profile.NotificationScheduled` | A notification is created for future delivery | `{notificationId, userId, typeCode, channel, scheduledAt}` | the delivery scheduler (itself) |
-| `NotificationDelivered` | `profile.NotificationDelivered` | The notification reaches the user through its channel | `{notificationId, userId, typeCode, channel, sentAt}` | analytics |
-| `NotificationDeliveryFailed` | `profile.NotificationDeliveryFailed` | The provider rejects or fails the delivery | `{notificationId, userId, channel, reason, failedAt}` | profile (may revoke the device), error log |
-| `NotificationRead` | `profile.NotificationRead` | The user opens the notification | `{notificationId, userId, readAt}` | analytics (`NOTIFICATION_OPENED`) |
-| `NotificationTypeWithdrawn` | `profile.NotificationTypeWithdrawn` | An administrator deactivates a type | `{notificationTypeId, code, withdrawnBy, withdrawnAt}` | profile (itself) |
-| `AchievementUnlocked` (pending RF8) | `profile.AchievementUnlocked` | A user reaches an achievement's target count | `{userAchievementId, userId, achievementId, achievementName, achievedAt}` | profile (in-app alert), analytics |
+| Event | Routing key | Emitted when | Payload | Consumers in the code |
+|-------|-------------|--------------|---------|-----------------------|
+| `PreferencesChanged` | `profile.PreferencesChanged` | A `PATCH` of the preferences is saved (also through `PATCH /api/profile/me`) | `{userId, ...}` with the fields sent: `uiLanguage`, `theme` and/or `notificationsEnabled` | None |
+| `AchievementUnlocked` | `profile.AchievementUnlocked` | An achievement reaches its target count, from a translation or from `POST /api/achievements/activity`. One event per unlock (also for the challenge-point medals, [ADR-010](../../../05-architecture/decisions/records/ADR-010-challenge-points-medals.md)) | `{userId, achievementId, code, points}` | None |
 
-Events that only profile consumes (`DeviceRegistered`, `DeviceRevoked`, `NotificationScheduled`, `NotificationTypeWithdrawn`) are internal
-facts; they may be handled in process and published only if another service needs them.
+Both are published with a best-effort publish after the change is saved: if the bus fails, the change stays and the failure is logged. There is no outbox for events.
 
-`NotificationDeliveryFailed` has to exist: without it nobody can tell "not sent yet" from "tried and could not".
+Completing a daily challenge publishes no event: it creates an in-app notification of type `CHALLENGE_COMPLETED` in the same transaction ([ADR-009](../../../05-architecture/decisions/records/ADR-009-daily-challenges.md)).
 
-### Event schema example: `AchievementUnlocked`
+### Event example: `AchievementUnlocked`
 
 ```json
 {
-  "eventId": "uuid",
-  "eventType": "AchievementUnlocked",
-  "aggregateId": "uuid of the user_achievement",
-  "aggregateType": "UserAchievement",
-  "occurredAt": "2026-10-04T12:00:00Z",
-  "version": 1,
+  "eventId": "7b8c9d0e-0000-4000-8000-000000000004",
+  "type": "profile.AchievementUnlocked",
+  "occurredAt": "2026-10-04T12:00:00.000Z",
   "payload": {
-    "userAchievementId": "uuid",
-    "userId": "uuid",
-    "achievementId": "uuid",
-    "achievementName": "First translation",
-    "achievedAt": "2026-10-04T12:00:00Z"
-  },
-  "metadata": { "correlationId": "uuid", "causationId": "eventId of the TranslationProduced that caused it" }
+    "userId": "42",
+    "achievementId": "0f9e8d7c-0000-4000-8000-000000000005",
+    "code": "FIRST_TRANSLATION",
+    "points": 10
+  }
 }
 ```
-
-### Implemented today
-
-The code publishes `profile.PreferencesChanged` and `profile.AchievementUnlocked` (also when a challenge-point medal unlocks,
-[ADR-010](../../../05-architecture/decisions/records/ADR-010-challenge-points-medals.md)). Completing a daily challenge publishes no event: it
-creates an `IN_APP` notification of type `CHALLENGE_COMPLETED` in the same transaction ([ADR-009](../../../05-architecture/decisions/records/ADR-009-daily-challenges.md)).
 
 ---
 
 ## Events this service CONSUMES
 
-Queue `profile.main`.
+Each consumer has its own queue (one queue per event).
 
-| Event | Published by | What profile does |
-|-------|--------------|-------------------|
-| `UserRegistered` | iam | Create `user_preferences` with defaults (no-op if it exists) |
-| `PasswordResetRequested` | iam | Create an `EMAIL` notification with the reset link (the token is not stored in clear) |
-| `PasswordChanged` | iam | Security notice to the holder |
-| `AccountLocked`, `AccountBlocked` | iam | Alert the holder (type `ACCOUNT_SECURITY`) |
-| `ConsentRevoked` | iam | Confirm to the data subject that the authorization was revoked |
-| `AccountDeletionRequested` | iam | Delete preferences, devices, notifications and progress of the user; report completion |
-| `TranslationProduced` | recognition | Advance achievements that count translations; show the result when the type is active |
-| `RecognitionFailed` | recognition | On-screen alert "sign not recognized, try again" (without blocking navigation, RF4) |
-| `TranslationSessionInterrupted` | recognition | Understandable error message; what was translated is kept (RNF7) |
+| Event | Published by | Queue | What profile does |
+|-------|--------------|-------|-------------------|
+| `iam.UserRegistered` | iam | `profile-service.user-registered` | Creates the profile (`user_profiles`) and the default preferences. A repeated event changes nothing |
+| `recognition.TranslationProduced` | recognition | `profile-service.translation-produced` | Advances the achievements that count translations and the daily challenge of the day of `occurredAt`. Creates the notification of an unlock when the user has notifications enabled. Events without a `userId` (anonymous) are ignored |
+| `iam.UserDeleted` | iam | `profile-service.user-deleted` | Erases the profile, preferences, notifications and achievement progress of the user, and records the user in `erased_users` |
 
-`TranslationProduced` also advances the daily challenge of the day of `occurredAt`, inside the same once-only processing (per-user lock, receipt per `translationId`).
+Every handler stores the `eventId` in `processed_events`, so a repeated event is ignored.
 
-Before creating any notification the handler checks `notifications_enabled` of the user (INV-025). All handlers are idempotent by `eventId`.
+### Target consumers (not implemented)
+
+`iam.PasswordResetRequested`, `iam.PasswordChanged`, `iam.AccountLocked`, `iam.AccountBlocked`, `iam.ConsentRevoked`, `iam.AccountDeletionRequested`, `recognition.RecognitionFailed` and `recognition.TranslationSessionInterrupted`. The code has none of them.
+
+### Target publications (not implemented)
+
+`profile.DeviceRegistered`, `profile.DeviceRevoked` (devices were dropped, ADR-007), `profile.NotificationScheduled`, `profile.NotificationDelivered`, `profile.NotificationDeliveryFailed`, `profile.NotificationRead` and `profile.NotificationTypeWithdrawn`. In the code, the notifications are rows (`IN_APP` and `EMAIL`) and the `EMAIL` rows are sent by a worker; `NotificationDeliveryFailed` is not emitted.
 
 ---
 
@@ -79,14 +61,14 @@ Before creating any notification the handler checks `notifications_enabled` of t
 
 | Guarantee | Value | Implication |
 |-----------|-------|-------------|
-| At-least-once | Yes | Handlers are idempotent; `notified_at` prevents a second unlock notification |
-| At-most-once | No | |
+| At-least-once | Yes for the consumed events | Handlers are idempotent by `eventId` (`processed_events`); the unlock notification is created once |
+| At-most-once | No for the published events | A failed publish is logged and not retried |
 | Exactly-once | No | |
 
-Publishing goes through a transactional outbox in the `profile` database.
+The target model uses a transactional outbox in the `profile` database. The code has an outbox only for the `EMAIL` notifications (the `PENDING` rows that the mail worker sends); it is not an event outbox.
 
 ## Error handling
 
-- **Dead Letter Queue:** `profile.main.dlq`
-- **Retries:** 3 to 5 with exponential backoff, 7-day retention
-- **Alerts:** a message in the DLQ; `AccountDeletionRequested` failing is a legal risk and has priority
+- Messages a consumer rejects are kept in `<queue>.dead` (for example `profile-service.user-deleted.dead`). The `/health` of the service reports `dead_letters` when those queues have messages.
+- The `iam.UserDeleted` handler retries without a limit while it fails. `/health` reports `consumer_retrying` after 10 minutes of retries.
+- The target policy (3 to 5 retries with exponential backoff, a `profile.main.dlq` queue and 7-day retention) is not implemented as written.

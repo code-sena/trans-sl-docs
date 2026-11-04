@@ -65,7 +65,7 @@ table. **This model does not do that, and the deviation is the correct one.**
 |--------|---------------------------|--------------------|
 | `created_at` | Almost every table | Insert-only tables name it after the fact instead: `error_logs.occurred_at` |
 | `updated_at` | Only tables updated in place: `users`, `user_preferences`, `sign_lexicon`, `sign_localizations`, `user_achievements`, `password_policies` | An `updated_at` on an append-only log is a column always equal to `created_at`. It is noise |
-| `deleted_at` | Only `users` and `translations` | The only two entities the *user* can delete (RNF8 and ERF5.5). Everything else is retired by status (`content_status`, `is_active`, `revoked_at`) or is a log that is never deleted |
+| `deleted_at` | Only `users` and `translations` | The only two entities the *user* can delete (NFR-005 and ERF5.5). Everything else is retired by status (`content_status`, `is_active`, `revoked_at`) or is a log that is never deleted |
 | `created_by` / `updated_by` | Only `sign_lexicon` | Only catalog content has an editorial author worth recording. Who created a notification is the system |
 
 **Soft delete is applied where deletion is a user right, not as a blanket policy.** Blanket soft delete
@@ -92,7 +92,7 @@ The model uses all three, and the choice per relationship carries meaning:
 
 > **The clearest illustration is a pair of opposites.** `translations.user_id` is `CASCADE` and
 > `usage_events.user_id` is `SET NULL`. Same deletion, opposite answers, both correct: the translation
-> history is the user's personal data (RNF8), and a usage event is an anonymous statistical fact (RF6).
+> history is the user's personal data (NFR-005), and a usage event is an anonymous statistical fact (RF6).
 
 ---
 

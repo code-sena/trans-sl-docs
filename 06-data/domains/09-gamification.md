@@ -1,8 +1,8 @@
-# Gamification — Data Model ⏸
+# Gamification — Data Model
 
-> **Domain 9 of 10** · Bounded Context: **Gamification** (Supporting, **provisional**) · PostgreSQL schema: `gamification`
-> **Tables:** `achievements`, `user_achievements`
-> **Requirements:** **RF8 — proposed, not in the SRS**
+> **Domain 9 of 10** · Bounded Context: **Gamification** (Supporting) · PostgreSQL schema: `gamification` (reference model; implemented as `public` in the `profile` database)
+> **Tables:** `achievements`, `user_achievements`, `challenges`, `user_challenges`, `challenge_rewards`
+> **Requirements:** FR-801 … FR-809 in [`functional.md`](../../04-requirements/functional.md). **RF8 is not in the SRS yet** (GAP-01)
 
 **Owned by:** profile-service (PostgreSQL db `profile`)
 **Version:** v0.2 · **Last updated:** 2026-09-10 · **Source:** `traduce_senas.dbml` (v9)
@@ -10,19 +10,19 @@
 
 ---
 
-## ⏸ Do not create this schema yet
+## Status: implemented in profile-service; RF8 still missing from the SRS
 
-Both tables exist in the v8 model with **no requirement behind them**. In a traceability review that
-reads as gold-plating, and it is exactly how **GAP-01** was found.
+The achievement tables were created by `profile/001_profile.sql` and extended by migrations `004` to `010`.
+The daily challenge tables come from `009` and `010`. The code uses them (see
+[`09-microservices/services/06-profile-service`](../../09-microservices/services/06-profile-service/) for the service).
 
-There are two options and no third one:
+The SRS has no RF8, so these tables have no SRS requirement yet. That is **GAP-01**. The traceability
+review still needs one of two things:
 
-| Option | What it means |
-|--------|---------------|
-| **Approve RF8** and add it to the SRS | This schema is built, and the FR-800 series, EP-009 and the enum values below stay |
-| **Remove it** | These two tables, their two foreign keys, the `achievement_metric` enum, the `Gamification` TableGroup, `usage_section.ACHIEVEMENTS`, `reference_entity.ACHIEVEMENT`, the FR-800 series and EP-009 all come out **together** |
-
-The decision belongs to the team and the instructor. Nothing here is built before it is made.
+| Option | What it means now |
+|--------|-------------------|
+| **Add RF8 to the SRS** | The schema and the FR-801 … FR-809 series stay as they are |
+| **Remove the module** | The tables, their foreign keys, the `achievement_metric` enum values, the `Gamification` TableGroup, `usage_section.ACHIEVEMENTS`, `reference_entity.ACHIEVEMENT`, the FR-8xx series and EP-009 would all have to go **together**, with the code |
 
 > **Why the rest of the model does not depend on this one.** Notifications references an unlocked
 > achievement through `reference_type` / `reference_id` **with no foreign key**
@@ -139,7 +139,7 @@ Migration 009 also adds the notification type `CHALLENGE_COMPLETED` (`reference_
 
 | ID | Summary |
 |----|---------|
-| **GAP-01** | These two tables have no SRS requirement. **Blocking** — approve RF8 or remove the schema |
+| **GAP-01** | These tables have no SRS requirement (RF8). Open at SRS level: add RF8 to the SRS or remove the module together with the code |
 | **GAP-07** | `usage_section.ACHIEVEMENTS` and `reference_entity.ACHIEVEMENT` exist only for this domain and come out with it |
 | **DATA-07** | `user_achievements.updated_at` needs the trigger, if this schema is built |
 

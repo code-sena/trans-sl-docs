@@ -6,7 +6,7 @@ info:
     Profile service (`06-profile-service`, internal port 3005, PostgreSQL db `profile`). It keeps a copy of the account data
     (created from the `iam.UserRegistered` event), the interface preferences, in-app notifications and achievements.
 
-    **Based on:** Backend `2993301` (`origin/develop`, 2026-10-16), `services/profile-service`. Every path below exists in
+    **Based on:** Backend `a962982` (`main`), `services/profile-service`. Every path below exists in
     the code; routes that were drafted but not built (devices, notification types, creating notifications or achievements,
     `PATCH /achievements/{id}`) are listed in `07-api/README.md` ("Planned, not implemented").
 
@@ -30,7 +30,8 @@ info:
     - profile, preferences and a notification are returned as the object itself;
     - achievements are returned as `{ "data": [...] }`;
     - notifications are returned as `{ "data": [...], "meta": {...}, "unreadCount": n }`.
-    Errors: `{ "success": false, "code": string, "message": string }` (`ApiError` in `_shared.yaml`).
+    Errors: `{ "success": false, "code": string, "message": string }` (`ApiError` in `_shared.yaml`). The exceptions are the
+    `403` answers of achievements and challenges and the `400` of `POST /api/achievements/activity`, which send only `{ "success": false }`.
 
     ## Events
     Consumes `iam.UserRegistered` (creates profile and default preferences), `iam.UserDeleted` (erases profile, preferences,
@@ -39,7 +40,8 @@ info:
     Publishes `profile.PreferencesChanged` and `profile.AchievementUnlocked`. Consumers are idempotent by `eventId` (table `processed_events`).
 
     ## Seed data
-    The migration creates the notification type `ACHIEVEMENT_UNLOCKED` and three achievements: `FIRST_TRANSLATION` (1), `TEN_TRANSLATIONS` (10) and `FIFTY_TRANSLATIONS` (50).
+    The first migration (`001_profile.sql`) creates the notification type `ACHIEVEMENT_UNLOCKED` and three achievements: `FIRST_TRANSLATION` (1), `TEN_TRANSLATIONS` (10) and `FIFTY_TRANSLATIONS` (50).
+    Later migrations add the achievement catalogue (`004` to `007`), the admin notification types (`008`), the daily challenges with the `CHALLENGE_COMPLETED` type (`009`) and the `DAILY_CHALLENGE_POINTS` metric (`010`).
     Gamification is provisional (RF8 is not approved).
 
 servers:
@@ -251,13 +253,29 @@ paths:
   /api/achievements:
     get:
       summary: List achievements with my progress
-      description: Secret achievements that are not unlocked show `???` as name and description.
+      description: |
+        Secret achievements that are not unlocked show `???` as name and description. `catalogVersion` selects the catalogue
+        version; `challengeRewards=1` adds the `DAILY_CHALLENGE_POINTS` metric, and only with `catalogVersion=2`.
+        Users with `users.manage` get `403` (the body has no `code`).
       operationId: listAchievements
       tags: [Achievements]
       x-requirements: [FR-805, HU-GAM-004]
+      parameters:
+        - name: catalogVersion
+          in: query
+          description: '`1` (default) or `2`. Any other value answers `400 VALIDATION_ERROR`'
+          schema:
+            type: string
+            enum: ['1', '2']
+        - name: challengeRewards
+          in: query
+          description: Only `1` is accepted; any other value answers `400 VALIDATION_ERROR`
+          schema:
+            type: string
+            enum: ['1']
       responses:
         '200':
-          description: Achievements
+          description: Achievements. `meta` is only sent with `catalogVersion=2`
           content:
             application/json:
               schema:
@@ -268,8 +286,18 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/AchievementProgress'
+                  meta:
+                    type: object
+                    properties:
+                      catalogVersion:
+                        type: integer
+                        example: 2
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Administrators (`users.manage`) have no achievements (the body has no `code`)
 
   /api/achievements/activity:
     post:
@@ -310,11 +338,11 @@ paths:
                         format: uuid
                         description: Only present for `voice-start`
         '400':
-          description: Invalid activity (the body is `{ "success": false }`)
+          description: Invalid activity (the body has no `code`)
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Administrators (`users.manage`) have no activity (body `{ "success": false }`)
+          description: Administrators (`users.manage`) have no activity (the body has no `code`)
 
   # ───────────────────────────── Daily challenges ─────────────────────────────
   /api/profile/challenges/today:
@@ -336,7 +364,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Administrators (`users.manage`) have no challenges (body `{ "success": false }`)
+          description: Administrators (`users.manage`) have no challenges (the body has no `code`)
 
   /api/profile/challenges/rewards/summary:
     get:
@@ -367,7 +395,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Administrators (`users.manage`) have no challenges (body `{ "success": false }`)
+          description: Administrators (`users.manage`) have no challenges (the body has no `code`)
 
 components:
   securitySchemes:
@@ -450,7 +478,8 @@ components:
           description: Code of the type, e.g. `ACHIEVEMENT_UNLOCKED` or `CHALLENGE_COMPLETED`
         channel:
           type: string
-          enum: [PUSH, EMAIL, IN_APP]
+          enum: [IN_APP, EMAIL]
+          description: PUSH is discarded (ADR-007); the in-app bell only shows `IN_APP` rows
         title:
           type: string
         body:

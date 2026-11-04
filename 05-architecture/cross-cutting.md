@@ -154,7 +154,7 @@ When appropriate, controlled retry mechanisms may be used for operations that fa
 
 Retries should be avoided when they may cause duplicate operations or data inconsistencies.
 
-The definitive retry strategy must be defined according to the needs of each service.
+Current state: domain-event consumers retry through a shared helper (`subscribeWithRetry` in `packages/shared`), and messages that still fail go to a `<queue>.dead` queue. The iam outbox keeps events that are not yet published and retries them until they are. Email delivery is not retried automatically (see [ADR-007](./decisions/records/ADR-007-email-notifications.md)).
 
 ---
 
@@ -171,7 +171,7 @@ The following must be considered:
 * Tracking of important operations.
 * Information related to translation processing.
 
-Currently, no specific distributed observability tool is established, so its implementation must be defined later if the architecture evolves toward microservices.
+Current state: each service writes unstructured logs to the console, exposes `GET /health` (the gateway aggregates the services at `/health` and `/api/health`), and the Docker healthchecks use that endpoint. There is no metrics, distributed tracing or central log tool yet. See [13-operations/observability.md](../13-operations/observability.md).
 
 ---
 
@@ -212,6 +212,6 @@ Cross-cutting concerns are part of the general system architecture and must be m
 
 Some capabilities are conceptually defined, while others will need to be detailed through technical decisions and during implementation.
 
-No specific tool is currently established for centralized logging, distributed traceability, centralized configuration, or event-based communication.
+Event-based communication is in place: RabbitMQ carries the domain events (topic exchange `traduce.events`). No tool is in place yet for centralized logging, distributed traceability or centralized configuration; each service reads its configuration from environment variables.
 
 These decisions may be formalized later through ADRs when a technical need arises from the evolution toward microservices.

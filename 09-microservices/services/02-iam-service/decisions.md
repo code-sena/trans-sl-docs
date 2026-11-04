@@ -13,8 +13,8 @@
 Six components need to know the caller. Only one should create identities.
 
 **Decision:**
-`iam-service` issues the access token (JWT) and the refresh token. The gateway validates the signature; services read `sub`
-and `roles` from the forwarded token. Nobody else signs tokens.
+`iam-service` issues the access token (JWT); there is no refresh token today. The gateway validates the signature; services read
+`sub` and `roles` from the forwarded token. Nobody else signs tokens.
 
 **Alternatives considered:**
 - Each service validates against iam on every request: adds a network hop and couples availability.
@@ -31,12 +31,12 @@ and `roles` from the forwarded token. Nobody else signs tokens.
 **Status:** Active
 
 **Context:**
-Today the `lexicon` module checks the `ADMIN` role by reading `user_role` on each admin request (so role changes apply
-immediately). With one database per service, lexicon cannot read iam's `authz.user_roles`.
+Each service checks the `ADMIN` role from the `roles` claim of the token (`requireRole` in `packages/shared`), so a role change
+applies at the next sign-in. With one database per service, lexicon cannot read iam's `user_roles`.
 
 **Decision:**
-The access token carries a `roles` claim (array of role names). Access tokens are short-lived (target: 15 minutes), and the
-refresh flow re-reads the roles.
+The access token carries a `roles` claim (array of role names). Today the token lasts one day (`JWT_EXPIRES_IN`, default `1d`)
+and there is no refresh flow. Target: short-lived tokens (15 minutes) and a refresh flow that re-reads the roles.
 
 **Alternatives considered:**
 - Services call `GET /api/roles/...` of iam: restores immediate effect but couples every admin request to iam.
@@ -107,7 +107,7 @@ the same time. Final choice recorded in ADR-002.
 ## [DEC-006] The audit trail lives in iam and is fed by events
 
 **Date:** 2026-10-04
-**Status:** Active
+**Status:** Proposed (not implemented: the code has no `audit_logs` table and no event subscriptions)
 
 **Context:**
 `audit_logs` records changes of entities of every domain. The spec assigns the audit data to iam.
@@ -135,8 +135,8 @@ filters out credentials (hashes, tokens, push tokens) before storing values.
 
 **Decision:**
 The extraction moves both modules into one service without rewriting the use cases. `auth` uses the `UserRepository` port of
-`users`; inside iam they are one module, so the port becomes an internal call. Only the adapters change (UUID keys,
-outbox publisher, event handlers).
+`users`; inside iam they are one module, so the port becomes an internal call. The adapters changed (outbox publisher,
+event handlers). The keys stayed `SERIAL` integers, not UUIDs.
 
 **Consequences:**
 - Advantage: low risk; the use-case tests keep running.

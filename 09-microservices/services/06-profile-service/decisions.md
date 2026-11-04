@@ -14,7 +14,7 @@ Profile & Preferences, Notifications and Gamification are small and tightly rela
 notifications, and achievements surface as notifications.
 
 **Decision:**
-They live in one service and one database (`profile`), in separate schemas. The code is organized in one hexagonal module per context.
+They live in one service and one database (`profile`). The code is organized in one hexagonal module per context; the tables are in schema `public`.
 
 **Alternatives considered:**
 - Three services: more infrastructure than the size of the data justifies, and the `notifications_enabled` check would become a network call.
@@ -31,7 +31,7 @@ They live in one service and one database (`profile`), in separate schemas. The 
 **Status:** Active (INV-023)
 
 **Decision:**
-`notification_channel` admits `PUSH`, `EMAIL`, `IN_APP` only. No audio-only value can be added. The target users are deaf and hard of hearing; an alert they cannot perceive is information the system failed to deliver.
+`notification_channel` admits `IN_APP` and `EMAIL` only (`PUSH` was dropped, ADR-007). No audio-only value can be added. The target users are deaf and hard of hearing; an alert they cannot perceive is information the system failed to deliver.
 
 ---
 
@@ -61,7 +61,7 @@ A notification can be caused by an achievement or a translation, which lives in 
 The registration happens in iam; the preferences row is created when `iam.UserRegistered` is consumed, which can be late or fail.
 
 **Decision:**
-The handler creates the row (no-op if it exists). `GET /api/profile` returns the defaults when there is no row, so a missing row never breaks the home screen.
+The handler creates the row (no-op if it exists). `GET /api/profile/preferences` returns the defaults when there is no row. `GET /api/profile/me` answers `404` until the profile exists, and a `PATCH` of the preferences creates the profile when it is missing.
 
 ---
 
@@ -78,17 +78,17 @@ The handler creates the row (no-op if it exists). `GET /api/profile` returns the
 ## [DEC-006] Gamification is not built until RF8 is approved
 
 **Date:** 2026-10-04
-**Status:** Proposed (blocked by GAP-01)
+**Status:** Superseded in the code: the achievements and the daily challenges are implemented as provisional features (RF8 is still not approved, GAP-01)
 
-**Decision:**
-The `gamification` schema is a separate changelog and the routes `/api/achievements/**` return `404` until RF8 is approved. Nothing in notifications or analytics depends on it.
+**Decision (as implemented):**
+The achievements live in the `profile` database with the rest of the service, and the routes `/api/achievements/**` answer normally. Their notifications are in-app or email notifications like any other; the medals and challenges follow ADR-009 and ADR-010. If RF8 is rejected, the achievement tables and routes are removed as a unit.
 
 ---
 
 ## [DEC-007] Push token is a credential
 
 **Date:** 2026-10-04
-**Status:** Active
+**Status:** Not applicable: push and devices were dropped (ADR-007). It applies only if push is reintroduced
 
 **Decision:**
 Registration is an upsert on `push_token` that re-points the row at the current user. The token is never written to logs or events, and the column is protected with restricted access or column-level encryption.

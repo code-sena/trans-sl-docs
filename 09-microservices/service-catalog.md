@@ -3,14 +3,14 @@
 > The inventory of the components of Traduce Señas: one edge component (the API gateway) and five domain services.
 > For the detail of each one go to `09-microservices/services/NN-name/`.
 
-**Last updated:** 2026-10-16 · **Based on:** Backend `2993301` (`origin/develop`) · **Sources:** `services/*` and `packages/shared` of the Backend repository, `docker-compose.yml`, `MICROSERVICES_PLAN.md`, `02-domain/domain-map.md`, `06-data/domains/*`. Decision record: [ADR-004](../05-architecture/decisions/records/ADR-004-microservices-architecture.md).
+**Last updated:** 2026-11-04 · **Based on:** Backend `a962982` (`main`) · **Sources:** `services/*` and `packages/shared` of the Backend repository, `docker-compose.yml`, `docker-compose.prod.yml`, `02-domain/domain-map.md`, `06-data/domains/*`. Decision record: [ADR-004](../05-architecture/decisions/records/ADR-004-microservices-architecture.md).
 
 ---
 
 ## Architecture
 
 **Traduce Señas is a microservices architecture.** Five domain services and one API gateway, each one with its own
-Dockerfile, its own PostgreSQL database and its own SQL schema (`services/<name>/db/`). Every service is internally hexagonal (ports and adapters, see
+Dockerfile, its own PostgreSQL database and its own SQL schema (`services/<name>/db/`). Every domain service is internally hexagonal (ports and adapters, see
 `05-architecture/hexagonal-architecture.md`). The mobile / web app talks only to the gateway.
 
 ```text
@@ -46,15 +46,15 @@ Gateway prefixes (`services/api-gateway/src/route_table.ts`): `/api/auth|users|i
 - **Database per service.** No foreign keys across services. A reference to another service's data is a logical ID
   (for example `user_id`, an integer issued by `iam-service`; `profile-service` and `analytics-service` store it as text). PostgreSQL and MongoDB never share foreign keys.
   Only `recognition-service` uses MongoDB.
-- **Synchronous communication:** REST through the gateway for client calls. Services do not call each other.
+- **Synchronous communication:** REST through the gateway for client calls. Services call each other in two places only, over internal HTTP with a short-lived service token: profile-service reads statistics from recognition and analytics, and the administrator ids from iam (`stats_http_gateway.ts`, `iam_admin_directory.ts`).
 - **Asynchronous communication:** domain events over RabbitMQ (exchange `traduce.events`, type `topic`, routing key
   `<service>.<Event>`, for example `iam.UserRegistered`). Event payloads are typed in `packages/shared/src/events/contracts.ts`.
   Without `RABBITMQ_URL` the services use an in-memory bus.
 - **Authentication:** `iam-service` issues the JWT (HS256, one day by default, claims `sub`, `email`, `roles`, `permissions`; no refresh token).
   All services share `JWT_SECRET` and verify the token themselves. The gateway rejects an invalid token if one is sent, but lets requests without a token through; each service decides which routes need a session.
-  The `ADMIN` role is required for lexicon writes, samples and analytics reports; permissions such as `stats.read` and `models.manage` come from the token.
-- **Health:** every service exposes `GET /health` → `{"status":"ok","service":"<name>"}`. The gateway's `GET /health` aggregates them (see `10-devops/local-setup.md`).
-- **Error format:** `{"success": false, "code": "...", "message": "..."}`. The create, history and delete routes of `translations` and all `sign-templates` routes answer business errors with `400` and only `success` and `message` (no `code`).
+  The `ADMIN` role is required for lexicon writes, samples and the analytics summary, top-signs and daily reports; `stats.read` (analytics `reports/sections`, iam and recognition statistics) and `models.manage` (sign templates) are permissions that come from the token.
+- **Health:** every service exposes `GET /health` → `{"status":"ok","service":"<name>"}`, or `{"status":"degraded","service":"<name>","issues":[...]}` when it leaves data unprocessed. The gateway's `GET /health` aggregates them (see `10-devops/local-setup.md`).
+- **Error format:** `{"success": false, "code": "...", "message": "..."}`. Every recognition-service error carries a `code`. The exceptions are in profile-service: the `403` answers of achievements and challenges and the `400` of `activity` send only `{"success": false}`.
 
 ### Naming of events
 
@@ -73,12 +73,12 @@ Event names follow `<service>.<Event>`; the domain names are in `02-domain/domai
 | 05 | `analytics-service` | `05-analytics-service/` | 3004 | `/analytics` | PostgreSQL `analytics` | Extracted |
 | 06 | `profile-service` | `06-profile-service/` | 3005 | `/profile`, `/notifications`, `/achievements` | PostgreSQL `profile` | Extracted |
 
-**Current code status.** The Backend repository (`origin/develop`, `2993301`) is an npm workspaces monorepo (`packages/*`, `services/*`).
+**Current code status.** The Backend repository (`main`, `a962982`) is an npm workspaces monorepo (`packages/*`, `services/*`).
 The six components above run as separate processes, each with its own `Dockerfile` and (except the gateway) its own database; `docker-compose.yml`
 starts all of them plus five PostgreSQL instances, MongoDB and RabbitMQ. The old domain modules (`auth`, `users`, `translations`, `ia`, `lexicon`) were moved
 into the services. Gaps that remain: the documented bounded contexts "Consent & Personal Data" and the audit trail have no code.
 Account deletion erases the account in `iam-service` and writes `iam.UserDeleted` to an outbox in the same transaction; profile, recognition and analytics
-erase or unlink their own data when the event arrives and keep the id in `erased_users` to refuse later writes. Every service has unit tests (see "Tests" in each card); there is no CI.
+erase or unlink their own data when the event arrives and keep the id in `erased_users` to refuse later writes. Every service has unit tests (see "Tests" in each card), and the repository has a CI workflow (`.github/workflows/ci.yml`).
 
 **Extraction status values:** Pending (no extraction work started) | In progress (code exists and is hexagonal, split not finished) | Extracted (own process, database and Dockerfile).
 
@@ -93,11 +93,11 @@ erase or unlink their own data when the event arrives and keep the id in `erased
 | **Responsibility** | Single entry point: routing by prefix, JWT check when a token is sent, rate limiting, CORS, aggregated health |
 | **Bounded contexts** | None (edge component) |
 | **Data owned** | None |
-| **Port** | 8080 (the only port published to the host by `docker-compose.yml`) |
+| **Port** | 8080 (published to the host in development; in production it is not published and Caddy serves 80/443) |
 | **Routes** | `GET /health` → `{"status":"ok"|"degraded","services":{"iam":{"status":"up"|"down"},...}}`, always HTTP 200. Unknown path → 404 `NOT_FOUND`. Rate limit 300 requests per minute per client by default; `register`, `verify-email`, `resend-verification`, `login`, `forgot-password`, `verify-code`, `reset-password`, `google` and `facebook` share a limit of 10 per minute (`429 RATE_LIMITED`). `TRUST_PROXY` (`1` behind Caddy in production) makes the limits count per client IP |
 | **Events** | Publishes none, consumes none |
 | **Depends on** | The five domain services (`*_SERVICE_URL`), `JWT_SECRET`, `CORS_ORIGINS` |
-| **Tests** | 1 file in `services/api-gateway/tests` (`routing.test.ts`) |
+| **Tests** | 3 files in `services/api-gateway/tests` (`routing`, `health`, `version`) |
 | **Extraction status** | Extracted |
 
 ### 02 — `iam-service`
@@ -106,13 +106,13 @@ erase or unlink their own data when the event arrives and keep the id in `erased
 |-------|-------|
 | **Responsibility** | Accounts, registration with email verification, login and JWT issuance, password reset, account self-service, roles and permissions (RBAC) |
 | **Bounded contexts** | Identity & Access (Consent & Personal Data is not implemented) |
-| **Data owned** | PostgreSQL `iam`: `users`, `user_tokens`, `roles`, `permissions`, `user_roles`, `role_permissions` (plus the older `role`, `user_role`, `password_reset_token` created by `000_users.sql`) |
+| **Data owned** | PostgreSQL `iam`: `users`, `user_tokens`, `roles`, `permissions`, `user_roles`, `role_permissions`, `outbox_events` (plus the older `role`, `user_role`, `password_reset_token` created by `000_users.sql`, not read by the code) |
 | **Store / port** | PostgreSQL `iam` / 3001 |
-| **Routes (19)** | `/api/auth`: `POST register`, `login`, `forgot-password`, `verify-code`, `verify-email`, `resend-verification`, `reset-password`, `google`, `facebook`. `/api/users`: `GET stats`, `GET me`, `DELETE me`, `POST me/delete-code`, `POST me/password`. `/api/iam`: `GET me/access`, `GET roles`, `POST users/:userId/roles`, `DELETE users/:userId/roles/:roleName`, `DELETE roles/:roleId` |
+| **Routes (20)** | `/api/auth`: `POST register`, `login`, `forgot-password`, `verify-code`, `verify-email`, `resend-verification`, `reset-password`, `google`, `facebook`. `/api/users`: `GET stats`, `GET admins` (service token only), `GET me`, `DELETE me`, `POST me/delete-code`, `POST me/password`. `/api/iam`: `GET me/access`, `GET roles`, `POST users/:userId/roles`, `DELETE users/:userId/roles/:roleName`, `DELETE roles/:roleId` |
 | **Publishes** | `iam.UserRegistered`, `iam.UserDeleted` (through the `outbox_events` table and a relay) |
 | **Consumes** | None |
 | **Depends on** | PostgreSQL; RabbitMQ (optional); Gmail account (`EMAIL_USER` / `EMAIL_PASS`) to send verification and reset codes |
-| **Tests** | 30 files in `services/iam-service/tests` |
+| **Tests** | 33 files in `services/iam-service/tests` |
 | **Extraction status** | Extracted |
 
 ### 03 — `recognition-service` (core)
@@ -121,16 +121,16 @@ erase or unlink their own data when the event arrives and keep the id in `erased
 |-------|-------|
 | **Responsibility** | Translation history, sign templates used by the on-device recognizer, gesture sample corpus (landmarks only, with consent data) |
 | **Bounded contexts** | Recognition & Translation (core) |
-| **Data owned** | PostgreSQL `recognition`: `translations`, `sign_templates`; MongoDB collection `gesture_samples` (in memory if `MONGO_URL` is empty) |
+| **Data owned** | PostgreSQL `recognition`: `translations`, `sign_templates`, `erased_users`, `translation_daily_counts`, `translation_user_words`; MongoDB collection `gesture_samples` (in memory if `MONGO_URL` is empty) |
 | **Store / port** | PostgreSQL `recognition` + MongoDB / 3002 |
 | **Routes (10)** | `/api/translations`: `POST /`, `GET /stats`, `GET /me/stats`, `GET /history`, `DELETE /:id`. `/api/recognition/sign-templates` (alias `/api/sign-templates`, deprecated): `GET /` (public), `POST /`, `DELETE /:id` (permission `models.manage`). `/api/samples`: `POST /`, `GET /` (ADMIN) |
 | **Publishes** | `recognition.TranslationProduced` |
 | **Consumes** | `lexicon.SignPublished`, `lexicon.SignWithdrawn` (logged only; it does not update any catalog yet), `iam.UserDeleted` (deletes translations, unlinks samples) |
 | **Depends on** | PostgreSQL, MongoDB (optional), RabbitMQ (optional) |
-| **Tests** | 13 files in `services/recognition-service/tests` |
+| **Tests** | 17 files in `services/recognition-service/tests` |
 | **Extraction status** | Extracted |
 
-Note: the recognition model itself runs in the client (MediaPipe + template matching); the service stores and serves the templates. Training scripts live in `services/recognition-service/src/ia/training/`.
+Note: the recognition model itself runs in the client (MediaPipe + template matching); the service stores and serves the templates. Training scripts live in `services/recognition-service/training/extraction/`.
 
 ### 04 — `lexicon-service`
 
@@ -168,16 +168,16 @@ Note: the recognition model itself runs in the client (MediaPipe + template matc
 |-------|-------|
 | **Responsibility** | Profile copy of the account, interface preferences, in-app notifications and achievements |
 | **Bounded contexts** | Profile & Preferences; Notifications; Gamification (provisional, RF8 not approved) |
-| **Data owned** | PostgreSQL `profile`: `user_profiles`, `user_preferences`, `notification_types`, `notifications`, `achievements`, `user_achievements`, `challenges`, `user_challenges`, `challenge_rewards`, `processed_events` |
+| **Data owned** | PostgreSQL `profile`: `user_profiles`, `user_preferences`, `notification_types`, `notifications`, `achievements`, `user_achievements`, `achievement_activity`, `achievement_translation_receipts`, `challenges`, `user_challenges`, `challenge_rewards`, `admin_recipients`, `admin_report_runs`, `processed_events`, `erased_users` |
 | **Store / port** | PostgreSQL `profile` / 3005 |
 | **Routes (10)** | `GET /api/profile/me`, `PATCH /api/profile/me`, `GET /api/profile/preferences`, `PATCH /api/profile/preferences`, `GET /api/profile/challenges/today`, `GET /api/profile/challenges/rewards/summary`, `GET /api/notifications`, `PATCH /api/notifications/:id/read`, `GET /api/achievements`, `POST /api/achievements/activity` (daily challenges: [ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md), [ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md)) |
 | **Publishes** | `profile.AchievementUnlocked`, `profile.PreferencesChanged` (no consumer yet) |
 | **Consumes** | `iam.UserRegistered` (creates profile and default preferences), `iam.UserDeleted` (erases profile, preferences, notifications and progress), `recognition.TranslationProduced` (advances achievements) |
 | **Depends on** | PostgreSQL, RabbitMQ (optional). Gmail SMTP for administrator reports sent by email ([ADR-007](../05-architecture/decisions/records/ADR-007-email-notifications.md)); no push provider |
-| **Tests** | 11 files in `services/profile-service/tests` |
+| **Tests** | 27 files in `services/profile-service/tests` |
 | **Extraction status** | Extracted |
 
-Shared code (`packages/shared`) has 5 test files in `packages/shared/tests`.
+Shared code (`packages/shared`) has 7 test files in `packages/shared/tests`.
 
 ---
 
@@ -187,18 +187,19 @@ Shared code (`packages/shared`) has 5 test files in `packages/shared/tests`.
  app ──▶ api-gateway ──▶ iam | recognition | lexicon | analytics | profile        (sync REST)
 
  iam         ──UserRegistered──────────▶ profile, analytics
+ iam         ──UserDeleted─────────────▶ profile, recognition, analytics
  recognition ──TranslationProduced─────▶ profile, analytics
  lexicon     ──SignPublished/Withdrawn─▶ recognition (log only)
  profile     ──AchievementUnlocked, PreferencesChanged──▶ (no consumer)
 ```
 
-No service calls another one synchronously. The graph of events has no cycle.
+Apart from the internal HTTP calls of profile-service (statistics and administrator ids), no service calls another one synchronously. The graph of events has no cycle.
 
 ## Data ownership
 
 | Entity / data | Owner service | Others that hold a reference | How they stay in sync |
 |---------------|---------------|------------------------------|-----------------------|
-| User (`users`) | iam | All services keep `user_id` only (recognition, lexicon: integer; profile, analytics: text) | `UserRegistered`; deletion is not propagated yet |
+| User (`users`) | iam | All services keep `user_id` only (recognition, lexicon: integer; profile, analytics: text) | `UserRegistered`; `UserDeleted` erases or unlinks the copies in profile, recognition and analytics |
 | Role, permission, assignment | iam | Every service reads `roles` and `permissions` from the JWT | Token claims (a token keeps its claims until it expires) |
 | Translation, sign template, gesture sample | recognition | analytics (counters), profile (achievements) | `TranslationProduced` |
 | Sign, category, localization, media | lexicon | recognition keeps `sign_lexicon.code` values in samples | `SignPublished`, `SignWithdrawn` |
@@ -207,7 +208,7 @@ No service calls another one synchronously. The graph of events has no cycle.
 
 ## Differences between the documented data model and the code
 
-| Aspect | Code today (`2993301`) | Documented (`06-data/`, `02-domain/`) |
+| Aspect | Code today (`a962982`) | Documented (`06-data/`, `02-domain/`) |
 |--------|------------------------|---------------------------------------|
 | Primary keys | `SERIAL` integers in iam, recognition and lexicon; UUID primary keys in profile; `BIGSERIAL` in analytics | UUID everywhere |
 | JWT | HS256 with shared secret, claims `sub`, `email`, `roles`, `permissions`, no refresh token | Access + refresh token, validated at the gateway |

@@ -216,20 +216,15 @@ It is used for structured information related to:
 * Preferences.
 * History.
 * Translations.
-* Auditing.
+* Audit trail: planned (TD-005), not implemented.
 
 ### MongoDB
 
 It is used for information related to artificial intelligence processing, such as:
 
-* Movement data.
-* Landmarks.
-* Coordinates.
-* Sequences.
-* Training data.
-* Inference results.
-* Confidence level.
-* Metadata.
+* Gesture samples in the `gesture_samples` collection: landmark sequences and their metadata (`sign_code`, `capture_session_id`, `recorded_by`).
+
+Translation results and their confidence are stored in PostgreSQL (`recognition` database), not in MongoDB.
 
 Access to both databases must be performed through the authorized backend components.
 
@@ -286,3 +281,16 @@ New architectural decisions must reassess risks related to:
 * API protection.
 * Data management.
 * Observability and auditing.
+
+---
+
+## 16. Controls in place
+
+This section lists what the code and the compose files implement against the threats above (checked on 2026-11-04). Gaps are marked as such.
+
+* **Spoofing:** passwords are hashed with bcrypt in `iam-service`. Tokens are HS256 JWTs signed with `JWT_SECRET`; every service refuses to start with a secret shorter than 32 characters. Access tokens last one day (`JWT_EXPIRES_IN`, default `1d`). There are no refresh tokens. Google and Facebook sign-in verify the token with the provider.
+* **Tampering:** request bodies are validated. For example, a malformed login body returns `400 INVALID_BODY`.
+* **Repudiation:** gap. There is no audit trail yet (TD-005). Event logs are unstructured console output.
+* **Information disclosure:** in the base compose file only the gateway is published on the host. PostgreSQL, MongoDB and the RabbitMQ panel are bound to `127.0.0.1`. Services and AMQP are not published. In production, Caddy terminates HTTPS.
+* **Denial of service:** the gateway applies a per-IP rate limit (default 300 requests per minute) and a stricter one (default 10 per minute) on `/api/auth` endpoints such as login, register, verification, password reset and social login. There is no progressive lockout (TD-006 is partly open).
+* **Elevation of privilege:** services check permissions and roles (`requirePermission` and `requireRole`). The administrative statistics endpoints require the statistics permission.

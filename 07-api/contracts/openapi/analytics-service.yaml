@@ -6,7 +6,7 @@ info:
     Usage Analytics service (`05-analytics-service`, internal port 3004, PostgreSQL db `analytics`, table `usage_event`).
     Records how the app is used and gives the administrator aggregated figures.
 
-    **Based on:** Backend `2993301` (`origin/develop`, 2026-10-16), `services/analytics-service`. Every path below exists in
+    **Based on:** Backend `a962982` (`main`), `services/analytics-service`. Every path below exists in
     the code; routes that were drafted but not built (`/sections`, `/sessions`, `/events/summary`) are listed in
     `07-api/README.md` ("Planned, not implemented").
 

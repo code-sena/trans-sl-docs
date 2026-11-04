@@ -13,8 +13,8 @@
 A training sample's metadata changes whenever the recognition pipeline changes. Translations and models are stable and relational.
 
 **Decision:**
-`gesture_samples` is a MongoDB collection with a JSON Schema validator. Translations, `translation_signs` and `ai_models`
-stay in PostgreSQL. The two stores share no foreign keys.
+`gesture_samples` is a MongoDB collection (its JSON Schema validator is planned; the code creates the indexes only). Translations
+and `sign_templates` stay in PostgreSQL. The two stores share no foreign keys.
 
 **Alternatives considered:**
 - Everything in PostgreSQL: each new sample attribute is a migration.
@@ -54,7 +54,7 @@ model and the sign templates. The outbound port `ai_service` stays empty until s
 `06-data/domains/05-translation.md` declares FKs to `identity.users` and `lexicon.sign_lexicon`. Those two now live in other services.
 
 **Decision:**
-`user_id` and `sign_id` are logical IDs without FK. Deletion of a user is propagated by `iam.AccountDeletionRequested`. The guarantee
+`user_id` and `sign_id` are logical IDs without FK. Deletion of a user is propagated by `iam.UserDeleted` (the target model names it `iam.AccountDeletionRequested`). The guarantee
 that a sign in a history is never deleted is kept by lexicon (signs are retired, never deleted).
 
 **Consequences:**
@@ -66,14 +66,14 @@ that a sign in a history is never deleted is kept by lexicon (signs are retired,
 ## [DEC-004] Consent is checked per sample, not per account
 
 **Date:** 2026-10-04
-**Status:** Active (v8 data model)
+**Status:** Active for the sample check (the service rejects a sample without consent fields). The revocation flow is not implemented
 
 **Context:**
 Samples come from deliberate capture sessions run by a linguist, with a signed authorization per person and document version.
 
 **Decision:**
-`consent_granted_at` and `consent_terms_version` are required in the Mongo validator. The capture session is the unit of
-discard. `iam.ConsentRevoked` triggers `DiscardCaptureSessions`.
+`consent_granted_at` and `consent_terms_version` are required on every sample (the Mongo validator is planned). The capture session is the unit of
+discard. `iam.ConsentRevoked` would trigger `DiscardCaptureSessions` (target; there is no consent event in the code).
 
 **Consequences:**
 - Advantage: a withdrawn authorization is enforceable in one operation.
@@ -84,7 +84,7 @@ discard. `iam.ConsentRevoked` triggers `DiscardCaptureSessions`.
 ## [DEC-005] Exactly one active model, activated in one transaction
 
 **Date:** 2026-10-04
-**Status:** Active
+**Status:** Proposed (the model registry `ai_models` is not implemented)
 
 **Decision:**
 Publishing a model deactivates the previous one in the same transaction. `uq_single_active_model` (partial unique index) guarantees
@@ -102,7 +102,8 @@ Both are hexagonal today and live in the same backend.
 
 **Decision:**
 They become two modules of one service (`translations`, `templates`/`ia`). The routes change prefix: `/api/sign-templates`
-moves to `/api/recognition/...`; the mobile app is updated in the same release or the gateway keeps an alias during the transition.
+moves to `/api/recognition/...`; the gateway keeps an alias during the transition. Implemented: the templates are served under
+`/api/recognition/sign-templates`, and `/api/sign-templates` remains as the deprecated alias that the current frontend still calls.
 The `Translation` entity is migrated from free text (`input_text`, `output_text`, `type`) to the model of `06-data` in a separate step.
 
 **Consequences:**

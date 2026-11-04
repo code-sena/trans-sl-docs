@@ -61,8 +61,10 @@ how it is deployed, what data it has.
 | prod | api.domain.com | Production | Ops team | Real data | Manual (double approval) |
 ```
 
-### `ci-cd.md` ⭐
-Description of the continuous integration and deployment pipeline.
+### `ci-cd.md` — not created
+The pipeline is described in `environments.md` (section CI/CD). The real workflows are `.github/workflows/ci.yml` in the backend and frontend repositories; there is no deployment workflow.
+
+Original template for this file:
 **Fill in:** what tool (GitHub Actions, GitLab CI, Jenkins), what steps it executes,
 when each pipeline is triggered, what it verifies before allowing a merge.
 

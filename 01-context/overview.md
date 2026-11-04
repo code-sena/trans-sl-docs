@@ -96,19 +96,19 @@ the Android APK is distributed through GitHub Pages.
 ## Current status
 
 - **Phase:** In production at https://traducesenas.tech since 2026-10-16
-- **Current version:** Backend `v1.3.0`, Frontend `v1.2.0` (web and Android APK) per each `package.json`; includes daily challenges and medals ([ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md), [ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md))
+- **Current version:** Backend `v1.4.0`, Frontend `v1.3.1` (web and Android APK) per each `package.json`; includes daily challenges and medals ([ADR-009](../05-architecture/decisions/records/ADR-009-daily-challenges.md), [ADR-010](../05-architecture/decisions/records/ADR-010-challenge-points-medals.md))
 - **Release process:** production is built from `main`; each repository has its own SemVer version, published as a git tag and a GitHub Release ([git conventions](../00-governance/git-conventions.md))
 - **Original planned schedule:** 14 two-week sprints, 2026-01-01 → 2026-07-31 (`Scrum.xlsx`). Kept as the baseline of record; not rewritten.
-- **Next milestone:** final project defence (SENA ADSO) on 2026-10-28.
+- **Last milestone:** final project defence (SENA ADSO), scheduled for 2026-10-28. That date has passed; its outcome is not recorded in the repository.
 
 ## Project contacts
 
 | Role | Name | Contact |
 |------|------|---------|
 | Product Owner · Instructor of record | Jesús Ariel González Bonilla | Through the training programme |
-| Tech Lead · Scrum Master · Analyst-Developer | Juan Mauricio Suaza Solórzano | suazasolorzano@gmail.com |
-| Analyst-Developer | Luis Alejandro Duarte Aldana | aleosea777@gmail.com |
-| Analyst-Developer | Juan Camilo Fierro Esquivel | fierroesquiveljuancamilo@gmail.com |
+| Tech Lead · Scrum Master · Analyst-Developer | Juan Mauricio Suaza Solórzano | Through the training programme |
+| Analyst-Developer | Luis Alejandro Duarte Aldana | Through the training programme |
+| Analyst-Developer | Juan Camilo Fierro Esquivel | Through the training programme |
 
 > The Product Owner is the instructor receiving this delivery: he reviews and accepts the
 > increment and the documentation at each sprint review. He does not write the requirements.

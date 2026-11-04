@@ -91,7 +91,7 @@ CREATE TABLE notification.notifications (
   user_id              UUID                 NOT NULL REFERENCES identity.users (user_id) ON DELETE CASCADE,
   notification_type_id UUID                 NOT NULL REFERENCES notification.notification_types (notification_type_id) ON DELETE RESTRICT,
   device_id            UUID                 REFERENCES notification.user_devices (device_id) ON DELETE SET NULL,
-  channel              notification_channel NOT NULL DEFAULT 'PUSH',
+  channel              notification_channel NOT NULL DEFAULT 'IN_APP',
   title                VARCHAR(150)         NOT NULL,
   body                 TEXT                 NOT NULL,
   reference_type       reference_entity,                          -- what caused the alert — no FK

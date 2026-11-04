@@ -14,7 +14,7 @@ See file for mitigation and contingency plans per risk.
 
 ### `dependencies.md` ✓ FILLED
 External project dependencies: third-party services, APIs, external teams.
-**Status:** FILLED — 9 critical/non-critical dependencies tracked: Google OAuth, Facebook, Firebase FCM, SMTP, TensorFlow.js, PostgreSQL, MongoDB, React Native, MediaPipe.
+**Status:** FILLED — 9 critical/non-critical dependencies tracked: Google OAuth, Facebook, SMTP, TensorFlow.js, PostgreSQL, MongoDB, RabbitMQ, React Native, MediaPipe. (Firebase FCM is not used: push notifications were retired, see ADR-007.)
 Each includes fallback plans and coordination points with SENA IT.
 
 ### `open-questions.md` ⭐ ✓ FILLED

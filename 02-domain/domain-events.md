@@ -1,5 +1,13 @@
 # Domain Events — Traduce Señas
 
+> **Status note (2026-11-04).** This catalog is the reference model. The events published on the bus today are the ones below (RabbitMQ, exchange `traduce.events`, routing key `<service>.<Event>`). Their real payloads are in `packages/shared/src/events/contracts.ts`; the payload examples in this file are the target shape, not the wire format.
+> - `iam.UserRegistered`, `iam.UserDeleted` (iam-service; `UserDeleted` leaves through the outbox)
+> - `recognition.TranslationProduced`
+> - `lexicon.SignPublished`, `lexicon.SignWithdrawn`
+> - `profile.AchievementUnlocked`, `profile.PreferencesChanged` (profile-service; defined outside `packages/shared`)
+>
+> **Every other event in this catalog is not published today.** `DeviceRegistered` and `DeviceRevoked` are not built (ADR-007). The `domain_events` table is not built either (ALIGN-04).
+
 > A domain event is a fact that occurred in the business. Events are the backbone of communication
 > between bounded contexts. The name is ALWAYS in past tense and in the ubiquitous language of the domain.
 
@@ -16,8 +24,8 @@
 
 > **Channel in this project:** **RabbitMQ between services**. Traduce Señas is a microservices
 > architecture, so events are published to the topic exchange `traduce.events` with routing key
-> `<service>.<event>` (for example `iam.UserRegistered`, `recognition.TranslationCompleted`,
-> `lexicon.SignActivated`). The sections marked `[IF DISTRIBUTED]` now apply: schema evolution,
+> `<service>.<event>` (for example `iam.UserRegistered`, `recognition.TranslationProduced`,
+> `lexicon.SignPublished`). The sections marked `[IF DISTRIBUTED]` now apply: schema evolution,
 > retries and the dead letter queue are part of the design.
 >
 > ⚠️ **v1.1: there is no `domain_events` table in the v8 model.** Either it is added, or the claim of
@@ -169,9 +177,9 @@ the system managed to do it.
 
 #### `AccountDeleted` — **new in v1.1**
 **Aggregate:** `User` · **Trigger:** the user's account deletion completes (RNF8)
-**Consumers:** Usage Analytics, Audit — both keep their records with the identity detached
-**Payload:** `{ userId, deletedAt }`
-> The event carries no personal data: by the time it is emitted, there is none left to carry.
+**Consumers:** Usage Analytics, Profile, Recognition — each erases or unlinks its own data (`iam.UserDeleted`)
+**Published as:** `iam.UserDeleted` (iam-service, through the outbox). **Payload:** `{ userId, occurredAt }`
+> The event carries no personal data: by the time it is emitted, there is none left to carry. Account deletion is a real `DELETE` of the `users` row: there is no `deletedAt` column and no anonymized row is kept.
 
 ---
 
@@ -317,7 +325,7 @@ version comes from.
 **Payload:** `{ sampleId, anonymousSubjectId, gloss, anonymizedAt }`
 
 #### `AccountDeletionRequested`
-**Aggregate:** `DataDeletionRequest` · **Trigger:** the data subject requests deletion of their account and data (RNF8)
+**Aggregate:** `DataDeletionRequest` · **Status:** not built. Deletion is a direct request (`DELETE`, confirmed with the password or an emailed code); the fact that is emitted is `AccountDeleted` (`iam.UserDeleted`). **Trigger:** the data subject requests deletion of their account and data (RNF8)
 **Consumers:** **every context that stores user data** — Identity, Profile, Translation, Consent
 **Payload:** `{ requestId, userId, requestedAt }`
 > It is the event with the most consumers in the system and the easiest one to forget. Each context is
@@ -369,13 +377,13 @@ version comes from.
 ### Context: Notifications — **new in v1.1**
 
 #### `DeviceRegistered`
-**Aggregate:** `UserDevice` · **Trigger:** the user signs in on a device and grants the notification permission (RF4)
+**Aggregate:** `UserDevice` · **Status:** not built (ADR-007) · **Trigger:** the user signs in on a device and grants the notification permission (RF4)
 **Consumers:** Notifications
 **Payload:** `{ deviceId, userId, platform, registeredAt }`
 > The push token never travels in the payload. It is a credential.
 
 #### `DeviceRevoked`
-**Aggregate:** `UserDevice` · **Trigger:** the provider rejects the token, or the user signs out
+**Aggregate:** `UserDevice` · **Status:** not built (ADR-007) · **Trigger:** the provider rejects the token, or the user signs out
 **Consumers:** Notifications — stops attempting delivery to that device
 **Payload:** `{ deviceId, userId, revokedAt, reason: "TOKEN_REJECTED" | "SIGNED_OUT" }`
 
@@ -459,14 +467,15 @@ version comes from.
 
 ---
 
-### Context: Gamification ⏸ — pending RF8
+### Context: Gamification
 
-#### `AchievementUnlocked` ⏸ — **new in v1.1**
+#### `AchievementUnlocked` — **new in v1.1**
+**Published as:** `profile.AchievementUnlocked` (profile-service; payload `{ userId, achievementId, code, points }`). The payload below is the target shape.
 **Aggregate:** `UserAchievement` · **Trigger:** the user reaches an achievement's target count (INV-027)
 **Consumers:** Notifications (in-app visual alert), Usage Analytics
 **Payload:** `{ userAchievementId, userId, achievementId, achievementName, achievedAt }`
 > Notifications consumes it through `reference_type: ACHIEVEMENT` and `reference_id`, **with no foreign
-> key**. That is what keeps Notifications working if RF8 is rejected and this context disappears.
+> key**. That is what keeps Notifications working if the Gamification context is ever removed.
 
 **Daily challenges (implemented).** Completing a challenge publishes no domain event: profile-service reacts to
 `recognition.TranslationProduced` and, in the same transaction, grants the reward and creates an in-app notification of type
@@ -494,7 +503,7 @@ Every event carries this envelope:
 | `metadata.userId` | UUID | User who initiated the chain, if applicable |
 
 > **Content rule:** no payload carries passwords, hashes, plain-text tokens, video, or biometric data.
-> Events are persisted in the `domain_events` table and that table must not become a parallel store of
+> Events are meant to be persisted in a `domain_events` table (not built, see ALIGN-04), and that table must not become a parallel store of
 > personal data (RNF8).
 
 ---
@@ -565,12 +574,12 @@ A **policy** describes what happens automatically when an event arrives: the log
 | `TranslationSessionInterrupted` | Show an understandable error message and keep what was translated (RNF7) | `ShowNotification` | Notifications |
 | **v1.1 —** `AccountBlocked` | Notify the holder and record it for security review | `SendSecurityAlert` | Identity & Access |
 | **v1.1 —** `NotificationDeliveryFailed` | If the provider rejected the token, deactivate the device so no further delivery is attempted | `RevokeDevice` | Notifications |
-| **v1.1 —** `DeviceRevoked` | Cancel the pending push notifications targeting that device | `CancelPendingPush` | Notifications |
+| **v1.1 —** `DeviceRevoked` | Cancel the pending push notifications targeting that device *(not built, ADR-007)* | `CancelPendingPush` | Notifications |
 | **v1.1 —** `RecognitionModelPublished` | Deactivate the previously active model — never two at once (INV-022) | `DeactivatePreviousModel` | Recognition & Translation |
 | **v1.1 —** `ConsentRevoked` | Discard every capture session of that collaborator | `DiscardCaptureSessions` | Consent & Personal Data |
 | **v1.1 —** `GestureSampleValidated` | Make the sample eligible for the next training run | `AddToTrainingSet` | Consent & Personal Data |
-| **v1.1 —** `AchievementUnlocked` ⏸ | Emit an in-app visual alert referencing the achievement | `ShowNotification` | Notifications |
-| **v1.1 —** `TranslationProduced` | Advance the user's progress towards the achievements that count translations | `AdvanceAchievementProgress` | Gamification ⏸ |
+| **v1.1 —** `AchievementUnlocked` | Emit an in-app visual alert referencing the achievement | `ShowNotification` | Notifications |
+| **v1.1 —** `TranslationProduced` | Advance the user's progress towards the achievements that count translations | `AdvanceAchievementProgress` | Gamification |
 | **v1.1 —** `SignPublished` | Invalidate the catalog cache on the devices | `InvalidateCatalogCache` | Learning & Lexicon |
 
 ---
@@ -614,6 +623,8 @@ alert when the DLQ has more than 0 messages.
 
 ## Event summary table
 
+> Published today: only the events named in the status note at the top. Every other row is not published.
+
 | Event | Origin context | Consumers | Version |
 |-------|----------------|-----------|---------|
 | `UserRegistered` | Identity & Access | Profile, Analytics, Mail | v1 |
@@ -654,9 +665,9 @@ alert when the DLQ has more than 0 messages.
 | `GestureSampleValidated` | Consent & Personal Data | Training pipeline | v1 — **new** |
 | `CaptureSessionDiscarded` | Consent & Personal Data | Compliance audit, training pipeline | v1 — **new** |
 | `PasswordPolicyChanged` | Identity & Access | Audit | v1 — **new** |
-| `AchievementUnlocked` ⏸ | Gamification | Notifications, Analytics | v1 — **new, pending RF8** |
+| `AchievementUnlocked` | Gamification | Notifications, Analytics | v1 — **new**; published as `profile.AchievementUnlocked` |
 
-**40 events** (39 active, 1 blocked pending RF8). Every payload in this catalog feeds the contracts in
+**40 events** in the catalog; the ones published today are listed in the status note. Every payload in this catalog feeds the contracts in
 `07-api/contracts/` and the consolidated catalog in `09-microservices/event-catalog.md`.
 
 ### Events per context
@@ -670,7 +681,7 @@ alert when the DLQ has more than 0 messages.
 | Learning & Lexicon | 4 | 1 | +3 |
 | Profile & Preferences | 1 | 1 | — |
 | Cross-cutting | 1 | 0 | +1 |
-| Gamification ⏸ | 1 | 0 | +1 |
+| Gamification | 1 | 0 | +1 |
 
 > The per-context column sums to 40. `RoleAssigned` / `RoleRevoked` share one section but count as two
 > events, which is why the summary table above has one row fewer than the total.

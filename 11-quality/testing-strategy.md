@@ -3,9 +3,8 @@
 > What the team tests, with which tools, how to run the tests and how much code they cover.
 > Complements the TDD guide (`tdd-guide.md`), which explains the process.
 >
-> **Last verified:** 2026-10-16 against Backend `develop@2993301` and Frontend PR
-> [#38](https://github.com/tadeo77789/frontendTS/pull/38) (`chore/frontend-unit-tests`, pending merge into `develop`).
-> Figures in this document come from running the suites on those commits; update them when they change.
+> **Counts verified:** 2026-11-04 against Backend `v1.4.0` and Frontend `v1.3.1` (file counts taken from the source tree).
+> **Results:** see *Last run* below. The coverage figures are a snapshot from 2026-10-16 and were not measured again.
 
 ---
 
@@ -16,13 +15,14 @@
 | **Test runner** | `node:test` (built into Node) + `ts-node` | Jest 29 + `jest-expo` (Expo SDK 57 preset) |
 | **Helpers** | `node:assert/strict`, in-memory repositories and fake adapters | `@testing-library/react-native` for hooks |
 | **Command** | `npm test` (from the repo root) | `npm test` |
-| **Test files** | 72 | 8 |
-| **Tests** | 683 (681 pass, 2 skipped without a test database) | 79 |
-| **Line coverage** | 88.5 % | 4.5 % |
+| **Test files** | 99 (services 91, packages 7, tests 1) | 46 Jest + 3 Playwright E2E |
+| **Tests** | See *Last run* below | See *Last run* below |
+| **Line coverage** (snapshot 2026-10-16) | 88.5 % | 4.5 % |
 | **CI** | GitHub Actions (ADR-006) | GitHub Actions: typecheck, Jest, web build, Docker, E2E |
 
-**Summary:** the backend business logic is well covered by unit tests. The frontend has just started
-(the figures in the table are a snapshot from before the CI work and the new Jest and Playwright tests).
+**Summary:** the backend business logic is covered by unit tests. The frontend has Jest unit tests for its services, hooks and some screens, and Playwright E2E tests for three flows. Frontend coverage is still low (see *Targets and gaps*).
+
+**Last run:** 2026-11-04. Backend `main` a962982 with `npm test`: 918 passed, 0 failed, 13 skipped (they need PostgreSQL, which was not running). Frontend `main` a5e231d with `npx jest --ci --testTimeout=30000`: 46 suites, 469 passed. With the default 5 s limit, a test in `AchievementUnlockAlerts.test.tsx` timed out once on a loaded machine; CI is green. Playwright was not run locally. Coverage was not measured again.
 CI runs the tests on every pull request ([ADR-006](../05-architecture/decisions/records/ADR-006-ci-and-static-analysis.md)) and the Frontend has
 Playwright E2E tests (see "End-to-end" below). There are still no contract or performance tests.
 
@@ -52,7 +52,7 @@ Playwright E2E tests (see "End-to-end" below). There are still no contract or pe
   `src/shared/utils/__tests__/email.test.ts`. Jest only picks up `src/**/__tests__/**/*.test.ts(x)`.
 - **What is covered today:**
 
-  | Area | File under test | Tests |
+  | Area | File under test | Cases (snapshot 2026-10-16) |
   |---|---|---|
   | Validation | `shared/utils/email.ts`, `passwordStrength.ts`, `userDisplayName.ts` | 26 |
   | API client | `shared/services/api.client.ts` (error mapping, token only sent to the API, single 401 notice) | 19 |
@@ -62,7 +62,7 @@ Playwright E2E tests (see "End-to-end" below). There are still no contract or pe
 
 - **Test doubles:** `jest.mock` for `expo-secure-store` and `templateStore`; the official AsyncStorage mock;
   a custom axios `adapter` to capture outgoing requests instead of calling the server.
-- **Setup notes** (in `package.json` → `jest` and `jest.setup.js`):
+- **Setup notes** (in `jest.config.js` and `jest.setup.js`):
   - `moduleNameMapper` points `expo-modules-core` to the copy nested inside `expo`.
   - `jest.setup.js` restores Node's native Web Streams; without it, importing axios crashes Jest.
   - `tsconfig.json` declares `"types": ["jest"]`, required by TypeScript 6 for `npm run typecheck`.
@@ -71,14 +71,18 @@ Playwright E2E tests (see "End-to-end" below). There are still no contract or pe
 
 **Goal:** check adapters against real infrastructure.
 
-Three backend suites run against a real PostgreSQL and are **skipped** unless a dedicated, disposable
+Five backend suites run against a real PostgreSQL and are **skipped** unless a dedicated, disposable
 database is provided:
 
 | Suite | Variables |
 |---|---|
 | `services/profile-service/tests/preferences_postgres.test.ts` | `PROFILE_TEST_DATABASE_URL`; `PROFILE_PREFERENCES_PG_TESTS=1` makes the suite fail instead of skip when the URL is missing |
 | `services/profile-service/tests/gamification_concurrency.test.ts` | `PROFILE_TEST_DATABASE_URL`; `GAMIFICATION_PG_TESTS=1` (same behaviour) |
+| `services/profile-service/tests/challenge_reward_achievements_postgres.test.ts` | `PROFILE_TEST_DATABASE_URL`; `GAMIFICATION_PG_TESTS=1` (same behaviour) |
+| `services/profile-service/tests/daily_challenges_postgres.test.ts` | `PROFILE_TEST_DATABASE_URL`; `GAMIFICATION_PG_TESTS=1` (same behaviour) |
 | `services/analytics-service/tests/atomic_erasure_postgres.test.ts` | `PROFILE_TEST_DATABASE_URL` |
+
+The backend CI job (`.github/workflows/ci.yml`) starts a disposable PostgreSQL 16 and sets these variables, so the suites run there and are not skipped.
 
 > ⚠️ Never point these variables at a shared or production database: the suites create and drop data.
 
@@ -91,7 +95,7 @@ The OpenAPI files in `07-api/contracts/openapi/` are not validated against the r
 ### End-to-end (E2E) tests — started (Frontend)
 
 Playwright runs in the `e2e` job of the Frontend CI (`.github/workflows/ci.yml`): it starts the backend with Docker Compose,
-serves the production web build and runs `npm run e2e` in Chromium. Specs in `frontend/e2e/`: `auth.spec.ts` (registration with
+serves the production web build and runs `npm run e2e` in Chromium. Specs in the `e2e/` folder of the frontend repository: `auth.spec.ts` (registration with
 consent, verification and login; wrong password), `history.spec.ts` (a saved translation appears in the history and can be
 deleted) and `alphabet.spec.ts` (a letter opens its sign). The report is uploaded as an artifact when the job fails.
 Besides these, Jest now also covers the services, the auth forms, the vision classifiers and the template stores.
@@ -100,10 +104,11 @@ Flows still without E2E coverage (priority list):
 
 | # | Flow | Services involved |
 |---|------|-------------------|
-| 1 | Register, verify email with the code, log in | api-gateway, iam-service |
-| 2 | Log in with Google | api-gateway, iam-service, profile-service |
-| 3 | Recognise a sign and save the translation in the history | recognition-service, profile-service, analytics-service |
-| 4 | Delete the account with the email code and check the data is removed in every service | iam-service, profile-service, recognition-service, analytics-service |
+| 1 | Log in with Google | api-gateway, iam-service, profile-service |
+| 2 | Recognise a sign and save the translation in the history | recognition-service, profile-service, analytics-service |
+| 3 | Delete the account with the email code and check the data is removed in every service | iam-service, profile-service, recognition-service, analytics-service |
+
+Register, email verification and login are covered by `auth.spec.ts` and are no longer in this list.
 
 ### Performance tests — not started
 
@@ -132,6 +137,7 @@ PROFILE_TEST_DATABASE_URL=postgres://<user>:<password>@<host>:<port>/<empty_test
 npm ci
 npm test            # jest
 npm run typecheck   # tsc --noEmit, includes the test files
+npm run e2e         # Playwright; needs the backend running (see local-setup.md)
 ```
 
 ---
@@ -186,11 +192,11 @@ The backend meets the global target; the frontend does not.
 
 | Gap | Impact | Proposed next step |
 |---|---|---|
-| CI exists ([ADR-006](../05-architecture/decisions/records/ADR-006-ci-and-static-analysis.md)); no coverage threshold yet | A PR can still lower coverage unnoticed | Add a threshold (see below) |
+| CI exists ([ADR-006](../05-architecture/decisions/records/ADR-006-ci-and-static-analysis.md)). ADR-006 sets an 80 % coverage gate, but no `coverageThreshold` is defined in the Jest config (`jest.config.js`) and the backend has no coverage gate | A PR can still lower coverage unnoticed | Add the threshold to Jest and to the backend test command |
 | Frontend coverage 4.5 % | UI and login regressions are only caught by hand | Cover the login and register hooks, `AuthContext` and the services that call the API |
-| Postgres integration suites skipped by default | Concurrency and deletion guarantees are not checked routinely | Disposable Postgres service in CI with `PROFILE_TEST_DATABASE_URL` |
+| Postgres integration suites are skipped in local runs unless a database is given | Concurrency and deletion guarantees are not checked in local runs | Done in CI (disposable PostgreSQL in the backend `ci.yml`). Locally, run them against a disposable database |
 | No contract or performance tests; E2E covers only part of the flows | API drift and breakage of the remaining flows go unnoticed | Extend E2E with the flows listed above |
-| No coverage threshold | Coverage can drop without anyone noticing | Add a threshold once CI exists |
+| Coverage is not enforced | Coverage can drop without anyone noticing | Same as the first row |
 
 **Known defect found while writing frontend tests:** `classifyLetterLSC` (`feature/Translation/services/vision/classifier.ts`)
 never returns `L`, because index extended with the other fingers folded matches the `D`/`G` rule first.

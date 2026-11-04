@@ -17,7 +17,7 @@
 **What exists today:**
 - Express error-handler middleware in each service logs to `console.error()` (unstructured)
 - HTTP status codes as the only public signal
-- Manual health checks: `GET /health` and `GET /health/ready` per service
+- Health checks: `GET /health` in every service. It answers 200 with `"status":"ok"`, or `"degraded"` plus the `issues` found. Docker healthchecks use it. The gateway answers `GET /health` and `GET /api/health` with the status of all five services. `GET /health/ready` does not exist yet (planned, see Phase 2)
 - No metrics collection, no distributed tracing, no alert automation
 
 **Implication:** production availability depends on someone noticing a report in Slack. Multi-service failures compound quickly.
@@ -25,11 +25,11 @@
 
 ---
 
-## Phase 1: Logs (Month 2–3, In Progress)
+## Phase 1: Logs (Month 2–3, not implemented yet)
 
 ### Standard format (structured JSON)
 
-All errors and significant events **must** produce JSON logs:
+All errors and significant events **must** produce JSON logs. The diagram below is the target design (planned, not deployed):
 
 ```
                     ┌───────────────────────────────────────────┐
@@ -149,15 +149,16 @@ export const logger = pino({
 
 ## Phase 2: Metrics and Health (Month 3–4, Planned)
 
-### Health endpoints (foundation)
+### Health endpoints
 
-**Liveness check — is the process running?**
+**Implemented — liveness:** `GET /health` answers 200 while the process runs.
 ```
 GET /health
-→ 200 OK: { alive: true }
+→ 200 OK: { "status": "ok", "service": "iam" }
 ```
+When a check fails (for example, an outbox event that has waited too long), the body is `{ "status": "degraded", "service": "...", "issues": [...] }` and the status is still 200. The gateway aggregates the five services (`services/api-gateway/src/health.ts`).
 
-**Readiness check — can it serve traffic?**
+**Planned — readiness (not implemented):** `GET /health/ready` does not exist in the code. The planned checks were:
 ```
 GET /health/ready
 → 200 OK if:
@@ -249,7 +250,7 @@ Traces allow following a user's request across all 5 microservices.
 
 **Tool:** OpenTelemetry + Jaeger (or Zipkin).
 
-**For now (MVP):** use `x-correlation-id` header to link logs and events across services:
+**Planned (not implemented; the code has no correlation middleware yet):** use an `x-correlation-id` header to link logs and events across services:
 
 ```typescript
 // src/shared/http/correlation_middleware.ts (every service)

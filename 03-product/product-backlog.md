@@ -1,5 +1,7 @@
 # Product Backlog
 
+> Acceptance criteria are checked against the code on 2026-11-04. `[x]` means the repositories show the behaviour. `[ ]` means it is not confirmed, or it depends on a process or a visual judgement that the repositories cannot show.
+
 ## HU-AUTH-001: User Registration
 
 **As** a new user  
@@ -7,9 +9,9 @@
 **So that** I can access the application's features.
 
 ### Acceptance criteria
-- [ ] AC1: Given a user without an account, when they provide valid registration information, then the system creates the account.
-- [ ] AC2: Given invalid or incomplete information, when the user submits the registration form, then the system displays an appropriate validation message.
-- [ ] AC3: The user's password must be stored securely and must not be stored as plain text.
+- [x] AC1: Given a user without an account, when they provide valid registration information, then the system creates the account.
+- [x] AC2: Given invalid or incomplete information, when the user submits the registration form, then the system displays an appropriate validation message.
+- [x] AC3: The user's password must be stored securely and must not be stored as plain text.
 
 ### Technical notes
 - The user account must be stored in the application's database.
@@ -27,9 +29,9 @@
 **So that** I can access my account and personalized features.
 
 ### Acceptance criteria
-- [ ] AC1: Given valid credentials, when the user logs in, then the system grants access to the application.
-- [ ] AC2: Given invalid credentials, when the user attempts to log in, then the system rejects the authentication and displays an error message.
-- [ ] AC3: An authenticated user must be able to maintain an authenticated session.
+- [x] AC1: Given valid credentials, when the user logs in, then the system grants access to the application.
+- [x] AC2: Given invalid credentials, when the user attempts to log in, then the system rejects the authentication and displays an error message.
+- [x] AC3: An authenticated user must be able to maintain an authenticated session.
 
 ### Technical notes
 - Authentication is handled by the backend.
@@ -47,9 +49,9 @@
 **So that** the application can analyze my movements.
 
 ### Acceptance criteria
-- [ ] AC1: Given camera permission is granted, when the user starts translation, then the application activates the camera.
-- [ ] AC2: Given camera permission is not granted, when the user starts translation, then the application requests the required permission.
-- [ ] AC3: The application must provide visual feedback while the camera is being used.
+- [x] AC1: Given camera permission is granted, when the user starts translation, then the application activates the camera.
+- [x] AC2: Given camera permission is not granted, when the user starts translation, then the application requests the required permission.
+- [x] AC3: The application must provide visual feedback while the camera is being used.
 
 ### Technical notes
 - Camera access is implemented on the mobile application.
@@ -67,9 +69,9 @@
 **So that** my movements can be converted into a meaningful result.
 
 ### Acceptance criteria
-- [ ] AC1: Given valid camera input, when the user performs a supported sign, then the system generates a prediction.
+- [x] AC1: Given valid camera input, when the user performs a supported sign, then the system generates a prediction.
 - [ ] AC2: The prediction must correspond to a sign included in the available recognition dataset.
-- [ ] AC3: If the system cannot confidently recognize a sign, it must indicate that the result could not be determined.
+- [x] AC3: If the system cannot confidently recognize a sign, it must indicate that the result could not be determined.
 
 ### Technical notes
 - TensorFlow.js is used for the sign recognition model.
@@ -88,9 +90,9 @@
 **So that** I can understand the message being communicated.
 
 ### Acceptance criteria
-- [ ] AC1: Given a recognized sign, when the prediction is generated, then the corresponding text must be displayed.
+- [x] AC1: Given a recognized sign, when the prediction is generated, then the corresponding text must be displayed.
 - [ ] AC2: The translated text must be clearly visible to the user.
-- [ ] AC3: If no valid sign is recognized, the application must not display an incorrect translation as a confirmed result.
+- [x] AC3: If no valid sign is recognized, the application must not display an incorrect translation as a confirmed result.
 
 ### Technical notes
 - Translation results are generated from the sign recognition model.
@@ -108,7 +110,7 @@
 **So that** I can hear the communicated message.
 
 ### Acceptance criteria
-- [ ] AC1: Given a valid text translation, when the user requests audio output, then the application reproduces the translated message.
+- [x] AC1: Given a valid text translation, when the user requests audio output, then the application reproduces the translated message.
 - [ ] AC2: The user must be able to identify when audio output is available.
 - [ ] AC3: If there is no valid translation, the application must not generate an incorrect audio message.
 
@@ -128,8 +130,8 @@
 **So that** I can learn and identify individual signs.
 
 ### Acceptance criteria
-- [ ] AC1: The user must be able to access the alphabet section.
-- [ ] AC2: The application must display the available letters and their corresponding signs.
+- [x] AC1: The user must be able to access the alphabet section.
+- [x] AC2: The application must display the available letters and their corresponding signs.
 - [ ] AC3: The information must be presented in an accessible and understandable way.
 
 ### Technical notes
@@ -147,9 +149,9 @@
 **So that** I can consult them later.
 
 ### Acceptance criteria
-- [ ] AC1: Given a completed translation, when the translation is finalized, then the result can be stored in the user's history.
-- [ ] AC2: Each history entry must be associated with the corresponding user.
-- [ ] AC3: The history must contain enough information to identify the translated result.
+- [x] AC1: Given a completed translation, when the translation is finalized, then the result can be stored in the user's history.
+- [x] AC2: Each history entry must be associated with the corresponding user.
+- [x] AC3: The history must contain enough information to identify the translated result.
 
 ### Technical notes
 - Structured history data is stored through the backend.
@@ -167,8 +169,8 @@
 **So that** I can review information I have translated before.
 
 ### Acceptance criteria
-- [ ] AC1: The user must be able to access their translation history.
-- [ ] AC2: The system must only display history entries belonging to the authenticated user.
+- [x] AC1: The user must be able to access their translation history.
+- [x] AC2: The system must only display history entries belonging to the authenticated user.
 - [ ] AC3: If the user has no previous translations, the application must display an appropriate message.
 
 ### Technical notes
@@ -186,8 +188,8 @@
 **So that** I can use the application according to my needs.
 
 ### Acceptance criteria
-- [ ] AC1: The user must be able to select the available application language.
-- [ ] AC2: The user must be able to configure the available visual theme preferences.
+- [x] AC1: The user must be able to select the available application language.
+- [x] AC2: The user must be able to configure the available visual theme preferences.
 - [ ] AC3: The selected preferences must be applied throughout the application.
 
 ### Technical notes
@@ -207,7 +209,7 @@
 
 ### Acceptance criteria
 - [ ] AC1: The administrator must be able to access user management.
-- [ ] AC2: The system must restrict administrative functionality to authorized administrators.
+- [x] AC2: The system must restrict administrative functionality to authorized administrators.
 - [ ] AC3: The administrator must be able to view relevant user information.
 
 ### Technical notes
@@ -225,9 +227,9 @@
 **So that** I can monitor how the application is being used.
 
 ### Acceptance criteria
-- [ ] AC1: The administrator must be able to access the statistics section.
-- [ ] AC2: The system must display relevant usage information.
-- [ ] AC3: Regular users must not have access to administrative statistics.
+- [x] AC1: The administrator must be able to access the statistics section.
+- [x] AC2: The system must display relevant usage information.
+- [x] AC3: Regular users must not have access to administrative statistics.
 
 ### Technical notes
 - Statistics are restricted to the administrator role.
@@ -245,10 +247,10 @@
 **So that** the recognition model and its results can be analyzed and improved.
 
 ### Acceptance criteria
-- [ ] AC1: Relevant recognition data must be stored with the corresponding metadata.
+- [x] AC1: Relevant recognition data must be stored with the corresponding metadata.
 - [ ] AC2: Recognition results must be associated with a model version when applicable.
-- [ ] AC3: Confidence information should be preserved when available.
-- [ ] AC4: AI-related data must be separated from structured application data.
+- [x] AC3: Confidence information should be preserved when available.
+- [x] AC4: AI-related data must be separated from structured application data.
 
 ### Technical notes
 - MongoDB is used for AI and vision-related data.
@@ -267,7 +269,7 @@
 **So that** the application can achieve better sign recognition accuracy.
 
 ### Acceptance criteria
-- [ ] AC1: New validated sign samples can be incorporated into the dataset.
+- [x] AC1: New validated sign samples can be incorporated into the dataset.
 - [ ] AC2: Model changes must be validated before being integrated into the application.
 - [ ] AC3: Each released model must have an identifiable version.
 - [ ] AC4: The system must be able to identify which model version generated a recognition result.

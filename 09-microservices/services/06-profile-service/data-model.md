@@ -7,7 +7,7 @@
 
 ## Implemented today
 
-Taken from the migrations of Backend `develop` `2e0816f` (`services/profile-service/db/`, applied in order by `docker-compose.yml`). Tables marked † are in `develop` but not yet deployed (production runs v1.3.0). PostgreSQL database `profile`, schema `public` (no `profile`, `notification` or `gamification` schemas). Keys are UUID; `user_id` is VARCHAR(64). Gamification is implemented (achievements and daily challenges).
+Taken from the migrations of Backend `main` `a962982` (`services/profile-service/db/*.sql`, mounted by `docker-compose.yml`). Tables marked † are in `main` from `a962982` (migrations `008` and `009`). PostgreSQL database `profile`, schema `public` (no `profile`, `notification` or `gamification` schemas). Keys are UUID; `user_id` is VARCHAR(64). Gamification is implemented (achievements and daily challenges).
 
 | Table | Key columns | Notes |
 |-------|-------------|-------|
@@ -107,7 +107,7 @@ Migration 009 adds the notification type `CHALLENGE_COMPLETED` (reference type `
 `DAILY_CHALLENGE_POINTS` and the medals `dailyChallengePoints500/1000/3000` (zero extra points), measured as
 `SUM(challenge_rewards.points)`. `user_id` is a logical id (`VARCHAR(64)`), no FK to other services. See ADR-009 and ADR-010.
 
-Real migrations in `backend/services/profile-service/db`: 001 to 010 (profile, erased users, UI languages, achievement catalog,
+Migrations in `services/profile-service/db`: 001 to 010 (profile, erased users, UI languages, achievement catalog,
 obtainable achievements, translation milestones, functional achievements, admin reports, daily challenges, challenge reward
 achievements). The Liquibase plan below was not adopted: plain numbered SQL files are used.
 
@@ -117,7 +117,7 @@ achievements). The Liquibase plan below was not adopted: plain numbered SQL file
 
 | Field | Points at | Rule |
 |-------|-----------|------|
-| `user_preferences.user_id`, `user_devices.user_id`, `notifications.user_id`, `user_achievements.user_id` | iam `users.user_id` | Logical ID; erased by `iam.AccountDeletionRequested` |
+| `user_preferences.user_id`, `user_devices.user_id`, `notifications.user_id`, `user_achievements.user_id` | iam `users.user_id` | Logical ID; erased by `iam.UserDeleted` (today; the target name of the event is `iam.AccountDeletionRequested`) |
 | `notifications.reference_id` | translation, achievement, ... | Logical ID, polymorphic |
 
 ---
@@ -134,9 +134,8 @@ achievements). The Liquibase plan below was not adopted: plain numbered SQL file
 
 ## Schema migration
 
-**Tool:** Liquibase (one migration set per service). Seeds: `S002__seed_notification_types.sql`.
-**Script location:** `profile-service/db/changelog/`.
-**Naming convention:** `NNN-description.xml` / `.sql`.
+**Today:** plain numbered SQL files in `services/profile-service/db/` (no Liquibase, no `master.xml`). Docker Compose mounts them into the first start of `postgres-profile`; later files are applied by hand with `psql` (the comments at the top of `docker-compose.yml` give the commands). The seed of notification types is in `001` and `008`/`009`.
+**Target:** Liquibase (one migration set per service), under `profile-service/db/changelog/`, naming `NNN-description.xml` / `.sql`. Seeds `S002__seed_notification_types.sql` (target).
 
 **Rollback policy:**
 - Schema changes have a rollback block.

@@ -18,7 +18,7 @@
 | **Who answers** | Tech Lead (Juan Mauricio) + PO (Jesús Ariel) |
 | **Deadline** | 2026-10-15 (must be decided before architecture PR is merged) |
 | **Blocking** | YES — domain model assumes a port abstraction (SignRecognitionPort), but we need to know WHICH implementation. |
-| **Status** | 🔴 UNANSWERED |
+| **Status** | 🟢 RESOLVED: on-device. Sign recognition runs on the user's device (see `01-context/overview.md`, "Architecture"). No ADR records this decision yet. |
 | **Current thinking** | On-device is preferred for offline + battery + latency. Server-side is safer for low-end devices. Hybrid (on-device fallback to server) is possible but expensive in dev time. |
 
 ---
@@ -125,7 +125,7 @@
 
 | # | Question | Decision | ADR | Closed date |
 |---|----------|----------|-----|------------|
-| D-001 | JWT vs sessions for auth? | JWT with refresh tokens | ADR-002-jwt-authentication | 2026-09-01 |
+| D-001 | JWT vs sessions for auth? | JWT (HS256), 1-day expiry, no refresh tokens. Refresh tokens were planned in ADR-002 and are not implemented | ADR-002-jwt-authentication | 2026-09-01 |
 | D-002 | PostgreSQL vs MySQL? | PostgreSQL + MongoDB (two-DB strategy) | ADR-003-database-separation | 2026-09-08 |
 | D-003 | Documentation language? | English (except comments in Spanish) | ADR-001-documentation-language | 2026-09-01 |
 | D-004 | Sign language dataset source? | LSC-54 (government initiative) + crowd-sourced samples | (implicit in scope) | 2026-09-08 |
@@ -139,4 +139,4 @@
 - Risk register (risks triggered by unanswered questions) → `15-project-control/risks.md`
 - Architectural decisions → `05-architecture/decisions/`
 - Scope boundaries → `01-context/scope.md`
-- Technical decisions pending (inference location) → Q-001 blocks `05-architecture/decision-records/ADR-00X-inference-location.md`
+- Inference location: decided on-device (Q-001 resolved). No ADR has been written for it yet.

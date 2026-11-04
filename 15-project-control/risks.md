@@ -50,7 +50,7 @@ IMPACT
 | **Contingency plan** | If accuracy drops below 80%: pause new user registrations and focus on model retraining for 2 weeks. |
 | **Trigger** | (1) TRANSLATION_FAILED ratio > 20% in production. (2) User reports same failed sign 3+ times. (3) Average confidence < 0.75. |
 | **Owner** | Juan Mauricio Suaza Solórzano (Tech Lead) |
-| **Review date** | 2026-11-01 |
+| **Review date** | 2026-11-04 (reviewed; no new evidence in the repositories, status unchanged) |
 | **Status** | Active |
 
 ---
@@ -70,7 +70,7 @@ IMPACT
 | **Contingency plan** | Rollback to the previous model version if new version shows <3% confidence drop on the same test set. |
 | **Trigger** | Average confidence drops 5+ percentage points day-over-day. |
 | **Owner** | Juan Mauricio Suaza Solórzano |
-| **Review date** | 2026-11-01 |
+| **Review date** | 2026-11-04 (reviewed; no new evidence in the repositories, status unchanged) |
 | **Status** | Active |
 
 ---
@@ -121,16 +121,16 @@ IMPACT
 |-------|-------|
 | **ID** | R-005 |
 | **Category** | Technical / External |
-| **Description** | Sign recognition runs TensorFlow.js model. Decision is still open: on-device (React Native) or on server (Node.js). Model size is 25 MB; phone storage / battery assumptions differ by 1000x. TFJS/TFLite updates may break compatibility. Framework has no formal SLA. |
+| **Description** | Sign recognition runs a TensorFlow.js model. The inference location was decided: on-device (Q-001 resolved). Model size is 25 MB; phone storage / battery assumptions differ by 1000x. TFJS/TFLite updates may break compatibility. Framework has no formal SLA. |
 | **Probability** | Medium |
 | **Impact** | High |
 | **Risk level** | High |
 | **Strategy** | Mitigate |
-| **Mitigation plan** | (1) Decide inference location NOW (open decision Q-001 in open-questions.md). (2) Design SignRecognitionPort abstraction (already done in domain model) so either implementation can be swapped. (3) Pin TFJS version to major.minor; do not auto-update. (4) Test model on reference device (Android 11, 4 GB RAM) every release. (5) If TFJS breaks: fallback to ONNX Runtime (has vendor support). |
+| **Mitigation plan** | (1) Inference location decided: on-device (Q-001 resolved in open-questions.md). (2) Design SignRecognitionPort abstraction (already done in domain model) so either implementation can be swapped. (3) Pin TFJS version to major.minor; do not auto-update. (4) Test model on reference device (Android 11, 4 GB RAM) every release. (5) If TFJS breaks: fallback to ONNX Runtime (has vendor support). |
 | **Contingency plan** | If on-device inference breaks during pilot: switch to server-side inference within 1 sprint (architecture allows it). Accept higher latency and battery drain for that iteration. |
 | **Trigger** | TFJS version breaks on target device in integration test. |
 | **Owner** | Juan Mauricio Suaza Solórzano |
-| **Review date** | 2026-11-01 |
+| **Review date** | 2026-11-04 (reviewed; no new evidence in the repositories, status unchanged) |
 | **Status** | Active |
 
 ---

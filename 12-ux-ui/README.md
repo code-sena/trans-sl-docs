@@ -65,11 +65,11 @@
    embedded as `data:` URIs in `window.__resources`.
 3. Links and bars navigate between pages, so the flows in `navigation-map.md` § 5 can be clicked through.
 4. **The navigation bar depends on who is logged in.** `_shared/session.js` decides the role from the
-   email, with the same list as `frontendTS/src/shared/utils/adminAccess.ts`:
+   email; this list exists only in the mockup, the real app uses roles and permissions:
 
    | Sign in with | Lands on | Sees in the bar |
    |--------------|----------|-----------------|
-   | `aleosea777@gmail.com` | Estadísticas | Estadísticas · Admin |
+   | `admin@example.com` | Estadísticas | Estadísticas · Admin |
    | Any other email | Traductor | Traductor · Alfabeto · Historial |
 
    Typing the address of a section that does not belong to your role shows a permission notice instead

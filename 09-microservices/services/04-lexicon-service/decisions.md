@@ -1,7 +1,7 @@
 # Design Decisions — Lexicon Service
 
 > Technical decisions specific to this service (global ones go in `05-architecture/decisions/records/`).
-> DEC-001 to DEC-005 and DEC-007 are taken from the code and its comments. DEC-006 is superseded and DEC-008 is the change that the extraction requires.
+> DEC-001 to DEC-005 and DEC-007 are taken from the code and its comments. DEC-006 is superseded by DEC-008, which is implemented in the extracted service.
 
 ---
 
@@ -75,7 +75,7 @@ The interface is bilingual (ES and EN) while the sign language is LSC. Adding a 
 Only reviewed content should reach end users.
 
 **Decision:**
-`POST /` always creates the sign in `DRAFT` (it ignores any `status` sent). `POST /:code/publish` moves `DRAFT` or `INACTIVE` to `ACTIVE`, and in the target publishes `lexicon.SignPublished`. Public reads return only `ACTIVE` signs; `/admin/signs` shows every status.
+`POST /` always creates the sign in `DRAFT` (it ignores any `status` sent). `POST /:code/publish` moves `DRAFT` or `INACTIVE` to `ACTIVE` and publishes `lexicon.SignPublished`. Public reads return only `ACTIVE` signs; `/admin/signs` shows every status.
 
 **Alternatives considered:**
 - Create as `ACTIVE`: an incomplete sign would be visible immediately.
@@ -115,7 +115,7 @@ A resource URL is either a relative path with an allowed extension (`glb`, `gltf
 **Context:**
 The alphabet screen must work without a session, but editing the catalog must be restricted.
 
-**Decision (as implemented today):**
+**Decision (as implemented before the extraction):**
 Read routes have no authentication. Write routes use `authMiddleware` and then `requireAdmin` (`requireRole('ADMIN')`), which checks `user_role` in the shared PostgreSQL on every request. A user without the role gets `403 FORBIDDEN`.
 
 **Alternatives considered:**
@@ -136,7 +136,7 @@ Read routes have no authentication. Write routes use `authMiddleware` and then `
 The HTTP layer must translate business failures without a switch over message strings.
 
 **Decision:**
-Every business error extends `LexiconError` (`rules.ts`) with a `code` and an `httpStatus`; the controller answers `{ success: false, code, message }` using them. Use cases receive their repositories as parameters (`make<UseCase>(deps)`), so they are tested with fakes (`backend/tests/helpers/fakes.ts`).
+Every business error extends `LexiconError` (`rules.ts`) with a `code` and an `httpStatus`; the controller answers `{ success: false, code, message }` using them. Use cases receive their repositories as parameters (`make<UseCase>(deps)`), so they are tested with fakes (`services/lexicon-service/tests/`).
 
 **Alternatives considered:**
 - Generic `Error` with a message, as the `auth` module does: the controller can only answer 400.
@@ -150,16 +150,15 @@ Every business error extends `LexiconError` (`rules.ts`) with a `code` and an `h
 ## [DEC-008] In the service, the ADMIN role comes from the token and `created_by` is a logical ID
 
 **Date:** 2026-10-04
-**Status:** Active (applies at extraction)
+**Status:** Active (implemented in the extracted service)
 
 **Context:**
 Database per service: lexicon cannot read `user_role` or reference `users` with a foreign key. The spec says iam issues the JWT and
 services read `sub` and `roles` from the forwarded token; ADMIN is required for lexicon writes.
 
 **Decision:**
-Replace `postgresRoleChecker` with a role checker adapter that reads the `roles` claim (the `RoleChecker` is already a port in
-`shared/security/role_checker.ts`, so only the adapter changes). `created_by` / `updated_by` store the `sub` of the token with no FK.
-`003_lexicon.sql` stops creating `role` and `user_role`.
+The ADMIN check is `requireRole('ADMIN')` from `packages/shared`, which reads the `roles` claim of the token; the database role checker is gone. `created_by` / `updated_by` store the `sub` of the token with no FK.
+`003_lexicon.sql` does not create `role` and `user_role`.
 
 **Alternatives considered:**
 - Call iam on every admin write: adds a synchronous dependency.

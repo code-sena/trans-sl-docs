@@ -41,7 +41,8 @@
 | **Target sprint** | Sprint 1 |
 | **Acceptance criteria** | (1) GET /health returns 200 + {alive: true} if process is running. (2) GET /health/ready returns 200 if PostgreSQL responds to SELECT 1, MongoDB ping succeeds, model file exists. Returns 503 if any check fails. (3) No auth required. (4) Accessible from 0.0.0.0:3000 (not through API Gateway). |
 | **Blocks** | Deployment readiness, container orchestration, monitoring alerts |
-| **Notes** | Endpoint: src/shared/health/health.route.ts |
+| **Notes** | Code: `packages/shared/src/http/health.ts` (shared handler) and `services/api-gateway/src/health.ts` (gateway). |
+| **Status** | Partly implemented (checked 2026-11-04). `GET /health` exists in every service and on the gateway (`/health` and `/api/health`), but it answers `{status: ok \| degraded}` instead of `{alive: true}`. `GET /health/ready` is not implemented, so criteria 2 and 3 are open. |
 
 ---
 
@@ -113,6 +114,7 @@
 | **Target sprint** | Sprint 2 |
 | **Acceptance criteria** | (1) Rate limiter middleware on /auth/login and /auth/password-reset. (2) Store attempt count in Redis (or in-memory for MVP). (3) Lockout levels: 1, 5, 10 minutes. (4) After exhaustion, user.status = BLOCKED. |
 | **Blocks** | Security certification |
+| **Status** | Partly implemented (checked 2026-11-04). The gateway applies a per-IP rate limit (default 10 requests per minute) to login, registration, verification, password reset and social login (`services/api-gateway/src/app.ts`). Not implemented: progressive lockout (1, 5 and 10 minutes) and its attempt counter. |
 
 ---
 
@@ -129,6 +131,7 @@
 | **Priority** | High |
 | **Target sprint** | Sprint 1 or 2 (before any prod deployment) |
 | **Acceptance criteria** | (1) Express CORS middleware allows only https://traduce-senas.com (prod) and http://localhost:3000 (dev). (2) Non-HTTPS requests to prod return 403. (3) Certificate auto-renewal (Let's Encrypt). |
+| **Status** | Implemented, with different details (checked 2026-11-04). CORS allow-list from `CORS_ORIGINS`: production default `https://traducesenas.tech`; development `http://localhost:8081` and `http://localhost:19006`. HTTPS and Let's Encrypt renewal are handled by Caddy (`deploy/Caddyfile`), which also redirects HTTP to HTTPS instead of answering 403. |
 
 ---
 
@@ -155,14 +158,14 @@
 | Field | Value |
 |-------|-------|
 | **ID** | TD-009 |
-| **Title** | Add retry logic with exponential backoff for Firebase FCM, SMTP, OAuth providers |
+| **Title** | Add retry logic with exponential backoff for SMTP and OAuth providers |
 | **Description** | If an external service is slow, retry with delays: 100ms → 300ms → 1s → give up. Prevents cascading failures. |
-| **Why now** | Resilience. If Firebase is slow, do not hammer it; back off. |
+| **Why now** | Resilience. If SMTP is slow, do not hammer it; back off. |
 | **Impact** | Without backoff: every timeout cascades to 30-second waits. |
 | **Effort** | 8 hours (1 SP) |
 | **Priority** | Medium |
 | **Target sprint** | Sprint 3 |
-| **Acceptance criteria** | (1) Retry logic on FCM, SMTP, OAuth. (2) Max 3 retries, exponential backoff. (3) Logs each retry with reason. |
+| **Acceptance criteria** | (1) Retry logic on SMTP, OAuth. (2) Max 3 retries, exponential backoff. (3) Logs each retry with reason. |
 
 ---
 
@@ -190,7 +193,7 @@
 |-------|-------|
 | **ID** | TD-011 |
 | **Title** | Increase unit and integration test coverage to 80%+ in every repository |
-| **Description** | Low coverage means bugs escape to production. NFR-007 requires ≥80% coverage. Measured on 2026-10-16: Backend 88.5 % of lines (meets the target), Frontend 4.5 % (screens and login hooks untested). No CI runs the tests. Details in `11-quality/testing-strategy.md`. |
+| **Description** | Low coverage means bugs escape to production. NFR-007 requires ≥80% coverage. Measured on 2026-10-16: Backend 88.5 % of lines (meets the target), Frontend 4.5 % (screens and login hooks untested). CI runs the build and the tests on every pull request in both repositories (ADR-006). Details in `11-quality/testing-strategy.md`. |
 | **Why now** | Test-first development (TDD) slows down initial sprints but prevents 3–4 week debugging cycles later. |
 | **Effort** | 40 hours (6–8 SP) |
 | **Priority** | Medium |

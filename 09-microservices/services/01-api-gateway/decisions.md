@@ -15,7 +15,7 @@
 who calls (`sub`) and with which roles.
 
 **Decision:**
-The gateway validates the signature and the expiry and rejects with `401` at the edge. It forwards the original token.
+When the request carries a token, the gateway validates its signature and expiry and rejects it with `401` at the edge (on `/api/auth` it does not check it). It forwards the original token.
 Services decode `sub` and `roles` from the forwarded token. No `X-User-*` headers are invented.
 
 **Alternatives considered:**
@@ -32,13 +32,13 @@ Services decode `sub` and `roles` from the forwarded token. No `X-User-*` header
 ## [DEC-002] Rate limiting in process memory
 
 **Date:** 2026-10-04
-**Status:** Proposed
+**Status:** Active (implemented with `express-rate-limit`)
 
 **Context:**
 Login and register must be protected against brute force (RNF4). The architecture lists no Redis.
 
 **Decision:**
-Token bucket in memory: per IP on public routes, per `sub` on protected routes. One gateway instance at the beginning.
+Fixed-window counters in memory, per client IP: 300 requests per minute on every route, and 10 per minute, shared, on the sensitive `/api/auth` paths. The code counts by IP for every route, not by `sub`. One gateway instance at the beginning.
 
 **Alternatives considered:**
 - Redis counters: precise with several instances, but adds a component that is not in the architecture.
@@ -53,15 +53,15 @@ Token bucket in memory: per IP on public routes, per `sub` on protected routes. 
 ## [DEC-003] Gateway implementation
 
 **Date:** 2026-10-04
-**Status:** Proposed
+**Status:** Active (implemented)
 
 **Context:**
 The backend stack is Node.js, Express and TypeScript, and the team already knows it. The routing logic is small
 (a path-prefix table).
 
 **Decision:**
-A small Express service with a reverse-proxy middleware, hexagonal like the others (port for token verification, adapter
-for the proxy). No Kong or NGINX Plus.
+A small Express service with a reverse-proxy middleware (`http-proxy-middleware`). Unlike the domain services, its code is not
+split into ports and adapters. No Kong or NGINX Plus.
 
 **Alternatives considered:**
 - Kong / NGINX: more features than needed and a new configuration language to learn.

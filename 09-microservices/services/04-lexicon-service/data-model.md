@@ -3,14 +3,14 @@
 > `lexicon-service` is the **authoritative owner** of the data described here. No other service reads these tables; they use the
 > HTTP API (through the gateway) or the events. Other services keep only the sign `code` or `sign_id` as a logical reference.
 
-**Source of truth today:** `backend/migrations/003_lexicon.sql` (idempotent) and the Liquibase changelogs `009`, `010`, `011` in `backend/DB/traduce_senas/changelogs/`.
+**Source of truth today:** `services/lexicon-service/db/003_lexicon.sql` (idempotent).
 **Target model:** `06-data/domains/04-lexicon.md`.
 
 ---
 
 ## Implemented today
 
-Taken from the migrations of Backend `develop` `2e0816f` (`services/lexicon-service/db/`, applied in order by `docker-compose.yml`). Tables marked † are in `develop` but not yet deployed (production runs v1.3.0). PostgreSQL database `lexicon`, schema `public`, created by `003_lexicon.sql` (the paths `backend/migrations/` and `backend/DB/traduce_senas/` below are from the old monolith).
+Taken from the migration of Backend `main` `a962982` (`services/lexicon-service/db/003_lexicon.sql`, mounted by `docker-compose.yml`). PostgreSQL database `lexicon`, schema `public`, created by `003_lexicon.sql`.
 
 | Table | Key columns | Notes |
 |-------|-------------|-------|
@@ -23,7 +23,7 @@ Taken from the migrations of Backend `develop` `2e0816f` (`services/lexicon-serv
 
 ## Database engine
 
-**Engine:** PostgreSQL (target database `lexicon`; today database `traduce_senas`, schema `public`) plus static media files.
+**Engine:** PostgreSQL (database `lexicon`, schema `public`) plus static media files.
 **Justification:** the catalog is relational and small: signs, their texts per language and their media have fixed cardinalities, and the rules (unique code, one letter per language, ordered media) are best enforced with unique indexes and foreign keys inside the same database. See ADR-003 for the general database decision.
 
 Data model and ER: `06-data/domains/04-lexicon.md`.
@@ -60,7 +60,7 @@ Seeded rows: `Alfabeto` and `General`.
 | is_animated | BOOLEAN | No | The 3D model contains an animation (G, H, J, Ñ, S, Z). Default `FALSE` | |
 | display_order | INT | No | Order in listings and in the alphabet. Default `1000` | |
 | status | VARCHAR(10) | No | `DRAFT`, `ACTIVE` or `INACTIVE`. Default `ACTIVE` | `ck_sign_lexicon_status` |
-| created_by | INT | Yes | User who created it | Today FK to `users`, `ON DELETE SET NULL`. **Target: logical user ID, no FK** |
+| created_by | INT | Yes | User who created it | Logical user ID (the `sub` of the token), no FK |
 | updated_by | INT | Yes | User who last edited it | Same as `created_by` |
 | created_at | TIMESTAMPTZ | No | Creation date | Default `NOW()` |
 | updated_at | TIMESTAMPTZ | No | Last modification | Trigger `trg_sign_lexicon_updated_at` |
@@ -136,20 +136,20 @@ Served at `/api/lexicon/media/*`, cached 7 days.
 | `translations` link | `translations` stores free text, not a sign reference | `translation_signs.sign_id` in recognition-service, logical ID, no FK (the FK of `06-data` is dropped by the database-per-service rule) |
 | `created_by`, `updated_by` | FK to `users` | Logical user ID, no FK |
 
-### Coupling to remove in the extraction
+### Coupling removed in the extraction
 
-| Coupling today | In the service |
-|----------------|----------------|
-| `003_lexicon.sql` creates `role`, `user_role` and the `ADMIN` role | Removed; roles belong to iam-service |
-| `postgresRoleChecker` reads `user_role` | Replaced by a role checker that reads the `roles` claim of the token |
-| FK `created_by`/`updated_by` → `users` | Dropped; keep the integer / UUID value |
+| Former coupling | Now |
+|-----------------|-----|
+| `003_lexicon.sql` created `role`, `user_role` and the `ADMIN` role | Not created; roles belong to iam-service |
+| The ADMIN check read `user_role` in the database | `requireRole('ADMIN')` reads the `roles` claim of the token |
+| FK `created_by`/`updated_by` → `users` | Not in the schema; the integer value is kept |
 
 ---
 
 ## Schema migration
 
-**Tool:** today plain SQL run with `psql` (`backend/migrations/`); the Liquibase changelogs in `backend/DB/traduce_senas/changelogs/` created the legacy tables first. Target: Liquibase changelog of the service.
-**Script location:** `backend/migrations/003_lexicon.sql` today.
+**Tool:** today plain SQL (`services/lexicon-service/db/003_lexicon.sql`), mounted by `docker-compose.yml` into the first start of `postgres-lexicon`, and applied by hand with `psql` afterwards (see the runbook). Target: Liquibase changelog of the service.
+**Script location:** `services/lexicon-service/db/003_lexicon.sql`.
 **Naming convention:** `NNN_description.sql`, numbered in order.
 
 **Rollback policy:**

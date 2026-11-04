@@ -1,5 +1,7 @@
 # Domain Map — Bounded Contexts of Traduce Señas
 
+> **Status note (2026-11-04).** This is the **reference domain model**, not a description of the running system. What is implemented is in `09-microservices/` and `07-api/`. Not built today (checked against the backend code): push notifications and `UserDevice` (replaced by email, ADR-007); `user_sessions` and `refresh_tokens` (JWT only, no refresh token); progressive lockout; the `translation_sessions` table; the `ConsentGrant` entity; the `domain_events`, `audit_logs` and `error_logs` tables; `password_policies`.
+
 > The domain map is the central DDD artifact. It defines the system's boundaries and how they relate to
 > each other. This map was built from the project SRS (IEEE 830) and from a team Event Storming session.
 
@@ -17,7 +19,7 @@
 > promoted from a cross-cutting service to a Supporting context**, **Learning expands into Learning &
 > Lexicon** because the alphabet turned out to be a subset of a general sign catalog, **Authorization
 > becomes an explicit part of Identity & Access** now that roles carry permissions, and **Gamification**
-> appears as a provisional context pending the RF8 decision. Two v1.0 decisions are reversed as a
+> appears as a context (implemented in profile-service). Two v1.0 decisions are reversed as a
 > result; both reversals are recorded in §5 with the reason. §6 lists where the map and the database
 > still disagree.
 
@@ -96,7 +98,7 @@ given term means exactly one thing. Each context has its own Ubiquitous Language
 | 5 | Learning & Lexicon | Supporting | Active — **expanded in v1.1** |
 | 6 | Usage Analytics | Supporting | Active |
 | 7 | Notifications | Supporting | **New in v1.1** (was a cross-cutting service) |
-| 8 | Gamification | Supporting | ⏸ **Provisional** — pending the RF8 decision |
+| 8 | Gamification | Supporting | Active — implemented in profile-service (ADR-009, ADR-010) |
 
 Plus one set of **cross-cutting technical services** that are deliberately *not* contexts: the audit
 trail and the error log. They have tables in the model but no ubiquitous language and no business
@@ -148,7 +150,7 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Owner** | Luis Alejandro Duarte Aldana *(proposed assignment)* |
 | **Service** | `iam-service` (extraction status: pending; today the `auth` and `users` domain modules) |
 | **Module(s)** | `backend/src/modules/identity`, `mobile/src/features/auth` |
-| **Persistence** | `identity` schema — `users`, `user_auth_providers`, `user_sessions`, `refresh_tokens`, `user_tokens`, `password_policies` *(v1.2)*, `roles`, `permissions`, `user_roles`, `role_permissions` |
+| **Persistence** | `identity` schema — `users`, `user_auth_providers`, `user_sessions`, `refresh_tokens`, `user_tokens`, `password_policies` *(v1.2)*, `roles`, `permissions`, `user_roles`, `role_permissions`. **Not built:** `user_sessions`, `refresh_tokens`, `password_policies` |
 | **SRS requirements** | RF1, ERF1.1, ERF1.2, ERF1.3, ERF5.3, RNF4 |
 
 | Term | Meaning HERE | Different in another context? |
@@ -283,7 +285,7 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Owner** | Juan Mauricio Suaza Solórzano *(proposed assignment)* |
 | **Service** | `analytics-service` (extraction status: pending) |
 | **Module(s)** | `backend/src/modules/analytics` |
-| **Persistence** | `usage_events` (event log) + reads `user_sessions` from Identity — **read model**, not a source of truth |
+| **Persistence** | `usage_events` (event log) + would read `user_sessions` from Identity (not built) — **read model**, not a source of truth |
 | **SRS requirements** | RF6, ERF6.1 |
 
 | Term | Meaning HERE | Different in another context? |
@@ -313,7 +315,7 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Owner** | *(to be assigned)* |
 | **Service** | `profile-service` (extraction status: pending) |
 | **Module(s)** | `backend/src/modules/notification`, `mobile/src/features/notifications` |
-| **Persistence** | `notification` schema — `notification_types`, `notifications`, `user_devices` |
+| **Persistence** | `notification` schema — `notification_types`, `notifications`, `user_devices` *(not built, ADR-007)* |
 | **SRS requirements** | RF4, ERF4.1 · accessibility ERF (cross-cutting) |
 
 | Term | Meaning HERE | Different in another context? |
@@ -321,7 +323,7 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Notification type** (`NotificationType`) | Kind of alert that exists in the application, with a stable code. The administrator activates or withdraws a type for everyone | No |
 | **Channel** | How the alert reaches the user: `PUSH`, `IN_APP` or `EMAIL`. **All three are visual; none is audio** | No |
 | **Delivery state** | `PENDING`, `SENT`, `FAILED`, `READ` or `CANCELLED` | No |
-| **Device** (`UserDevice`) | A phone registered with its push token and platform. It is deactivated when the provider rejects its token | No |
+| **Device** (`UserDevice`) | **Not built (ADR-007).** Would be a phone registered with its push token and platform. Push was dropped; notices outside the app go by email | No |
 | **Reference** | The record in another context that caused the alert, named by entity type and id, with no foreign key | No |
 | **Scheduling** | Future moment at which a pending notification must be delivered | No |
 
@@ -338,7 +340,7 @@ vocabulary of their own — they serve every context equally. See §2.9.
 
 ---
 
-### Bounded Context: Gamification ⏸ provisional — **new in v1.1**
+### Bounded Context: Gamification — **new in v1.1**
 
 | Field | Value |
 |-------|-------|
@@ -356,9 +358,9 @@ vocabulary of their own — they serve every context equally. See §2.9.
 | **Progress** | How far a user is from a target, computed from `usage_events` | No |
 | **Unlock** | The moment a user reaches the target. It happens once per user and per achievement | No |
 
-> ⏸ **This context is provisional.** The `achievements` and `user_achievements` tables exist in the v8
-> model with no SRS requirement behind them. Either RF8 is approved and added to the SRS, or the context
-> and both tables are removed. Nothing here should be built before that decision.
+> **This context is implemented** in profile-service: `achievements`, `user_achievements` and the daily
+> challenge tables (ADR-009, ADR-010). It has no SRS requirement yet, because RF8 is not in the SRS. Either
+> RF8 is added to the SRS, or the context and its code are removed together (GAP-01).
 > See `04-requirements/traceability-matrix.md` § 6, GAP-01.
 
 ---
@@ -417,8 +419,8 @@ Three sets of tables in the v8 model belong to no bounded context, on purpose:
                                        ▲
                                        │ AchievementUnlocked
                           ┌────────────┴──────────────┐
-                          │  Gamification  ⏸          │
-                          │  (Supporting · RF8?)      │
+                          │  Gamification             │
+                          │  (Supporting · GAP-01)    │
                           └───────────────────────────┘
 
 Hosting (services, 2026-10-04): iam-service = Identity & Access + Consent (+ audit) ·
@@ -461,19 +463,19 @@ Published Language: `sign_lexicon.code` — the same value the Core calls `Gloss
 | Identity & Access | U → D | Usage Analytics | Event (RabbitMQ) | `UserRegistered`, `UserSignedIn` |
 | Recognition & Translation | U → D | **Notifications** | Event (RabbitMQ) | `RecognitionFailed`, `TranslationSessionInterrupted` — **new in v1.1** |
 | Identity & Access | U → D | **Notifications** | Event (RabbitMQ) | `AccountLocked` — **new in v1.1** |
-| **Gamification** ⏸ | U → D | **Notifications** | Event (RabbitMQ) | `AchievementUnlocked` + `reference_type`/`reference_id` — **new in v1.1** |
-| Usage Analytics | U → D | **Gamification** ⏸ | Event (RabbitMQ) | Usage events feed progress towards a target — **new in v1.1** |
+| **Gamification** | U → D | **Notifications** | Event (RabbitMQ) | `AchievementUnlocked` + `reference_type`/`reference_id` — **new in v1.1** |
+| Usage Analytics | U → D | **Gamification** | Event (RabbitMQ) | Usage events feed progress towards a target — **new in v1.1** |
 | Notifications | U → D | Usage Analytics | Event (RabbitMQ) | `NotificationOpened` — **new in v1.1** |
 | Identity & Access | ACL | Google OAuth / Facebook Login | HTTPS (OAuth 2.0) | Adapter translating the external profile into `User` |
 | Recognition & Translation | ACL | Inference engine (computer vision) | HTTPS / device SDK | `SignRecognitionPort` adapter |
-| **Notifications** | **ACL** | **Push provider (FCM / APNs)** | HTTPS | **Adapter translating the provider's response into a delivery state; a rejected token deactivates the device — new in v1.1** |
+| **Notifications** | **ACL** | **Email provider (SMTP)** | SMTP (nodemailer) | **Replaces the push provider (ADR-007). Adapter translating the SMTP result into a delivery state (`SENT` or `FAILED`)** |
 
 > **On the new Gamification → Notifications relationship.** It is worth looking at how it is
 > implemented, because it is the cleanest thing in the v8 model. `notifications.reference_type` and
 > `reference_id` name the record that caused the alert — an achievement, a translation — **with no
 > foreign key**. That means Notifications does not depend on Gamification at all: if RF8 is rejected and
 > the context disappears, Notifications does not break. The reference is resolved by the application
-> layer. This is the pattern that makes the provisional context genuinely removable.
+> layer. This is the pattern that keeps Gamification removable.
 
 > **Both anti-corruption layers are deliberate.** Neither Google's model nor the raw output of the
 > inference engine (tensors, probability arrays, hand landmarks) should enter the domain as they come:
@@ -501,7 +503,7 @@ Published Language: `sign_lexicon.code` — the same value the Core calls `Gloss
 | Usage Analytics | Supporting | Serves the administrator, not the end user. Solved with simple aggregations over events. |
 | **Notifications** | Supporting — **raised in v1.1** | It was classified Generic when it was a UI component. It is not generic any more: the accessibility constraint (no channel may be audio-only) is a **product** rule, not a technical one, and it is the reason the app is usable by its intended users at all. An off-the-shelf notification service does not enforce it. |
 | Identity & Access | **Generic** | Registration, login, Google/Facebook OAuth and recovery email are solved problems. Use an existing solution (Firebase Auth or Passport + JWT); do not write your own cryptography. The RBAC added in v1.1 does not change this: role and permission tables are a textbook pattern. |
-| **Gamification** ⏸ | Supporting *(if approved)* | Achievements motivate the repeated practice a learner needs, which is exactly what is hardest to sustain. But it is the first thing to cut if the schedule tightens, and it does not exist until RF8 does. |
+| **Gamification** | Supporting | Achievements motivate the repeated practice a learner needs, which is exactly what is hardest to sustain. But it is the first thing to cut if the schedule tightens. It is implemented (ADR-009, ADR-010) and has no SRS requirement yet (GAP-01). |
 
 > **Practical consequence of this table:** if the schedule tightens, cut Gamification first, then
 > Analytics, then Learning & Lexicon beyond the alphabet. Never cut Consent, and never cut the
@@ -529,7 +531,7 @@ Published Language: `sign_lexicon.code` — the same value the Core calls `Gloss
 | Bounded contexts hosted by microservices (reverses the earlier "modules of a monolith" decision, see below) | Modular monolith | Product owner decision of 2026-10-04: each context lives in the service listed in the context map, with its own database |
 | **v1.1 —** Authorization inside Identity & Access | Authorization as its own context | It shares the ubiquitous language (`User`, `Role`) and answers the same question — who is this person and what may they do. A separate context would split one language across two boundaries |
 | **v1.1 —** Learning renamed to Learning & Lexicon | Keeping Learning for the alphabet and creating a second Lexicon context | A letter and a word are the same thing to the recognizer: both are a class it predicts. Two contexts would mean two models for one table and two names for one code |
-| **v1.1 —** Reference by type and id, with no FK, from Notifications | Foreign key from `notifications` to each referenced table | The FK would make Notifications depend on Gamification, and Gamification may not exist. The polymorphic reference is what keeps the provisional context removable |
+| **v1.1 —** Reference by type and id, with no FK, from Notifications | Foreign key from `notifications` to each referenced table | The FK would make Notifications depend on Gamification, and Gamification may not exist. The polymorphic reference is what keeps Gamification removable |
 | **v1.1 —** Audit, errors and password policy as cross-cutting services | Promoting each one to a context | They have tables but no terms of their own. A bounded context exists where a word means one specific thing; none of these three has a word |
 
 ### Decisions reversed in v1.2
@@ -567,7 +569,7 @@ reasoning was correct for the model that existed then:
   (INV-007). It must be set by the team with interpreter support, not picked arbitrarily.
   > **v1.1 note:** this is now blocking. `ai_models` has no column to store the threshold, so INV-007
   > has nowhere to read it from. See §6, ALIGN-03.
-- **v1.1 —** Whether **RF8 (Gamification)** enters the SRS, which decides whether context 8 exists.
+- **v1.1 —** Whether **RF8 (Gamification)** enters the SRS (GAP-01). Context 8 exists in code either way.
 - **v1.1 —** Which sample-capture model is correct: anonymous samples from end users (v1.0, INV-010) or
   identified samples from named collaborators in capture sessions (v8 model). See §6, ALIGN-02.
 

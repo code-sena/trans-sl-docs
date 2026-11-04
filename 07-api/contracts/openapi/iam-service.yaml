@@ -6,7 +6,7 @@ info:
     Identity & Access service (`02-iam-service`, internal port 3001, PostgreSQL db `iam`).
     Accounts, email verification, login, password reset, account self-service and roles / permissions (RBAC).
 
-    **Based on:** Backend `2993301` (`origin/develop`, 2026-10-16), `services/iam-service`. Every path below exists in
+    **Based on:** Backend `a962982` (`main`), `services/iam-service`. Every path below exists in
     the code; routes that are only planned are listed in `07-api/README.md` ("Planned, not implemented").
 
     Public paths served through the gateway: `/api/auth/**`, `/api/users/**`, `/api/iam/**`.

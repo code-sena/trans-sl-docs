@@ -1,11 +1,11 @@
 # Runbook — Recognition Service
 
-> For whoever is on call. The service is not extracted yet; commands marked "today" refer to the backend process. No Kubernetes,
-> dashboard or alert channel is defined yet; commands assume Docker Compose.
+> For whoever is on call. Each section is executable without extra context. The commands assume Docker Compose.
+> No Kubernetes, dashboard or alert channel is defined yet.
 
 **Service:** recognition-service
-**Version:** 1.0 (target)
-**Last updated:** 2026-10-04
+**Version:** 1.4.0 (backend `main` a962982)
+**Last updated:** 2026-11-04
 
 ---
 
@@ -13,86 +13,67 @@
 
 | Field | Value |
 |-------|-------|
-| Local port | 3002 (today: backend on 3000) |
-| Health | `GET http://localhost:3002/health` |
-| Databases | PostgreSQL `recognition`; MongoDB `gesture_samples` |
-| Broker | RabbitMQ, exchange `traduce.events`, queue `recognition.main` |
-| Files | Published model artifacts (`MODEL_STORAGE_DIR`), sample object storage |
+| Local port | 3002 (internal; Compose does not publish it) |
+| Health | `GET http://localhost:3002/health` when the service runs locally |
+| Databases | PostgreSQL `recognition` (container `postgres-recognition`); MongoDB database `recognition`, collection `gesture_samples` (only with `MONGO_URL`) |
+| Broker | RabbitMQ, exchange `traduce.events`. Queues `recognition-service.user-deleted` and `recognition-service.lexicon-events` |
 
 ---
 
 ## 2. Verify the service is healthy
 
 ```bash
-curl -s http://localhost:3002/health
-# Today
-curl -s http://localhost:3000/api/sign-templates | head -c 200
+# Through the gateway: the public list of templates
+curl -s http://localhost:8080/api/recognition/sign-templates | head -c 200
 
-# Through the gateway, with a token
+# Saving and reading the history need a token
 curl -s http://localhost:8080/api/translations/history -H "Authorization: Bearer $TOKEN"
 ```
 
-```sql
--- Exactly one active model (expect 1)
-SELECT COUNT(*) FROM ai.ai_models WHERE is_active;
-```
-
-```javascript
-// mongosh: the validator is in place
-db.getCollectionInfos({ name: "gesture_samples" })[0].options.validator
+```bash
+# Templates per kind (expect one row per kind that has templates)
+docker compose exec -T postgres-recognition psql -U postgres -d recognition -c "SELECT kind, COUNT(*) FROM sign_templates GROUP BY kind;"
 ```
 
 ---
 
 ## 3. Frequent problems and what to do
 
-### Recognition stops working after publishing a model (rise in `MODEL_INFERENCE_ERROR`)
+### Samples disappear after a restart
 
-The new model is worse than the previous one. Roll back to the previous version (its id is in `RecognitionModelPublished.previousModelId`):
+`MONGO_URL` is empty, so the samples live in memory. Set `MONGO_URL` in `.env` and recreate the container:
+`docker compose up -d --force-recreate recognition-service`.
 
-```sql
-BEGIN;
-UPDATE ai.ai_models SET is_active = FALSE WHERE is_active;
-UPDATE ai.ai_models SET is_active = TRUE WHERE model_id = '<previous-model-id>';
-COMMIT;
-```
+### Samples are rejected with `VALIDATION_ERROR`
 
-### Two active models
-
-The unique index `uq_single_active_model` is missing (DATA-11). Fix the data with the transaction above and apply the constraints migration.
-
-### Samples are rejected by MongoDB
-
-The validator requires `consent_granted_at` and `consent_terms_version`. A sample without consent evidence is an illegal record;
-do not relax the validator. Fix the caller.
+Each sample needs `consentGrantedAt` (an ISO date) and `consentTermsVersion`, and frames of 63 or 126 numbers, at most 64 frames. A sample without consent evidence is not stored; fix the caller and do not relax the check.
 
 ### A user revoked consent but samples remain
 
-```javascript
-// mongosh: find the batches recorded for that collaborator, then delete by capture session
-db.gesture_samples.find({ performed_by: "<name>" }, { capture_session_id: 1 })
-db.gesture_samples.deleteMany({ capture_session_id: UUID("<id>") })
+The revocation of consent is not implemented in the code (there is no consent event). Find the samples of the collaborator and delete them by hand, then escalate to the data owner. MongoDB is published on `127.0.0.1:27017` only, so run `mongosh` on the server with the root credentials of `.env` (`MONGO_ROOT_USER`, `MONGO_ROOT_PASSWORD`):
+
+```bash
+mongosh "mongodb://<MONGO_ROOT_USER>:<MONGO_ROOT_PASSWORD>@127.0.0.1:27017/recognition?authSource=admin" \
+  --eval 'db.gesture_samples.find({ performed_by: "<name>" }, { capture_session_id: 1 })'
+mongosh "mongodb://<MONGO_ROOT_USER>:<MONGO_ROOT_PASSWORD>@127.0.0.1:27017/recognition?authSource=admin" \
+  --eval 'db.gesture_samples.deleteMany({ capture_session_id: "<id>" })'
 ```
 
-Delete the files in object storage too and make sure `CaptureSessionDiscarded` was published. Escalate to the data owner.
+### Messages in the consumer queues
 
-### Consumer errors: `ConsentRevoked` or `AccountDeletionRequested` in the DLQ
+A message in `recognition-service.user-deleted.dead` is an account deletion that was not applied: translations of that user may remain. Read the message, fix the cause and move it back by hand.
 
 ```bash
 docker compose exec rabbitmq rabbitmqctl list_queues name messages | grep recognition
 ```
 
-Read the message, fix the cause, shovel it back. Legal priority: these two events are compliance obligations.
+### The sign catalog does not match lexicon
 
-### The sign catalog is out of date (a published sign is not recognized)
-
-Check that `lexicon.SignPublished` was consumed; compare the codes:
+Recognition only logs `lexicon.SignPublished` and `lexicon.SignWithdrawn`; it keeps no catalog, so nothing in this service changes when lexicon changes. Check the catalog in lexicon:
 
 ```bash
-curl -s http://localhost:3003/api/lexicon?limit=100 | head -c 400
+curl -s "http://localhost:8080/api/lexicon?limit=100" | head -c 400
 ```
-
-If an event was lost, replay it from lexicon or run the catalog refresh job.
 
 ---
 
@@ -101,29 +82,28 @@ If an event was lost, replay it from lexicon or run the catalog refresh job.
 ### 4.1 Back up
 
 ```bash
-docker compose exec postgres pg_dump -U postgres -d recognition > recognition_backup.sql
-docker compose exec mongo mongodump --db traduce --collection gesture_samples --archive > gesture_samples.archive
+docker compose exec -T postgres-recognition pg_dump -U postgres -d recognition > recognition_backup.sql
+mongodump --uri "mongodb://<MONGO_ROOT_USER>:<MONGO_ROOT_PASSWORD>@127.0.0.1:27017/recognition?authSource=admin" --collection gesture_samples --archive=gesture_samples.archive
 ```
 
 The dump of `gesture_samples` contains biometric data of identified people: store it encrypted.
 
-### 4.2 Publish a model
+### 4.2 Translation retention
 
-1. Register the model (`POST /api/models`, ADMIN) with its `storage_reference`.
-2. Activate it; check section 2 (exactly one active model).
-3. Watch `RecognitionFailed` and `MODEL_INFERENCE_ERROR` for the next hour.
+Translations older than `RECOGNITION_TRANSLATION_RETENTION_DAYS` (default 30) are deleted by the retention scheduler. Their counts stay in `translation_daily_counts` and `translation_user_words`, so the statistics do not change. To keep history longer, raise the variable and recreate the container.
 
 ### 4.3 Roll back a deploy
 
 ```bash
-docker compose up -d recognition-service   # previous image tag
+git checkout <previous-commit>
+docker compose up -d --build recognition-service
 ```
 
 ---
 
 ## 5. Post-incident checklist
 
-- [ ] One active model, history endpoint answers
-- [ ] No messages in `recognition.main.dlq`
-- [ ] No samples without consent evidence
+- [ ] The history endpoint answers with a valid token
+- [ ] No messages in the `recognition-service.*.dead` queues
+- [ ] Every sample stored has consent evidence
 - [ ] Incident recorded in `13-operations/incident-management.md`

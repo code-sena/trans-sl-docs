@@ -33,7 +33,7 @@ Services publish domain events to RabbitMQ; analytics subscribes and stores. Ana
 RNF8 requires deleting personal data; RF6 requires stable statistics.
 
 **Decision:**
-No FK. On `AccountDeleted` the user reference is set to NULL; the fact remains.
+No FK. On `iam.UserDeleted` (the target name of the event is `AccountDeleted`) the user reference is set to NULL; the fact remains.
 
 **Consequences:**
 - Advantage: reports do not shift when somebody exercises the right to deletion.
@@ -44,7 +44,7 @@ No FK. On `AccountDeleted` the user reference is set to NULL; the fact remains.
 ## [DEC-003] Rollups are a cache with a recompute job
 
 **Date:** 2026-10-04
-**Status:** Active
+**Status:** Proposed (not implemented: there are no rollup tables; the reports read `usage_event`)
 
 **Context:**
 The dashboard must answer in under a second over a log that grows continuously.
@@ -61,7 +61,7 @@ The dashboard must answer in under a second over a log that grows continuously.
 ## [DEC-004] `unique_users` is shown only at its stored grain
 
 **Date:** 2026-10-04
-**Status:** Active
+**Status:** Proposed (the code has no `unique_users`; the reports count events and new users)
 
 **Decision:**
 The API never sums `unique_users` across sections, event types or days. A report at another grain recomputes distinct users from `usage_events`; every report states its grain.
@@ -78,7 +78,7 @@ The API never sums `unique_users` across sections, event types or days. A report
 **Status:** Active (INV-012)
 
 **Decision:**
-Every route requires the `ADMIN` role (permission `stats.read`) read from the forwarded token. The API returns counts, never individual events.
+The reports require the `ADMIN` role (`summary`, `top-signs`, `daily`) or the permission `stats.read` (`reports/sections`), both read from the forwarded token. `POST /api/analytics/events` needs any valid token. The API returns counts, never individual events.
 
 ---
 

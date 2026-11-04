@@ -2,7 +2,7 @@
 // Espejo de frontendTS/src/shared/utils/adminAccess.ts: el rol se decide por el correo.
 // Cuando exista el backend, esto lo reemplaza el rol que devuelva la API (UX-02).
 (function () {
-  var ADMIN_EMAILS = ['aleosea777@gmail.com'];
+  var ADMIN_EMAILS = ['admin@example.com'];
 
   function normalize(email) { return (email || '').trim().toLowerCase(); }
 
